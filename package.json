@@ -1,0 +1,94 @@
+{
+  "name": "opencode",
+  "displayName": "Opencode",
+  "description": "Opencode AI integration for VS Code",
+  "version": "0.1.0",
+  "publisher": "opencode",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onView:opencode.sidebar",
+    "onCommand:opencode.run",
+    "onCommand:opencode.acceptChange",
+    "onCommand:opencode.rejectChange"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "opencode",
+          "title": "Opencode",
+          "icon": "$(sparkle)"
+        }
+      ]
+    },
+    "views": {
+      "opencode": [
+        {
+          "type": "webview",
+          "id": "opencode.sidebar",
+          "name": "Opencode",
+          "icon": "$(sparkle)"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "opencode.run",
+        "title": "Run Opencode",
+        "icon": "$(play)"
+      },
+      {
+        "command": "opencode.acceptChange",
+        "title": "Accept Change",
+        "icon": "$(check)"
+      },
+      {
+        "command": "opencode.rejectChange",
+        "title": "Reject Change",
+        "icon": "$(chrome-close)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "opencode.acceptChange",
+          "group": "navigation@1",
+          "when": "isInDiffEditor && opencode.hasActiveReview"
+        },
+        {
+          "command": "opencode.rejectChange",
+          "group": "navigation@2",
+          "when": "isInDiffEditor && opencode.hasActiveReview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p tsconfig.extension.json && npm run build:webview",
+    "build:webview": "node esbuild.config.js",
+    "watch:extension": "tsc -watch -p tsconfig.extension.json",
+    "watch:webview": "node esbuild.config.js --watch",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "opencode-ai": "^1.14.39",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
