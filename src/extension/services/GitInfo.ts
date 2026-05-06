@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 export interface GitInfo {
   branch: string;
@@ -17,13 +17,13 @@ export function getGitInfo(): GitInfo {
   let lastCommitTime = 'Unknown';
 
   try {
-    branch = execSync('git branch --show-current', { cwd: projectPath, encoding: 'utf8' }).trim();
+    branch = execFileSync('git', ['branch', '--show-current'], { cwd: projectPath, encoding: 'utf8' }).trim();
   } catch {
     // not a git repo or git not available
   }
 
   try {
-    const output = execSync('git log -1 --format=%cd --date=relative', { cwd: projectPath, encoding: 'utf8' }).trim();
+    const output = execFileSync('git', ['log', '-1', '--format=%cd', '--date=relative'], { cwd: projectPath, encoding: 'utf8' }).trim();
     lastCommitTime = output;
   } catch {
     // no commits or git not available

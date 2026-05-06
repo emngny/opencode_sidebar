@@ -79,9 +79,11 @@
     "build:webview": "node esbuild.config.js",
     "watch:extension": "tsc -watch -p tsconfig.extension.json",
     "watch:webview": "node esbuild.config.js --watch",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "audit": "npm audit"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.0.5",
     "@types/marked": "^5.0.2",
     "@types/node": "20.x",
     "@types/react": "^18.3.3",
@@ -91,9 +93,10 @@
     "typescript": "^5.6.0"
   },
   "dependencies": {
-    "marked": "^18.0.3",
-    "opencode-ai": "^1.14.39",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "dompurify": "3.4.2",
+    "marked": "18.0.3",
+    "opencode-ai": "1.14.39",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

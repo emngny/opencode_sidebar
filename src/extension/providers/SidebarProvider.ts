@@ -52,7 +52,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }, 500);
 
     // Start opencode server in background
-    this._opencode.start().catch((err) => {
+    this._opencode.start().then(() => {
+      this._restoreApiKeys();
+    }).catch((err) => {
       console.error('Opencode server start failed:', err);
       this.postMessage({
         type: 'receiveMessage',
@@ -333,7 +335,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           try {
             const success = await this._opencode.setAuth(providerId, key);
             if (success) {
-              // Refresh provider list after setting key
+              // Store in VS Code SecretStorage for secure persistence
+              await this._context.secrets.store(`opencode-key-${providerId}`, key);
               const result = await this._opencode.listProviders();
               this.postMessage({ type: 'providerUpdated', payload: { providerId, success: true } });
               this.postMessage({ type: 'providerList', payload: result });
@@ -355,6 +358,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           const { providerId } = data.payload;
           try {
             await this._opencode.removeAuth(providerId);
+            await this._context.secrets.delete(`opencode-key-${providerId}`);
             const result = await this._opencode.listProviders();
             this.postMessage({ type: 'providerUpdated', payload: { providerId, success: true, removed: true } });
             this.postMessage({ type: 'providerList', payload: result });
@@ -419,6 +423,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async _restoreApiKeys(): Promise<void> {
+    try {
+      const authData = await this._opencode.getProviderAuth();
+      for (const [providerId, methods] of Object.entries(authData)) {
+        const stored = await this._context.secrets.get(`opencode-key-${providerId}`);
+        if (stored) {
+          await this._opencode.setAuth(providerId, stored);
+          console.log(`[opencode] Restored API key for ${providerId} from SecretStorage`);
+        }
+      }
+    } catch {
+      // No keys to restore or auth not supported — not an error
+    }
+  }
+
   private async _pollDiffs(sessionId: string): Promise<any[]> {
     try {
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -441,23 +460,76 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'out', 'webview.js'),
     );
-    const nonce = getNonce();
+    const styleNonce = getNonce();
+    const scriptNonce = getNonce();
+    const serverPort = this._opencode.url ? new URL(this._opencode.url).port : '*';
 
     return `<!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; connect-src ${webview.cspSource} https://127.0.0.1:* https://localhost:*;">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; script-src 'nonce-${scriptNonce}'; style-src 'nonce-${styleNonce}'; connect-src ${webview.cspSource} http://127.0.0.1:${serverPort} http://localhost:${serverPort};">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Opencode</title>
-        <style>
+        <style nonce="${styleNonce}">
           body { margin: 0; padding: 0; width: 100%; height: 100vh; overflow: hidden; background-color: #1e1e2e; color: #cdd6f4; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
           #root { width: 100%; height: 100%; display: flex; flex-direction: column; }
+          @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+          @keyframes blink { 50% { opacity: 0; } }
+          @keyframes thinking {
+            0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1); }
+          }
+          .opencode-markdown h1,.opencode-markdown h2,.opencode-markdown h3,
+          .opencode-markdown h4,.opencode-markdown h5,.opencode-markdown h6 {
+            margin: 12px 0 6px; font-weight: 600; color: #cdd6f4;
+          }
+          .opencode-markdown h1 { font-size: 18px; }
+          .opencode-markdown h2 { font-size: 16px; }
+          .opencode-markdown h3 { font-size: 14px; }
+          .opencode-markdown h4 { font-size: 13px; }
+          .opencode-markdown p { margin: 4px 0; }
+          .opencode-markdown ul, .opencode-markdown ol { margin: 4px 0; padding-left: 20px; }
+          .opencode-markdown li { margin: 2px 0; }
+          .opencode-markdown blockquote {
+            margin: 6px 0; padding: 4px 12px;
+            border-left: 3px solid #7c3aed; color: #a6adc8;
+            background: rgba(124,58,237,0.05); border-radius: 0 4px 4px 0;
+          }
+          .opencode-markdown code {
+            font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 12px;
+            background: #313244; padding: 1px 5px; border-radius: 4px; color: #f5c2e7;
+          }
+          .opencode-markdown pre {
+            margin: 8px 0; padding: 12px 14px; padding-top: 32px; background: #11111b;
+            border-radius: 10px; border: 1px solid #313244;
+            overflow-x: auto; position: relative;
+          }
+          .opencode-markdown pre code {
+            background: none; padding: 0; color: #cdd6f4; font-size: 12px; line-height: 1.5;
+          }
+          .opencode-markdown a { color: #89b4fa; text-decoration: none; }
+          .opencode-markdown a:hover { text-decoration: underline; }
+          .opencode-markdown table { border-collapse: collapse; margin: 8px 0; width: 100%; font-size: 12px; }
+          .opencode-markdown th,.opencode-markdown td {
+            border: 1px solid #45475a; padding: 6px 10px; text-align: left;
+          }
+          .opencode-markdown th { background: #313244; font-weight: 600; }
+          .opencode-markdown tr:nth-child(even) { background: rgba(49,50,68,0.3); }
+          .opencode-markdown img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
+          .opencode-markdown hr { border: none; border-top: 1px solid #45475a; margin: 12px 0; }
+          .opencode-markdown .copy-btn {
+            position: absolute; top: 6px; right: 6px; padding: 3px 8px; font-size: 11px;
+            border: 1px solid #45475a; border-radius: 6px; background: #313244; color: #a6adc8;
+            cursor: pointer; opacity: 0; transition: opacity 0.15s; z-index: 1;
+          }
+          .opencode-markdown pre:hover .copy-btn { opacity: 1; }
+          .opencode-markdown .copy-btn:hover { background: #45475a; color: #cdd6f4; }
         </style>
       </head>
       <body>
         <div id="root"></div>
-        <script nonce="${nonce}" src="${scriptUri}"></script>
+        <script nonce="${scriptNonce}" src="${scriptUri}"></script>
       </body>
       </html>`;
   }

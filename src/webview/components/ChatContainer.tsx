@@ -23,13 +23,6 @@ export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, co
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <style>{`
-        @keyframes blink { 50% { opacity: 0; } }
-        @keyframes thinking {
-          0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-          40% { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
       {hasContext && <ContextGroup events={contextEvents!} allDone={!!allDone} />}
       {messages.map((msg) => (
         <div key={msg.id || msg.timestamp}>
