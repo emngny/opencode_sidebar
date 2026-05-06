@@ -5,7 +5,7 @@ interface Props {
   disabled: boolean;
 }
 
-export function ChatInput({ onSend, disabled }: Props) {
+export function ChatInput({ onSend, disabled }: Readonly<Props>) {
   const [text, setText] = useState('');
 
   const handleSend = () => {

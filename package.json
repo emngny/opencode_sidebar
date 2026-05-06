@@ -26,6 +26,13 @@
           "title": "Opencode",
           "icon": "$(sparkle)"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "opencode",
+          "title": "Opencode",
+          "icon": "$(sparkle)"
+        }
       ]
     },
     "views": {

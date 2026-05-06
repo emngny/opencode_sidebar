@@ -8,7 +8,7 @@ interface Props {
   onReject: () => void;
 }
 
-export function ReviewActions({ filename, inserts, deletes, onAccept, onReject }: Props) {
+export function ReviewActions({ filename, inserts, deletes, onAccept, onReject }: Readonly<Props>) {
   return (
     <div>
       <div style={{ fontSize: 12, marginBottom: 8, color: '#a6adc8' }}>

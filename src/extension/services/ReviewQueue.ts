@@ -24,7 +24,7 @@ export class ReviewQueue {
     this.postMessage = cb;
   }
 
-  async addReview(document: vscode.TextDocument, aiResponse?: string) {
+  async addReview(document: vscode.TextDocument, aiResponse?: string, suggestedOverride?: string) {
     // Protect extension files from being edited
     const extensionPath = vscode.extensions.getExtension('undefined_publisher.opencode')?.extensionPath;
     if (extensionPath && document.uri.fsPath.startsWith(extensionPath)) {
@@ -35,13 +35,13 @@ export class ReviewQueue {
     const originalContent = document.getText();
     let suggestedContent: string;
 
-    if (aiResponse) {
+    if (suggestedOverride) {
+      suggestedContent = suggestedOverride;
+    } else if (aiResponse) {
       const codeBlocks = extractCodeBlocks(aiResponse);
       if (codeBlocks.length > 0) {
-        // Use the first code block as the suggested change
         suggestedContent = codeBlocks[0].code;
       } else {
-        // If no code blocks, don't create a review for conversational text
         console.log('[opencode] No code blocks found in AI response, skipping review');
         return;
       }

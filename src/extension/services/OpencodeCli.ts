@@ -27,6 +27,10 @@ export class OpencodeCli {
   private readonly eventHandlers: Set<EventHandler> = new Set();
   private abortController: AbortController | null = null;
   private readonly binaryPath: string = 'opencode';
+  // Track which part IDs have received deltas (to avoid duplicating full text updates)
+  private readonly sessionPartDeltas: Map<string, Set<string>> = new Map();
+  // Track partID -> partType for each session (to skip reasoning deltas)
+  private readonly sessionPartTypes: Map<string, Map<string, string>> = new Map();
 
   constructor() {
     this.binaryPath = this.resolveBinary();
@@ -76,6 +80,7 @@ export class OpencodeCli {
         if (match && !started) {
           started = true;
           const port = Number.parseInt(match[1], 10);
+          console.log('[opencode] Server started on port:', port);
           this.server = { port, password, url: `http://127.0.0.1:${port}` };
           this.process = proc;
           resolve();
@@ -165,6 +170,73 @@ export class OpencodeCli {
     return Array.isArray(data) ? data : [];
   }
 
+  async getSessionDiff(sessionId: string): Promise<any> {
+    await this.start();
+    try {
+      const result = await this.apiFetch(`/session/${sessionId}/diff`);
+      console.log('[opencode] Session diff result:', JSON.stringify(result).slice(0, 300));
+      return result;
+    } catch (err: any) {
+      console.log('[opencode] Session diff not available:', err?.message);
+      return [];
+    }
+  }
+
+  async getSessionMessages(sessionId: string): Promise<any[]> {
+    await this.start();
+    try {
+      return await this.apiFetch(`/session/${sessionId}/message`);
+    } catch {
+      return [];
+    }
+  }
+
+  async deleteSession(sessionId: string): Promise<boolean> {
+    await this.start();
+    try {
+      await this.apiFetch(`/session/${sessionId}`, { method: 'DELETE' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getAgents(): Promise<any[]> {
+    await this.start();
+    try {
+      return await this.apiFetch('/agent');
+    } catch {
+      return [];
+    }
+  }
+
+  async getCurrentProject(): Promise<any> {
+    await this.start();
+    try {
+      return await this.apiFetch('/project/current');
+    } catch {
+      return null;
+    }
+  }
+
+  async getPath(): Promise<any> {
+    await this.start();
+    try {
+      return await this.apiFetch('/path');
+    } catch {
+      return null;
+    }
+  }
+
+  async getVcsInfo(): Promise<any> {
+    await this.start();
+    try {
+      return await this.apiFetch('/vcs');
+    } catch {
+      return null;
+    }
+  }
+
   async listProviders(): Promise<ProviderListResult> {
     await this.start();
     return this.apiFetch('/provider');
@@ -177,36 +249,28 @@ export class OpencodeCli {
 
   async setAuth(providerId: string, key: string): Promise<boolean> {
     await this.start();
+    if (!this.server) return false;
     try {
-      await this.apiFetch('/auth/set', {
-        method: 'POST',
-        body: JSON.stringify({ key: providerId, info: { type: 'api', key } }),
+      const response = await fetch(`${this.server.url}/auth/${providerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...this.authHeader },
+        body: JSON.stringify({ type: 'api', key }),
       });
-      return true;
+      return response.ok;
     } catch {
-      // Fallback: try config endpoint
-      try {
-        await this.apiFetch('/config', {
-          method: 'PATCH',
-          body: JSON.stringify({
-            providers: { [providerId]: { options: { apiKey: key } } },
-          }),
-        });
-        return true;
-      } catch {
-        return false;
-      }
+      return false;
     }
   }
 
   async removeAuth(providerId: string): Promise<boolean> {
     await this.start();
+    if (!this.server) return false;
     try {
-      await this.apiFetch('/auth/remove', {
-        method: 'POST',
-        body: JSON.stringify({ key: providerId }),
+      const response = await fetch(`${this.server.url}/auth/${providerId}`, {
+        method: 'DELETE',
+        headers: { ...this.authHeader },
       });
-      return true;
+      return response.ok;
     } catch {
       return false;
     }
@@ -219,12 +283,17 @@ export class OpencodeCli {
     onToolCall?: (name: string, args: any) => void,
     onError?: (error: string) => void,
     model?: string,
+    agent?: string,
+    extraParts?: Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
+    onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: any }) => void,
   ): Promise<string> {
     await this.start();
 
-    const body: Record<string, any> = {
-      parts: [{ type: 'text', text: prompt }],
-    };
+    const parts: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [
+      ...(extraParts || []),
+      { type: 'text', text: prompt },
+    ];
+    const body: Record<string, any> = { parts };
 
     if (model?.includes('/')) {
       const [providerID, modelID] = model.split('/');
@@ -232,75 +301,133 @@ export class OpencodeCli {
     } else if (model) {
       body.model = { providerID: 'opencode', modelID: model };
     }
+    if (agent) body.agent = agent;
 
     // Abort any previous event listeners
     if (this.abortController) this.abortController.abort();
     this.abortController = new AbortController();
 
-    const url = `${this.server!.url}/session/${sessionId}/message`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.authHeader,
-      },
-      body: JSON.stringify(body),
-      signal: this.abortController.signal,
+    let messageId = '';
+    let idle = false;
+
+    // Reset delta tracking for this session
+    this.sessionPartDeltas.set(sessionId, new Set());
+    this.sessionPartTypes.set(sessionId, new Map());
+
+    // Create a promise that resolves when session becomes idle
+    const idlePromise = new Promise<void>((resolve) => {
+      // Start reading /event SSE
+      this.readSSE('/event', (event: SSEMessage) => {
+        console.log('[opencode] /event:', event.type, JSON.stringify(event.properties).slice(0, 200));
+        this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent);
+        if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
+        if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
+          idle = true;
+          resolve();
+        }
+      }, this.abortController!.signal);
+
+      // Also try to read POST response as SSE
+      const postUrl = `${this.server!.url}/session/${sessionId}/message`;
+      fetch(postUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.authHeader },
+        body: JSON.stringify(body),
+        signal: this.abortController!.signal,
+      }).then(async (response) => {
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        console.log('[opencode] POST /message content-type:', contentType);
+
+        if (contentType.includes('event-stream')) {
+          this.readSSEStream(response, (event: SSEMessage) => {
+            console.log('[opencode] POST event:', event.type, JSON.stringify(event.properties).slice(0, 200));
+            this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent);
+            if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
+            if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
+              idle = true;
+            }
+          });
+        } else {
+          // JSON response - might contain message ID
+          try {
+            const data: any = await response.json();
+            if (data?.info?.id) messageId = data.info.id;
+          } catch {}
+        }
+      }).catch((err) => {
+        console.error('[opencode:post] Error:', err?.message);
+        onError?.(err.message || 'POST error');
+        if (!idle) { idle = true; resolve(); }
+      });
+
+      // Timeout
+      setTimeout(() => {
+        if (!idle) {
+          idle = true;
+          console.log('[opencode] Session timeout expired for', sessionId);
+          // Clean up server-side
+          fetch(`${this.server!.url}/session/${sessionId}/abort`, {
+            method: 'POST',
+            headers: { ...this.authHeader },
+          }).catch(() => {});
+          resolve();
+        }
+      }, 60000);
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`[opencode:api] POST /session/${sessionId}/message -> ${response.status}: ${text.slice(0, 500)}`);
-      throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
-    }
+    await idlePromise;
+    return messageId;
+  }
 
-    const contentType = response.headers.get('content-type') || '';
+  private readSSE(path: string, onEvent: (event: SSEMessage) => void, signal: AbortSignal): void {
+    const run = async () => {
+      try {
+        const response = await fetch(`${this.server!.url}${path}`, {
+          headers: { ...this.authHeader },
+          signal,
+        });
+        this.readSSEStream(response, onEvent);
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error(`[opencode:sse] ${path} error:`, err?.message);
+        }
+      }
+    };
+    run();
+  }
 
-    // SSE stream response
-    if (contentType.includes('event-stream')) {
-      console.log('[opencode] Reading SSE stream from prompt response');
-      let messageId = '';
-      let idleReceived = false;
-
+  private readSSEStream(response: Response, onEvent: (event: SSEMessage) => void): void {
+    const run = async () => {
       try {
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-
-        while (!idleReceived) {
+        while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
-
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
-                const event = JSON.parse(line.slice(6));
-                if (event.properties?.info?.id) messageId = event.properties.info.id;
-                this.handleEvent(event, sessionId, onContent, onToolCall, onError);
-                if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
-                  idleReceived = true;
-                }
+                onEvent(JSON.parse(line.slice(6)) as SSEMessage);
               } catch { /* skip parse error */ }
             }
           }
         }
       } catch (err: any) {
         if (err.name !== 'AbortError') {
-          console.error('[opencode:sse] Stream error:', err?.message);
-          onError?.(err.message || 'Stream error');
+          console.error('[opencode:sse-stream] Error:', err?.message);
         }
       }
-
-      return messageId;
-    }
-
-    // Regular JSON response
-    const data: any = await response.json();
-    return data?.info?.id || '';
+    };
+    run();
   }
 
   private handleEvent(
@@ -309,21 +436,104 @@ export class OpencodeCli {
     onContent?: (text: string) => void,
     onToolCall?: (name: string, args: any) => void,
     onError?: (error: string) => void,
+    onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: any }) => void,
   ): void {
     switch (event.type) {
       case 'message.part.updated': {
         const part = event.properties?.part;
-        if (part?.type === 'text' && part?.text) {
-          onContent?.(part.text);
+        if (part?.id && part?.type) {
+          // Track part type for this session
+          const types = this.sessionPartTypes.get(sessionId);
+          types?.set(part.id, part.type);
         }
-        if (part?.type === 'reasoning' && part?.text) {
-          // Could show thinking
+        if (part?.type === 'text') {
+          // Deltas handle streaming text, skip full text update to avoid duplication
+          break;
+        }
+        if (part?.type === 'reasoning') {
+          // Thinking/reasoning event
+          onToolEvent?.({
+            id: part.id || 'reasoning',
+            type: 'thinking',
+            name: 'reasoning',
+            status: 'running',
+            content: 'Thinking...',
+          });
+          break;
         }
         if (part?.type === 'tool_call') {
+          onToolEvent?.({
+            id: part.id || part.name || 'tool',
+            type: 'tool_call',
+            name: part.name || 'unknown',
+            status: 'running',
+            content: `${part.name || 'unknown'} calling...`,
+            meta: { args: part.args },
+          });
           onToolCall?.(part.name || 'unknown', part.args);
         }
+        if (part?.type === 'tool') {
+          const toolName = part?.tool || 'unknown';
+          const status = part?.state?.status;
+          if (status === 'running') {
+            onToolEvent?.({
+              id: part.id || toolName,
+              type: 'tool_result',
+              name: toolName,
+              status: 'running',
+              content: `${toolName} running...`,
+            });
+          } else if (status === 'completed') {
+            const toolResult = part?.result || part?.state?.result;
+            onToolEvent?.({
+              id: part.id || toolName,
+              type: 'tool_result',
+              name: toolName,
+              status: 'completed',
+              content: `${toolName} completed`,
+              meta: { result: toolResult },
+            });
+            // Also send as content for backward compatibility
+            if (toolResult) {
+              onContent?.(`\n[${toolName} sonucu]\n${typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)}\n[/${toolName}]\n`);
+            }
+          } else if (status === 'failed') {
+            onToolEvent?.({
+              id: part.id || toolName,
+              type: 'tool_result',
+              name: toolName,
+              status: 'failed',
+              content: `${toolName} failed`,
+              meta: { error: part.state.error || part.state.reason },
+            });
+            onError?.(`${toolName} failed: ${part.state.error || part.state.reason || 'unknown error'}`);
+          }
+        }
         if (part?.type === 'tool_result' && part?.result) {
+          onToolEvent?.({
+            id: part.id || part.name || 'tool',
+            type: 'tool_result',
+            name: part.name || 'unknown',
+            status: 'completed',
+            content: `${part.name || 'unknown'} result`,
+            meta: { result: part.result },
+          });
           onContent?.(`\n[Tool: ${part.name || 'unknown'}]\n${part.result}\n[/Tool]\n`);
+        }
+        break;
+      }
+      case 'message.part.delta': {
+        const props = event.properties;
+        if (props?.field === 'text' && props?.delta) {
+          // Check if this part is a "text" type (not "reasoning")
+          const types = this.sessionPartTypes.get(sessionId);
+          const partType = props.partID ? types?.get(props.partID) : undefined;
+          // Only show content for text parts, skip reasoning deltas
+          if (partType === 'reasoning') break;
+          // Track that this part has received deltas
+          const deltas = this.sessionPartDeltas.get(sessionId);
+          if (deltas && props.partID) deltas.add(props.partID);
+          onContent?.(props.delta);
         }
         break;
       }
@@ -337,10 +547,45 @@ export class OpencodeCli {
         }
         break;
       }
+      case 'permission.asked': {
+        const permId = event.properties?.id;
+        const permSessionId = event.properties?.sessionID || sessionId;
+        const permType = event.properties?.permission;
+        const patterns = event.properties?.patterns || [];
+        console.log('[opencode] Permission asked:', permType, patterns, 'id:', permId);
+        if (permId) {
+          this.grantPermission(permSessionId, permId).catch((err) => {
+            console.error('[opencode] Failed to grant permission:', err?.message);
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  async grantPermission(sessionID: string, permissionId: string): Promise<void> {
+    await this.start();
+    try {
+      const url = `${this.server!.url}/session/${sessionID}/permissions/${permissionId}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.authHeader },
+        body: JSON.stringify({ response: 'always', remember: true }),
+      });
+      if (response.ok) {
+        console.log('[opencode] Permission granted:', permissionId);
+      } else {
+        const text = await response.text();
+        console.error('[opencode] Permission grant failed:', response.status, text.slice(0, 200));
+      }
+    } catch (err: any) {
+      console.error('[opencode] Failed to grant permission:', err?.message);
     }
   }
 
   async abortSession(sessionId: string): Promise<void> {
+    this.abortController?.abort();
+    this.abortController = null;
     try {
       await this.apiFetch(`/session/${sessionId}/abort`, { method: 'POST' });
     } catch {

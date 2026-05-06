@@ -38,7 +38,7 @@ Two independent compilation targets under `src/`:
 - **`sendPrompt` reads POST `/session/:id/message` as SSE stream** (content-type `text/event-stream`), not JSON. Parses `data:` lines, stops on `session.status` → `idle`
 - **Extension protects own files** — ReviewQueue blocks edits to files under the extension's install directory
 - **No README.md** exists
-- **UI strings in ProviderPopup are Turkish** (`Sağlayıcılar`, `Bağlı`, `Kaydet`)
+- **UI language is English** — all user-facing strings are in English
 - **No authentication UI** — server auto-generates password (`oc-vsc-{random}`) and sends via Basic Auth header
 - **`opencode serve` binary resolution** hardcoded to Windows paths in `resolveBinary()`
 
@@ -46,3 +46,4 @@ Two independent compilation targets under `src/`:
 
 - Extension activates on `onView:opencode.sidebar` (sidebar open), `opencode.run`, `opencode.acceptChange`, `opencode.rejectChange`
 - Accept/Reject buttons appear in diff editor toolbar via `when: "isInDiffEditor && opencode.hasActiveReview"`
+- **View container defined in both `activitybar` and `secondarySidebar`** — appears in Secondary Side Bar (right) automatically on supported VS Code versions

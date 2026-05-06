@@ -1,9 +1,19 @@
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: 'user' | 'assistant' | 'system' | 'tool' | 'event';
   content: string;
   timestamp: number;
   id?: string;
   isStreaming?: boolean;
+  eventType?: 'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery';
+  eventStatus?: 'running' | 'completed' | 'failed';
+  eventMeta?: {
+    path?: string;
+    added?: number;
+    deleted?: number;
+    name?: string;
+    args?: any;
+    result?: any;
+  };
 }
 
 export interface GitInfo {
@@ -42,6 +52,21 @@ export interface ProviderListResult {
   default: Record<string, string>;
 }
 
+export interface FileAttachment {
+  type: 'file';
+  name: string;
+  path: string;
+}
+
+export interface ImageAttachment {
+  type: 'image';
+  name: string;
+  data: string;
+  mimeType: string;
+}
+
+export type ContextPart = FileAttachment | ImageAttachment;
+
 export interface WebviewToExtensionMessage {
   type:
     | 'sendMessage'
@@ -50,9 +75,15 @@ export interface WebviewToExtensionMessage {
     | 'clearChat'
     | 'abort'
     | 'getSessions'
+    | 'loadSession'
+    | 'deleteSession'
+    | 'switchAgent'
     | 'listProviders'
     | 'setApiKey'
-    | 'removeApiKey';
+    | 'removeApiKey'
+    | 'searchFiles'
+    | 'getSavedModel'
+    | 'saveModel';
   payload?: any;
 }
 
@@ -65,10 +96,17 @@ export interface ExtensionToWebviewMessage {
     | 'reviewResolved'
     | 'status'
     | 'gitInfo'
+    | 'projectInfo'
     | 'sessionList'
+    | 'sessionLoaded'
+    | 'sessionDeleted'
+    | 'agentList'
     | 'error'
     | 'providerList'
-    | 'providerUpdated';
+    | 'providerUpdated'
+    | 'fileSearchResults'
+    | 'savedModel'
+    | 'toolEvent';
   payload?: any;
 }
 
@@ -79,4 +117,34 @@ export interface ReviewItem {
   filename: string;
   inserts: number;
   deletes: number;
+}
+
+export interface SessionDiffFile {
+  path: string;
+  added: number;
+  deleted: number;
+  content: string;
+}
+
+export interface SessionDiff {
+  sessionID: string;
+  files: SessionDiffFile[];
+}
+
+export interface ProjectInfo {
+  name: string;
+  path: string;
+  agent?: string;
+}
+
+export interface VcsInfo {
+  branch?: string;
+  commit?: string;
+  message?: string;
+  dirty?: boolean;
+}
+
+export interface PathInfo {
+  path: string;
+  project?: string;
 }

@@ -5,7 +5,7 @@ interface Props {
   onChange: (mode: string) => void;
 }
 
-const MODES = ['Build', 'Code', 'Ask', 'Debug'];
+const MODES = ['Build', 'Plan'];
 
 export function ModeSelector({ mode, onChange }: Props) {
   return (

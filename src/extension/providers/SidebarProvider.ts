@@ -13,6 +13,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly _extensionUri: vscode.Uri,
     private readonly _reviewQueue: ReviewQueue,
+    private readonly _context: vscode.ExtensionContext,
   ) {
     this._opencode = new OpencodeCli();
   }
@@ -31,10 +32,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-    // Send git info when webview is ready
-    setTimeout(() => {
-      const gitInfo = getGitInfo();
-      this.postMessage({ type: 'gitInfo', payload: gitInfo });
+    // Send project info when webview is ready
+    setTimeout(async () => {
+      try {
+        await this._opencode.start();
+        const [project, pathInfo, vcsInfo] = await Promise.all([
+          this._opencode.getCurrentProject(),
+          this._opencode.getPath(),
+          this._opencode.getVcsInfo(),
+        ]);
+        this.postMessage({
+          type: 'projectInfo',
+          payload: { project, path: pathInfo, vcs: vcsInfo },
+        });
+      } catch {
+        // Fallback to local git info
+        const gitInfo = getGitInfo();
+        this.postMessage({ type: 'gitInfo', payload: gitInfo });
+      }
     }, 500);
 
     // Start opencode server in background
@@ -53,13 +68,77 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (data) => {
       switch (data.type) {
+        case 'searchFiles': {
+          const { query } = data.payload || {};
+          try {
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders) {
+              this.postMessage({ type: 'fileSearchResults', payload: { query, files: [] } });
+              break;
+            }
+            const pattern = query ? `**/*${query}*` : '**/*';
+            const results = await vscode.workspace.findFiles(pattern, '**/node_modules/**', 30);
+            const root = workspaceFolders[0].uri.fsPath;
+            const files = results
+              .map((uri) => {
+                const relative = uri.fsPath.slice(root.length + 1).replace(/\\/g, '/');
+                return { name: relative.split('/').pop() || '', path: relative };
+              })
+              .filter((f) => !query || f.path.toLowerCase().includes(query.toLowerCase()))
+              .slice(0, 20);
+            this.postMessage({ type: 'fileSearchResults', payload: { query, files } });
+          } catch (err: any) {
+            console.error('[opencode] File search error:', err.message);
+            this.postMessage({ type: 'fileSearchResults', payload: { query, files: [] } });
+          }
+          break;
+        }
+        case 'getSavedModel': {
+          const savedModel = this._context.workspaceState.get<string>('selectedModel');
+          if (savedModel) {
+            this.postMessage({ type: 'savedModel', payload: savedModel });
+          }
+          break;
+        }
+        case 'saveModel': {
+          const { model } = data.payload;
+          await this._context.workspaceState.update('selectedModel', model);
+          break;
+        }
         case 'sendMessage': {
-          const { prompt, model } = data.payload;
+          const { prompt, model, mode, context } = data.payload;
+          const agent = mode === 'Plan' ? 'plan' : 'build';
+          console.log('[opencode] Received sendMessage:', prompt?.slice(0, 50), 'mode:', mode);
 
           // Show user message in chat
+          let userContent = prompt;
+          const extraParts: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
+
+          if (context && Array.isArray(context)) {
+            for (const item of context) {
+              if (item.type === 'file') {
+                const workspaceFolders = vscode.workspace.workspaceFolders;
+                if (workspaceFolders) {
+                  const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, item.path);
+                  try {
+                    const content = await vscode.workspace.fs.readFile(fileUri);
+                    const text = new TextDecoder().decode(content);
+                    extraParts.push({
+                      type: 'text',
+                      text: `File: ${item.path}\n\n${text}\n`,
+                    });
+                  } catch (e: any) {
+                    console.log('[opencode] Failed to read file:', item.path, e.message);
+                    userContent += `\n\n[File not found: ${item.path}]`;
+                  }
+                }
+              }
+            }
+          }
+
           this.postMessage({
             type: 'receiveMessage',
-            payload: { role: 'user', content: prompt },
+            payload: { role: 'user', content: userContent },
           });
 
           try {
@@ -72,6 +151,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               `VS Code - ${prompt.slice(0, 50)}...`,
             );
             currentSessionId = session.id;
+            console.log('[opencode] Session created:', session.id);
+
+            // Show empty assistant message so chunks can be appended
+            this.postMessage({
+              type: 'receiveMessage',
+              payload: { role: 'assistant', content: '' },
+            });
 
             // Send the prompt and handle streaming
             let accumulatedContent = '';
@@ -89,17 +175,54 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               (name, args) => {
                 this.postMessage({
                   type: 'receiveMessage',
-                  payload: { role: 'tool', content: `Running tool: ${name}...` },
+                  payload: { role: 'tool', content: `🔧 ${name} running...` },
                 });
               },
               (error) => {
                 this.postMessage({ type: 'error', payload: { message: error } });
               },
               model,
+              agent,
+              extraParts.length > 0 ? extraParts : undefined,
+              (event) => {
+                this.postMessage({ type: 'toolEvent', payload: event });
+              },
             );
 
             // Notify webview that streaming is complete
             this.postMessage({ type: 'streamEnd', payload: { content: accumulatedContent } });
+
+            // Check for file changes from this session (with retry for server processing delay)
+            try {
+              let diffs: any[] = [];
+              for (let attempt = 0; attempt < 3; attempt++) {
+                await new Promise((r) => setTimeout(r, 1000));
+                diffs = await this._opencode.getSessionDiff(session.id);
+                if (Array.isArray(diffs) && diffs.length > 0) break;
+                console.log(`[opencode] Diff check attempt ${attempt + 1}: no diffs yet`);
+              }
+              console.log('[opencode] Diffs from session:', JSON.stringify(diffs).slice(0, 500));
+              if (Array.isArray(diffs) && diffs.length > 0) {
+                for (const diff of diffs) {
+                  if (diff.path && (diff.added > 0 || diff.deleted > 0)) {
+                    const workspaceFolders = vscode.workspace.workspaceFolders;
+                    if (workspaceFolders && workspaceFolders.length > 0) {
+                      const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, diff.path);
+                      try {
+                        const doc = await vscode.workspace.openTextDocument(fileUri);
+                        await this._reviewQueue.addReview(doc, '', diff.content || '');
+                      } catch (e: any) {
+                        console.log('[opencode] Review file error:', e.message);
+                      }
+                    }
+                  }
+                }
+              } else {
+                console.log('[opencode] No diffs found after 3 attempts');
+              }
+            } catch (e: any) {
+              console.log('[opencode] Diff check error:', e.message);
+            }
           } catch (err: any) {
             const msg = err?.message || err?.toString?.() || 'Bilinmeyen hata';
             console.error('[opencode] sendMessage error:', err);
@@ -184,6 +307,49 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           }
           break;
         }
+        case 'getSessions': {
+          try {
+            const sessions = await this._opencode.listSessions();
+            this.postMessage({ type: 'sessionList', payload: sessions });
+          } catch (err: any) {
+            this.postMessage({
+              type: 'error',
+              payload: { message: `Failed to list sessions: ${err.message}` },
+            });
+          }
+          break;
+        }
+        case 'loadSession': {
+          const { sessionId } = data.payload;
+          try {
+            currentSessionId = sessionId;
+            const messages = await this._opencode.getSessionMessages(sessionId);
+            this.postMessage({ type: 'sessionLoaded', payload: { sessionId, messages } });
+          } catch (err: any) {
+            this.postMessage({
+              type: 'error',
+              payload: { message: `Failed to load session: ${err.message}` },
+            });
+          }
+          break;
+        }
+        case 'deleteSession': {
+          const { sessionId } = data.payload;
+          try {
+            await this._opencode.deleteSession(sessionId);
+            this.postMessage({ type: 'sessionDeleted', payload: { sessionId } });
+          } catch (err: any) {
+            this.postMessage({
+              type: 'error',
+              payload: { message: `Failed to delete session: ${err.message}` },
+            });
+          }
+          break;
+        }
+        case 'switchAgent': {
+          // Agent is sent as part of sendMessage payload, no separate handler needed
+          break;
+        }
       }
     });
   }
@@ -208,7 +374,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       <html lang="en">
       <head>
         <meta charset="UTF-8">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https:; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; connect-src ${webview.cspSource} https:;">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Opencode</title>
         <style>

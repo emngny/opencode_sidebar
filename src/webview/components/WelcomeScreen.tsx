@@ -6,7 +6,7 @@ interface Props {
   lastCommitTime: string;
 }
 
-export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Props) {
+export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Readonly<Props>) {
   return (
     <div
       style={{
@@ -48,7 +48,7 @@ export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Props) {
           textAlign: 'center'
         }}
       >
-        İstediğini yap
+        Just ask anything
       </h1>
 
       {/* Project Path */}
@@ -90,7 +90,7 @@ export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Props) {
           textAlign: 'center'
         }}
       >
-        Son değişiklik {lastCommitTime}
+        Last change {lastCommitTime}
       </div>
     </div>
   );

@@ -15,7 +15,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   const reviewQueue = new ReviewQueue(previewProvider);
 
-  sidebarProvider = new SidebarProvider(context.extensionUri, reviewQueue);
+  sidebarProvider = new SidebarProvider(context.extensionUri, reviewQueue, context);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, sidebarProvider),
   );

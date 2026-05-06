@@ -6,20 +6,26 @@ import { ModelSelector } from './components/ModelSelector';
 import { ModeSelector } from './components/ModeSelector';
 import { ReviewActions } from './components/ReviewActions';
 import { ProviderPopup } from './components/ProviderPopup';
-import { ChatMessage, ExtensionToWebviewMessage, GitInfo, ProviderListResult } from '../extension/types';
+import { SessionListPopup } from './components/SessionListPopup';
+import { ChatMessage, ExtensionToWebviewMessage, GitInfo, ProviderListResult, ContextPart } from '../extension/types';
 import { postMessage, onMessage } from './vscode-api';
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [model, setModel] = useState('kimi-k2.6');
+  const [model, setModel] = useState('');
   const [mode, setMode] = useState('Build');
   const [busy, setBusy] = useState(false);
   const [showProviders, setShowProviders] = useState(false);
+  const [showSessions, setShowSessions] = useState(false);
   const [providerCount, setProviderCount] = useState(0);
   const [connectedCount, setConnectedCount] = useState(0);
-  const [gitInfo, setGitInfo] = useState<GitInfo>({ branch: 'master', lastCommitTime: '55 dakika önce', projectPath: 'C:/Projects/opencode_sidebar' });
+  const [providersLoaded, setProvidersLoaded] = useState(false);
+  const [gitInfo, setGitInfo] = useState<GitInfo>({ branch: 'main', lastCommitTime: 'a minute ago', projectPath: 'C:/Projects/opencode_sidebar' });
   const [review, setReview] = useState<{ filename: string; inserts: number; deletes: number } | null>(null);
   const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string; providerId: string }>>([]);
+  const [hiddenModels, setHiddenModels] = useState<Record<string, boolean>>({});
+  const [fileSearchResults, setFileSearchResults] = useState<Array<{ name: string; path: string }>>([]);
+  const [fileSearchQuery, setFileSearchQuery] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -28,27 +34,56 @@ export default function App() {
         case 'receiveMessage': {
           const newMsg: ChatMessage = { role: msg.payload.role, content: msg.payload.content, timestamp: Date.now(), id: Math.random().toString(36).slice(2) };
           if (msg.payload.role === 'assistant') newMsg.isStreaming = true;
-          setMessages((prev) => [...prev, newMsg]);
+          setMessages((prev) => {
+            const updated = [...prev, newMsg];
+            console.log('[webview] Messages updated, new count:', updated.length);
+            return updated;
+          });
           break;
         }
         case 'receiveChunk': {
           setMessages((prev) => {
-            const lastIdx = prev.length - 1;
-            if (lastIdx < 0) return prev;
-            const last = prev[lastIdx];
-            if (last.role !== 'assistant') return prev;
+            let lastAssistantIdx = -1;
+            for (let i = prev.length - 1; i >= 0; i--) {
+              if (prev[i].role === 'assistant') {
+                lastAssistantIdx = i;
+                break;
+              }
+            }
             const updated = [...prev];
-            updated[lastIdx] = { ...last, content: msg.payload.fullContent || last.content + msg.payload.content, isStreaming: true };
+            if (lastAssistantIdx < 0) {
+              // No assistant message yet - create one (race condition fix)
+              updated.push({
+                role: 'assistant',
+                content: msg.payload.fullContent || msg.payload.content || '',
+                timestamp: Date.now(),
+                id: Math.random().toString(36).slice(2),
+                isStreaming: true,
+              });
+            } else {
+              updated[lastAssistantIdx] = {
+                ...updated[lastAssistantIdx],
+                content: msg.payload.fullContent || updated[lastAssistantIdx].content + (msg.payload.content || ''),
+                isStreaming: true,
+              };
+            }
             return updated;
           });
           break;
         }
         case 'streamEnd': {
           setMessages((prev) => {
-            const lastIdx = prev.length - 1;
-            if (lastIdx < 0) return prev;
+            // Find the last assistant message to mark as not streaming
+            let lastAssistantIdx = -1;
+            for (let i = prev.length - 1; i >= 0; i--) {
+              if (prev[i].role === 'assistant') {
+                lastAssistantIdx = i;
+                break;
+              }
+            }
+            if (lastAssistantIdx < 0) return prev;
             const updated = [...prev];
-            updated[lastIdx] = { ...updated[lastIdx], isStreaming: false };
+            updated[lastAssistantIdx] = { ...updated[lastAssistantIdx], isStreaming: false };
             return updated;
           });
           setBusy(false);
@@ -57,10 +92,70 @@ export default function App() {
         case 'status': setBusy(msg.payload.busy); break;
         case 'reviewReady': setReview(msg.payload); break;
         case 'reviewResolved': setReview(null); break;
+        case 'sessionLoaded': {
+          setMessages([]);
+          const { messages: sessionMessages } = msg.payload;
+          if (Array.isArray(sessionMessages)) {
+            const converted: ChatMessage[] = sessionMessages.map((m: any) => ({
+              role: m.info?.role === 'user' ? 'user' : 'assistant',
+              content: m.parts?.map((p: any) => p.text || p.content || '').join('\n') || m.info?.content || '',
+              timestamp: m.info?.time?.created || Date.now(),
+              id: m.info?.id || Math.random().toString(36).slice(2),
+            }));
+            setMessages(converted);
+          }
+          break;
+        }
         case 'gitInfo': setGitInfo(msg.payload); break;
+        case 'projectInfo': {
+          const { project, path: pathInfo, vcs } = msg.payload;
+          setGitInfo({
+            projectPath: pathInfo?.path || project?.path || gitInfo.projectPath,
+            branch: vcs?.branch || gitInfo.branch,
+            lastCommitTime: vcs?.message || gitInfo.lastCommitTime,
+          });
+          break;
+        }
         case 'error': {
           setMessages((prev) => [...prev, { role: 'assistant', content: `❌ ${msg.payload.message}`, timestamp: Date.now(), id: Math.random().toString(36).slice(2) }]);
           setBusy(false);
+          break;
+        }
+        case 'savedModel': {
+          if (msg.payload) setModel(msg.payload);
+          break;
+        }
+        case 'fileSearchResults': {
+          setFileSearchResults(msg.payload.files || []);
+          setFileSearchQuery(msg.payload.query || '');
+          break;
+        }
+        case 'toolEvent': {
+          const event = msg.payload;
+          const baseId = event.id || '';
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id && m.role === 'event' && m.id.startsWith(baseId) && baseId.length > 0);
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = {
+                ...updated[idx],
+                content: event.content,
+                eventStatus: event.status,
+                eventMeta: event.meta,
+                timestamp: Date.now(),
+              };
+              return updated;
+            }
+            return [...prev, {
+              role: 'event',
+              content: event.content,
+              timestamp: Date.now(),
+              id: `${baseId}_${Date.now()}`,
+              eventType: event.type,
+              eventStatus: event.status,
+              eventMeta: event.meta,
+            }];
+          });
           break;
         }
         case 'providerList': {
@@ -81,7 +176,22 @@ export default function App() {
               }
             }
           }
+          models.sort((a, b) => {
+            const aIsPinned = a.providerId === 'opencode' || a.providerId === 'opencode-go' ? 0 : 1;
+            const bIsPinned = b.providerId === 'opencode' || b.providerId === 'opencode-go' ? 0 : 1;
+            return aIsPinned - bIsPinned;
+          });
+
+          // Auto-select first model if none is selected
+          if (!model) {
+            const visibleModels = models.filter((m) => !hiddenModels[m.id]);
+            if (visibleModels.length > 0) {
+              setModel(visibleModels[0].id);
+            }
+          }
+
           setAvailableModels(models);
+          setProvidersLoaded(true);
           break;
         }
       }
@@ -91,24 +201,41 @@ export default function App() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  useEffect(() => { postMessage({ type: 'listProviders' }); }, []);
+  useEffect(() => { postMessage({ type: 'listProviders' }); postMessage({ type: 'getSavedModel' }); }, []);
 
+  // Save model when it changes
   useEffect(() => {
-    if (availableModels.length > 0) {
-      const currentInList = availableModels.find((m) => m.id === model);
-      if (!currentInList) {
-        setModel(availableModels[0].id);
-      }
+    if (model) {
+      postMessage({ type: 'saveModel', payload: { model } });
     }
-  }, [availableModels]);
+  }, [model]);
 
-  const handleSend = (prompt: string) => {
+  const handleSend = (prompt: string, context?: ContextPart[]) => {
+    console.log('[webview] Sending prompt:', prompt, 'context:', context?.length || 0, 'items');
     setBusy(true);
-    postMessage({ type: 'sendMessage', payload: { prompt, model } });
+    postMessage({ type: 'sendMessage', payload: { prompt, model, mode, context } });
   };
   const handleAccept = () => { postMessage({ type: 'acceptReview' }); setReview(null); };
   const handleReject = () => { postMessage({ type: 'rejectReview' }); setReview(null); };
+  const toggleModelVisibility = (modelId: string) => { setHiddenModels((prev) => ({ ...prev, [modelId]: !prev[modelId] })); };
+  const handleToggleAllModels = (providerId: string, show: boolean) => {
+    setHiddenModels((prev) => {
+      const next = { ...prev };
+      for (const model of availableModels) {
+        if (model.providerId === providerId) {
+          if (show) delete next[model.id];
+          else next[model.id] = true;
+        }
+      }
+      return next;
+    });
+  };
   const handleAbort = () => { postMessage({ type: 'abort' }); setBusy(false); };
+  const handleLoadSession = (sessionId: string) => {
+    setMessages([]);
+    setShowSessions(false);
+    postMessage({ type: 'loadSession', payload: { sessionId } });
+  };
   const showWelcome = messages.length === 0;
 
   return (
@@ -145,11 +272,43 @@ export default function App() {
 
       {/* Bottom Bar: Input + Bottom Row */}
       <div>
-        <BottomInput onSend={handleSend} disabled={busy} />
+        <BottomInput
+          onSend={handleSend}
+          disabled={busy}
+          onSearchFiles={(query) => postMessage({ type: 'searchFiles', payload: { query } })}
+          fileSearchResults={fileSearchResults}
+          fileSearchQuery={fileSearchQuery}
+        />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px 12px', backgroundColor: '#181825', borderTop: '1px solid #313244' }}>
           <ModeSelector mode={mode} onChange={setMode} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <ModelSelector model={model} onChange={setModel} availableModels={availableModels} />
+           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              onClick={() => setShowSessions(true)}
+              style={{
+                backgroundColor: 'transparent',
+                border: 'none',
+                color: '#585b70',
+                cursor: 'pointer',
+                padding: 4,
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#cdd6f4')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = '#585b70')}
+              title="Session History"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </button>
+            {providersLoaded ? (
+              <ModelSelector model={model} onChange={setModel} availableModels={availableModels.filter(m => !hiddenModels[m.id])} />
+            ) : (
+              <span style={{ fontSize: 11, color: '#585b70', padding: '4px 8px' }}>Loading...</span>
+            )}
             <button
               onClick={() => setShowProviders(true)}
               style={{
@@ -166,7 +325,7 @@ export default function App() {
               }}
               onMouseEnter={(e) => (e.currentTarget.style.color = '#cdd6f4')}
               onMouseLeave={(e) => (e.currentTarget.style.color = showProviders ? '#89b4fa' : '#585b70')}
-              title="Sağlayıcı Ayarları"
+              title="Provider Settings"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
@@ -182,6 +341,18 @@ export default function App() {
         <ProviderPopup
           onClose={() => { setShowProviders(false); postMessage({ type: 'listProviders' }); }}
           onModelSelect={(providerId, modelId) => { setModel(`${providerId}/${modelId}`); setShowProviders(false); }}
+          availableModels={availableModels}
+          hiddenModels={hiddenModels}
+          onToggleModel={toggleModelVisibility}
+          onToggleAllModels={handleToggleAllModels}
+        />
+      )}
+
+      {/* Session List Popup */}
+      {showSessions && (
+        <SessionListPopup
+          onClose={() => setShowSessions(false)}
+          onSelect={handleLoadSession}
         />
       )}
     </div>

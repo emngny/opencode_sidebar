@@ -4,3 +4,6 @@ out/
 .esbuild/
 *.vsix
 .vscode/
+AGENTS.md
+SKILL.md
+AGENTS.md
