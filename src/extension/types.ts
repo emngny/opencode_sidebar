@@ -21,6 +21,7 @@ export interface ChatMessage {
     permSessionId?: string;
     patterns?: string[];
     permType?: string;
+    content?: string;
   };
   agent?: string;
   modelId?: string;
