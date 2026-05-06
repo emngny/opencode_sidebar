@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { ProviderListResult } from '../types';
 
 interface NormalizedDiff {
@@ -82,7 +83,7 @@ export class OpencodeCli {
   async start(): Promise<void> {
     if (this.server) return;
 
-    const password = 'oc-vsc-' + Math.random().toString(36).slice(2, 14);
+    const password = 'oc-vsc-' + randomBytes(12).toString('hex');
 
     return new Promise((resolve, reject) => {
       const proc = spawn(this.binaryPath, ['serve', '--port', '0'], {
