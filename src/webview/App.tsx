@@ -6,7 +6,7 @@ import { ModelSelector } from './components/ModelSelector';
 import { ModeSelector } from './components/ModeSelector';
 import { ProviderPopup } from './components/ProviderPopup';
 import { SessionListPopup } from './components/SessionListPopup';
-import { ChatMessage, ExtensionToWebviewMessage, GitInfo, ProviderListResult, ContextPart } from '../extension/types';
+import { ChatMessage, ExtensionToWebviewMessage, GitInfo, ProviderListResult, ContextPart, SavedModelPayload } from '../extension/types';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { postMessage, onMessage } from './vscode-api';
 import { CommandItem } from './slashCommands';
@@ -94,7 +94,7 @@ export default function App() {
           setBusy(false);
           break;
         }
-        case 'status': setBusy(msg.payload.busy); break;
+        case 'status': setBusy(msg.payload.status === 'running'); break;
         case 'sessionLoaded': {
           setMessages([]);
           const { messages: sessionMessages } = msg.payload;
@@ -111,7 +111,10 @@ export default function App() {
         }
         case 'gitInfo': setGitInfo(msg.payload); break;
         case 'projectInfo': {
-          const { project, path: pathInfo, vcs } = msg.payload;
+          const payload = msg.payload as { project?: any; path?: any; vcs?: any };
+          const pathInfo = payload?.path;
+          const project = payload?.project;
+          const vcs = payload?.vcs;
           setGitInfo({
             projectPath: pathInfo?.path || project?.path || gitInfo.projectPath,
             branch: vcs?.branch || gitInfo.branch,
@@ -125,7 +128,11 @@ export default function App() {
           break;
         }
         case 'savedModel': {
-          if (msg.payload) setModel(msg.payload);
+          if (msg.payload) {
+            const payload = msg.payload;
+            const modelStr = typeof payload === 'string' ? payload : (payload as SavedModelPayload).model;
+            if (modelStr) setModel(modelStr);
+          }
           break;
         }
         case 'fileSearchResults': {
@@ -135,16 +142,17 @@ export default function App() {
         }
         case 'toolEvent': {
           const event = msg.payload;
+          const eventId = event.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2)}`;
           const isContextTool = ['read', 'glob', 'grep', 'list', 'webfetch', 'websearch', 'search'].includes(event.name);
           if (isContextTool) {
             setContextEvents((prev) => {
-              const idx = prev.findIndex((e) => e.id === event.id);
+              const idx = prev.findIndex((e) => e.id === eventId);
               if (idx >= 0) {
                 const updated = [...prev];
-                updated[idx] = { ...updated[idx], status: event.status, content: event.content, meta: event.meta };
+                updated[idx] = { ...updated[idx], status: event.status, content: event.content || '', meta: event.meta };
                 return updated;
               }
-              return [...prev, { id: event.id, name: event.name, status: event.status, content: event.content, meta: event.meta }];
+              return [...prev, { id: eventId, name: event.name, status: event.status, content: event.content || '', meta: event.meta }];
             });
           } else {
             setContextEvents([]); // clear context group when non-context event arrives
@@ -159,12 +167,12 @@ export default function App() {
               
               if (idx >= 0) {
                 const updated = [...prev];
-                updated[idx] = { ...updated[idx], content: event.content, eventStatus: event.status, eventMeta: event.meta, timestamp: Date.now() };
+                updated[idx] = { ...updated[idx], content: event.content || '', eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta, timestamp: Date.now() };
                 return updated;
               }
               // Use baseId as the primary ID if provided, to ensure updates find it
               const msgId = baseId ? `${baseId}_${Date.now()}` : `event_${Date.now()}`;
-              return [...prev, { role: 'event', content: event.content, timestamp: Date.now(), id: msgId, eventType: event.type, eventStatus: event.status, eventMeta: event.meta }];
+              return [...prev, { role: 'event', content: event.content || '', timestamp: Date.now(), id: msgId, eventType: event.type as ChatMessage['eventType'], eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta }];
             });
           }
           break;
@@ -259,7 +267,7 @@ export default function App() {
           break;
         }
         case 'readFilePrompt': {
-          setReadPermissionPrompt({ filePath: msg.payload.filePath, reason: msg.payload.reason, requestId: msg.payload.requestId });
+          setReadPermissionPrompt({ filePath: msg.payload.filePath, reason: msg.payload.reason || '', requestId: msg.payload.requestId || '' });
           break;
         }
       }
@@ -358,10 +366,10 @@ export default function App() {
     }
   };
 
-  const handleRespondPermission = (permId: string, permSessionId: string, response: string, remember?: boolean) => {
+  const handleRespondPermission = (permId: string, permSessionId: string, response: 'allow' | 'deny', remember?: boolean) => {
     postMessage({ type: 'respondPermission', payload: { permId, permSessionId, response, remember } });
   };
-  const handleRespondReadPermission = (response: string, remember?: boolean) => {
+  const handleRespondReadPermission = (response: 'allow' | 'deny', remember?: boolean) => {
     if (!readPermissionPrompt) return;
     postMessage({ type: 'respondReadPermission', payload: { filePath: readPermissionPrompt.filePath, response, remember } });
     setReadPermissionPrompt(null);
@@ -522,7 +530,7 @@ export default function App() {
               {readPermissionPrompt.reason}
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => handleRespondReadPermission('reject')} style={{
+              <button onClick={() => handleRespondReadPermission('deny')} style={{
                 padding: '6px 14px', borderRadius: 6, border: '1px solid #45475a',
                 backgroundColor: 'transparent', color: '#cdd6f4', cursor: 'pointer', fontSize: 12,
               }}>Deny</button>

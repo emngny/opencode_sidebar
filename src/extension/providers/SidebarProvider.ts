@@ -3,9 +3,12 @@ import * as path from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { OpencodeCli } from '../services/OpencodeCli';
 import { getNonce } from '../utils';
-import { ExtensionToWebviewMessage } from '../types';
+import { ExtensionToWebviewMessage, ChatMessage } from '../types';
 import { getGitInfo } from '../services/GitInfo';
-import { isReadDenied, READ_DENY_PATTERNS } from '../services/readPatterns';
+import { isReadDenied } from '../services/readPatterns';
+import { SessionService } from '../services/SessionService';
+import { PermissionService } from '../services/PermissionService';
+import { AuthService } from '../services/AuthService';
 
 const MODE_TO_AGENT: Record<string, string> = {
   'Build': 'build',
@@ -21,7 +24,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'opencode.sidebar';
   private _view?: vscode.WebviewView;
   private readonly _opencode: OpencodeCli;
-  private _currentSessionId: string | null = null;
+  private readonly _sessions: SessionService;
+  private readonly _permissions: PermissionService;
+  private readonly _auth: AuthService;
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -29,6 +34,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   ) {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     this._opencode = new OpencodeCli(workspaceFolder);
+    this._sessions = new SessionService(this._opencode);
+    this._permissions = new PermissionService();
+    this._auth = new AuthService(this._opencode, _context);
   }
 
   resolveWebviewView(
@@ -45,7 +53,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-    // Send project info when webview is ready
     setTimeout(async () => {
       try {
         await this._opencode.start();
@@ -59,15 +66,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           payload: { project, path: pathInfo, vcs: vcsInfo },
         });
       } catch {
-        // Fallback to local git info
         const gitInfo = getGitInfo();
         this.postMessage({ type: 'gitInfo', payload: gitInfo });
       }
     }, 500);
 
-    // Start opencode server in background
     this._opencode.start().then(() => {
-      this._restoreApiKeys();
+      this._auth.restoreApiKeys();
     }).catch((err) => {
       console.error('Opencode server start failed:', err);
       this.postMessage({
@@ -79,9 +84,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       });
     });
 
-    const readAllowCache = new Map<string, string>(); // pattern → filePath
-    const pendingReadPermResolvers = new Map<string, (response: { allowed: boolean; remember?: boolean }) => void>();
-
     webviewView.webview.onDidReceiveMessage(async (data) => {
       const validTypes = ['sendMessage','clearChat','abort','listProviders','setApiKey','removeApiKey','getSessions','loadSession','deleteSession','switchAgent','searchFiles','getSavedModel','saveModel','revertMessage','unrevert','respondPermission','respondReadPermission','openDiff','runCommand','loadSkills'];
       if (!data || typeof data !== 'object' || !validTypes.includes(data.type)) {
@@ -89,416 +91,63 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         return;
       }
       switch (data.type) {
-        case 'searchFiles': {
-          const { query } = data.payload || {};
-          try {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders) {
-              this.postMessage({ type: 'fileSearchResults', payload: { query, files: [] } });
-              break;
-            }
-            const pattern = query ? `**/*${query}*` : '**/*';
-            const results = await vscode.workspace.findFiles(pattern, '**/node_modules/**', 30);
-            const root = workspaceFolders[0].uri.fsPath;
-            const files = results
-              .map((uri) => {
-                const relative = uri.fsPath.slice(root.length + 1).replaceAll('\\', '/');
-                return { name: relative.split('/').pop() || '', path: relative };
-              })
-              .filter((f) => !query || f.path.toLowerCase().includes(query.toLowerCase()))
-              .slice(0, 20);
-            this.postMessage({ type: 'fileSearchResults', payload: { query, files } });
-          } catch (err: any) {
-            console.error('[opencode] File search error:', err.message);
-            this.postMessage({ type: 'fileSearchResults', payload: { query, files: [] } });
-          }
+        case 'searchFiles':
+          await this._handleSearchFiles(data.payload);
           break;
-        }
-        case 'getSavedModel': {
-          const savedModel = this._context.workspaceState.get<string>('selectedModel');
-          if (savedModel) {
-            this.postMessage({ type: 'savedModel', payload: savedModel });
-          }
+        case 'getSavedModel':
+          await this._handleGetSavedModel();
           break;
-        }
-        case 'saveModel': {
-          const { model } = data.payload;
-          await this._context.workspaceState.update('selectedModel', model);
+        case 'saveModel':
+          await this._handleSaveModel(data.payload);
           break;
-        }
-        case 'revertMessage': {
-          const { messageId } = data.payload || {};
-          if (!this._currentSessionId || !messageId) break;
-          try {
-            const result = await this._opencode.revertSession(this._currentSessionId, messageId);
-            const messages = await this._opencode.getSessionMessages(this._currentSessionId);
-            this.postMessage({ type: 'revertResult', payload: { result, messages, reverted: true } });
-          } catch (err: any) {
-            this.postMessage({ type: 'error', payload: { message: `Revert failed: ${err.message}` } });
-          }
+        case 'revertMessage':
+          await this._handleRevertMessage(data.payload);
           break;
-        }
-        case 'unrevert': {
-          if (!this._currentSessionId) break;
-          try {
-            const result = await this._opencode.unrevertSession(this._currentSessionId);
-            const messages = await this._opencode.getSessionMessages(this._currentSessionId);
-            this.postMessage({ type: 'revertResult', payload: { result, messages, reverted: false } });
-          } catch (err: any) {
-            this.postMessage({ type: 'error', payload: { message: `Unrevert failed: ${err.message}` } });
-          }
+        case 'unrevert':
+          await this._handleUnrevert();
           break;
-        }
-        case 'respondPermission': {
-          const { permId, permSessionId, response, remember } = data.payload;
-          try {
-            const success = await this._opencode.respondPermission(permSessionId, permId, response, remember);
-            if (success) {
-              this.postMessage({ type: 'toolEvent', payload: { id: permId, type: 'permission', name: 'permission', status: 'completed', content: `Permission ${response}`, meta: { permId, permSessionId, response } } });
-            } else {
-              this.postMessage({ type: 'error', payload: { message: `Failed to respond to permission request${permId ? ' (' + permId + ')' : ''}` } });
-            }
-          } catch (err: any) {
-            console.error('[opencode] Failed to respond permission:', err.message);
-            this.postMessage({ type: 'error', payload: { message: `Permission response failed: ${err.message}` } });
-          }
+        case 'respondPermission':
+          await this._handleRespondPermission(data.payload);
           break;
-        }
-        case 'respondReadPermission': {
-          const { filePath, response, remember } = data.payload;
-          const resolver = pendingReadPermResolvers.get(filePath);
-          if (resolver) {
-            if (response === 'allow' && remember) {
-              const pattern = isReadDenied(filePath);
-              if (pattern) readAllowCache.set(pattern, filePath);
-            }
-            resolver({ allowed: response === 'allow', remember });
-            pendingReadPermResolvers.delete(filePath);
-          }
+        case 'respondReadPermission':
+          await this._handleRespondReadPermission(data.payload);
           break;
-        }
-        case 'loadSkills': {
-          const skills = this._loadSkills();
-          this.postMessage({ type: 'skillList', payload: { skills } });
+        case 'loadSkills':
+          this._handleLoadSkills();
           break;
-        }
-        case 'runCommand': {
-          const { command, args, isSkill } = data.payload;
-          if (command === 'init') {
-            this._handleInitCommand();
-            this.postMessage({ type: 'receiveMessage', payload: { role: 'system', content: `✅ AGENTS.md created in workspace root. You can now customize it for your project.` } });
-          } else if (command === 'review') {
-            this._handleReviewCommand(args || '');
-          } else if (isSkill) {
-            const skillContent = this._loadSkillContent(command);
-            if (skillContent) {
-              const prompt = args ? `${skillContent}\n\n${args}` : skillContent;
-              this._processPrompt(prompt, 'build');
-            } else {
-              this.postMessage({ type: 'error', payload: { message: `Skill "${command}" not found` } });
-            }
-          }
+        case 'runCommand':
+          await this._handleRunCommand(data.payload);
           break;
-        }
-        case 'sendMessage': {
-          const { prompt, model, mode, context } = data.payload;
-          const agent = MODE_TO_AGENT[mode] || 'build';
-          console.log('[opencode] Received sendMessage:', prompt?.slice(0, 50), 'mode:', mode);
-
-          // Show user message in chat
-          let userContent = prompt;
-          const extraParts: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
-
-          if (context && Array.isArray(context)) {
-            for (const item of context) {
-              if (item.type === 'file') {
-                const workspaceFolders = vscode.workspace.workspaceFolders;
-                if (workspaceFolders) {
-                  const filePath = item.path;
-                  // Check read permission
-                  let allowed = true;
-                  const deniedPattern = isReadDenied(filePath);
-                  if (deniedPattern) {
-                    if (readAllowCache.has(deniedPattern)) {
-                      allowed = true;
-                    } else {
-                      allowed = await new Promise<boolean>((resolve) => {
-                        const reqId = `${filePath}_${Date.now()}`;
-                        pendingReadPermResolvers.set(filePath, (resp) => resolve(resp.allowed));
-                        this.postMessage({
-                          type: 'readFilePrompt',
-                          payload: { filePath, reason: `Matches deny pattern: ${deniedPattern}`, requestId: reqId },
-                        });
-                      });
-                    }
-                  }
-                  if (allowed) {
-                    const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filePath);
-                    try {
-                      const content = await vscode.workspace.fs.readFile(fileUri);
-                      const text = new TextDecoder().decode(content);
-                      extraParts.push({
-                        type: 'text',
-                        text: `File: ${filePath}\n\n${text}\n`,
-                      });
-                      this.postMessage({
-                        type: 'toolEvent',
-                        payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'completed', content: `Read: ${filePath}`, meta: { path: filePath } },
-                      });
-                    } catch (e: any) {
-                      console.log('[opencode] Failed to read file:', filePath, e.message);
-                      userContent += `\n\n[File not found: ${filePath}]`;
-                    }
-                  } else {
-                    userContent += `\n\n[Skipped: ${filePath} — read denied by pattern]`;
-                    this.postMessage({
-                      type: 'toolEvent',
-                      payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'failed', content: `Read denied: ${filePath}`, meta: { path: filePath, error: 'Permission denied' } },
-                    });
-                  }
-                }
-              }
-            }
-          }
-
-          this.postMessage({
-            type: 'receiveMessage',
-            payload: { role: 'user', content: userContent },
-          });
-
-          try {
-            if (!this._opencode.isRunning) {
-              await this._opencode.start();
-            }
-
-            // Reuse existing session if available, otherwise create a new one
-            if (this._currentSessionId) {
-              console.log('[opencode] Reusing session:', this._currentSessionId);
-            } else {
-              const session = await this._opencode.createSession(
-                `VS Code - ${prompt.slice(0, 50)}...`,
-              );
-              this._currentSessionId = session.id;
-              console.log('[opencode] Session created:', session.id);
-            }
-            const sessionId = this._currentSessionId;
-
-            // Show empty assistant message so chunks can be appended
-            this.postMessage({
-              type: 'receiveMessage',
-              payload: { role: 'assistant', content: '' },
-            });
-
-            // Send the prompt and handle streaming
-            let accumulatedContent = '';
-            let eventDiffs: Array<{ path: string; added: number; deleted: number; content: string }> = [];
-
-            await this._opencode.sendPrompt(
-              sessionId,
-              prompt,
-              (text) => {
-                accumulatedContent += text;
-                this.postMessage({
-                  type: 'receiveChunk',
-                  payload: { content: text, fullContent: accumulatedContent },
-                });
-              },
-              (name, args) => {
-                this.postMessage({
-                  type: 'receiveMessage',
-                  payload: { role: 'tool', content: `🔧 ${name} running...` },
-                });
-              },
-              (error) => {
-                this.postMessage({ type: 'error', payload: { message: error } });
-              },
-              model,
-              agent,
-              extraParts.length > 0 ? extraParts : undefined,
-              (event) => {
-                this.postMessage({ type: 'toolEvent', payload: event });
-              },
-              (meta) => {
-                this.postMessage({ type: 'messageMeta', payload: meta });
-              },
-              (reasoning) => {
-                this.postMessage({ type: 'reasoningContent', payload: reasoning });
-              },
-              (diffs) => {
-                eventDiffs = diffs;
-              },
-            );
-
-            // Notify webview that streaming is complete
-            this.postMessage({ type: 'streamEnd', payload: { content: accumulatedContent } });
-
-            // Wait for diffs from SSE stream (they arrive after idle via session.diff / message.updated)
-            if (eventDiffs.length === 0) {
-              await new Promise<void>((resolve) => {
-                const check = setInterval(() => {
-                  if (eventDiffs.length > 0) {
-                    clearInterval(check); clearTimeout(timer); resolve();
-                  }
-                }, 300);
-                const timer = setTimeout(() => { clearInterval(check); resolve(); }, 10000);
-              });
-            }
-
-            // Process diffs — send file_edit events to webview so user can click to open files
-            const diffs = eventDiffs.length > 0 ? eventDiffs : await this._pollDiffs(sessionId);
-            console.log('[opencode] Diffs to review:', JSON.stringify(diffs).slice(0, 500));
-            if (Array.isArray(diffs) && diffs.length > 0) {
-              for (const diff of diffs) {
-                if (diff.path && (diff.added > 0 || diff.deleted > 0)) {
-                  this.postMessage({
-                    type: 'toolEvent',
-                    payload: {
-                      id: `file_edit_${diff.path}_${Date.now()}`,
-                      type: 'file_edit',
-                      name: 'file_edit',
-                      status: 'completed',
-                      content: diff.path,
-                      meta: {
-                        path: diff.path,
-                        added: diff.added,
-                        deleted: diff.deleted,
-                        content: diff.content,
-                      },
-                    },
-                  });
-                }
-              }
-            } else {
-              console.log('[opencode] No diffs found');
-            }
-          } catch (err: any) {
-            const msg = err?.message || err?.toString?.() || 'Unknown error';
-            console.error('[opencode] sendMessage error:', err);
-            this.postMessage({
-              type: 'error',
-              payload: { message: msg },
-            });
-            this.postMessage({ type: 'streamEnd', payload: { content: '' } });
-          }
+        case 'sendMessage':
+          await this._handleSendMessage(data.payload);
           break;
-        }
-
-        case 'openDiff': {
-          const { filePath } = data.payload;
-          if (filePath && vscode.workspace.workspaceFolders) {
-            try {
-              const fileUri = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, filePath);
-              const doc = await vscode.workspace.openTextDocument(fileUri);
-              await vscode.window.showTextDocument(doc);
-            } catch (e: any) {
-              console.error('[opencode] Open diff error:', e.message);
-            }
-          }
+        case 'openDiff':
+          await this._handleOpenDiff(data.payload);
           break;
-        }
         case 'clearChat':
-        case 'abort': {
-          if (this._currentSessionId) {
-            this._opencode.abortSession(this._currentSessionId).catch(() => {});
-            this._currentSessionId = null;
-          }
+        case 'abort':
+          this._sessions.abort();
           break;
-        }
-        case 'listProviders': {
-          try {
-            const result = await this._opencode.listProviders();
-            this.postMessage({ type: 'providerList', payload: result });
-          } catch (err: any) {
-            this.postMessage({
-              type: 'error',
-              payload: { message: `Failed to list providers: ${err.message}` },
-            });
-          }
+        case 'listProviders':
+          await this._handleListProviders();
           break;
-        }
-        case 'setApiKey': {
-          const { providerId, key } = data.payload;
-          try {
-            const success = await this._opencode.setAuth(providerId, key);
-            if (success) {
-              // Store in VS Code SecretStorage for secure persistence
-              await this._context.secrets.store(`opencode-key-${providerId}`, key);
-              const result = await this._opencode.listProviders();
-              this.postMessage({ type: 'providerUpdated', payload: { providerId, success: true } });
-              this.postMessage({ type: 'providerList', payload: result });
-            } else {
-              this.postMessage({
-                type: 'providerUpdated',
-                payload: { providerId, success: false, error: 'Failed to save API key' },
-              });
-            }
-          } catch (err: any) {
-            this.postMessage({
-              type: 'providerUpdated',
-              payload: { providerId, success: false, error: err.message },
-            });
-          }
+        case 'setApiKey':
+          await this._handleSetApiKey(data.payload);
           break;
-        }
-        case 'removeApiKey': {
-          const { providerId } = data.payload;
-          try {
-            await this._opencode.removeAuth(providerId);
-            await this._context.secrets.delete(`opencode-key-${providerId}`);
-            const result = await this._opencode.listProviders();
-            this.postMessage({ type: 'providerUpdated', payload: { providerId, success: true, removed: true } });
-            this.postMessage({ type: 'providerList', payload: result });
-          } catch (err: any) {
-            this.postMessage({
-              type: 'providerUpdated',
-              payload: { providerId, success: false, error: err.message },
-            });
-          }
+        case 'removeApiKey':
+          await this._handleRemoveApiKey(data.payload);
           break;
-        }
-        case 'getSessions': {
-          try {
-            const sessions = await this._opencode.listSessions();
-            this.postMessage({ type: 'sessionList', payload: sessions });
-          } catch (err: any) {
-            this.postMessage({
-              type: 'error',
-              payload: { message: `Failed to list sessions: ${err.message}` },
-            });
-          }
+        case 'getSessions':
+          await this._handleGetSessions();
           break;
-        }
-        case 'loadSession': {
-          const { sessionId } = data.payload;
-          try {
-            this._currentSessionId = sessionId;
-            const messages = await this._opencode.getSessionMessages(sessionId);
-            this.postMessage({ type: 'sessionLoaded', payload: { sessionId, messages } });
-          } catch (err: any) {
-            this.postMessage({
-              type: 'error',
-              payload: { message: `Failed to load session: ${err.message}` },
-            });
-          }
+        case 'loadSession':
+          await this._handleLoadSession(data.payload);
           break;
-        }
-        case 'deleteSession': {
-          const { sessionId } = data.payload;
-          try {
-            await this._opencode.deleteSession(sessionId);
-            this.postMessage({ type: 'sessionDeleted', payload: { sessionId } });
-          } catch (err: any) {
-            this.postMessage({
-              type: 'error',
-              payload: { message: `Failed to delete session: ${err.message}` },
-            });
-          }
+        case 'deleteSession':
+          await this._handleDeleteSession(data.payload);
           break;
-        }
-        case 'switchAgent': {
-          // Agent is sent as part of sendMessage payload, no separate handler needed
+        case 'switchAgent':
           break;
-        }
       }
     });
   }
@@ -509,18 +158,300 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async _restoreApiKeys(): Promise<void> {
+  private async _handleSearchFiles(payload: any): Promise<void> {
+    const { query } = payload || {};
     try {
-      const authData = await this._opencode.getProviderAuth();
-      for (const [providerId] of Object.entries(authData)) {
-        const stored = await this._context.secrets.get(`opencode-key-${providerId}`);
-        if (stored) {
-          await this._opencode.setAuth(providerId, stored);
-          console.log(`[opencode] Restored API key for ${providerId} from SecretStorage`);
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      if (!workspaceFolders) {
+        this.postMessage({ type: 'fileSearchResults', payload: { query, files: [] } });
+        return;
+      }
+      const pattern = query ? `**/*${query}*` : '**/*';
+      const results = await vscode.workspace.findFiles(pattern, '**/node_modules/**', 30);
+      const root = workspaceFolders[0].uri.fsPath;
+      const files = results
+        .map((uri) => {
+          const relative = uri.fsPath.slice(root.length + 1).replaceAll('\\', '/');
+          return { name: relative.split('/').pop() || '', path: relative };
+        })
+        .filter((f) => !query || f.path.toLowerCase().includes(query.toLowerCase()))
+        .slice(0, 20);
+      this.postMessage({ type: 'fileSearchResults', payload: { query, files } });
+    } catch (err: any) {
+      console.error('[opencode] File search error:', err.message);
+      this.postMessage({ type: 'fileSearchResults', payload: { query, files: [] } });
+    }
+  }
+
+  private async _handleGetSavedModel(): Promise<void> {
+    const savedModel = this._context.workspaceState.get<string>('selectedModel');
+    if (savedModel) {
+      this.postMessage({ type: 'savedModel', payload: savedModel });
+    }
+  }
+
+  private async _handleSaveModel(payload: any): Promise<void> {
+    const { model } = payload;
+    await this._context.workspaceState.update('selectedModel', model);
+  }
+
+  private async _handleRevertMessage(payload: any): Promise<void> {
+    const { messageId } = payload || {};
+    try {
+      const { result, messages } = await this._sessions.revert(messageId);
+      this.postMessage({ type: 'revertResult', payload: { result, messages, reverted: true } });
+    } catch (err: any) {
+      this.postMessage({ type: 'error', payload: { message: `Revert failed: ${err.message}` } });
+    }
+  }
+
+  private async _handleUnrevert(): Promise<void> {
+    try {
+      const { result, messages } = await this._sessions.unrevert();
+      this.postMessage({ type: 'revertResult', payload: { result, messages, reverted: false } });
+    } catch (err: any) {
+      this.postMessage({ type: 'error', payload: { message: `Unrevert failed: ${err.message}` } });
+    }
+  }
+
+  private async _handleRespondPermission(payload: any): Promise<void> {
+    const { permId, permSessionId, response, remember } = payload;
+    try {
+      const success = await this._opencode.respondPermission(permSessionId, permId, response, remember);
+      if (success) {
+        this.postMessage({ type: 'toolEvent', payload: { id: permId, type: 'permission', name: 'permission', status: 'completed', content: `Permission ${response}`, meta: { permId, permSessionId, response } } });
+      } else {
+        this.postMessage({ type: 'error', payload: { message: `Failed to respond to permission request${permId ? ' (' + permId + ')' : ''}` } });
+      }
+    } catch (err: any) {
+      console.error('[opencode] Failed to respond permission:', err.message);
+      this.postMessage({ type: 'error', payload: { message: `Permission response failed: ${err.message}` } });
+    }
+  }
+
+  private async _handleRespondReadPermission(payload: any): Promise<void> {
+    const { filePath, response, remember } = payload;
+    this._permissions.grantReadPermission(filePath, response, remember);
+  }
+
+  private _handleLoadSkills(): void {
+    const skills = this._loadSkills();
+    this.postMessage({ type: 'skillList', payload: { skills } });
+  }
+
+  private async _handleRunCommand(payload: any): Promise<void> {
+    const { command, args, isSkill } = payload;
+    if (command === 'init') {
+      this._handleInitCommand();
+      this.postMessage({ type: 'receiveMessage', payload: { role: 'system', content: '✅ AGENTS.md created in workspace root. You can now customize it for your project.' } });
+    } else if (command === 'review') {
+      this._handleReviewCommand(args || '');
+    } else if (isSkill) {
+      const skillContent = this._loadSkillContent(command);
+      if (skillContent) {
+        const prompt = args ? `${skillContent}\n\n${args}` : skillContent;
+        this._processPrompt(prompt, 'build');
+      } else {
+        this.postMessage({ type: 'error', payload: { message: `Skill "${command}" not found` } });
+      }
+    }
+  }
+
+  private async _handleSendMessage(payload: any): Promise<void> {
+    const { prompt, model, mode, context } = payload;
+    const agent = MODE_TO_AGENT[mode] || 'build';
+
+    let userContent = prompt;
+    const extraParts: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
+
+    if (context && Array.isArray(context)) {
+      for (const item of context) {
+        if (item.type === 'file') {
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          if (workspaceFolders) {
+            const filePath = item.path;
+            const { allowed, deniedPattern } = this._permissions.isReadAllowed(filePath);
+            if (!allowed && deniedPattern) {
+              const reqId = `${filePath}_${Date.now()}`;
+              this.postMessage({
+                type: 'readFilePrompt',
+                payload: { filePath, reason: `Matches deny pattern: ${deniedPattern}`, requestId: reqId },
+              });
+              const userAllowed = await this._permissions.waitForReadPermission(filePath);
+              if (!userAllowed) {
+                userContent += `\n\n[Skipped: ${filePath} — read denied by pattern]`;
+                this.postMessage({
+                  type: 'toolEvent',
+                  payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'failed', content: `Read denied: ${filePath}`, meta: { path: filePath, error: 'Permission denied' } },
+                });
+                continue;
+              }
+            }
+            const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filePath);
+            try {
+              const content = await vscode.workspace.fs.readFile(fileUri);
+              const text = new TextDecoder().decode(content);
+              extraParts.push({ type: 'text', text: `File: ${filePath}\n\n${text}\n` });
+              this.postMessage({
+                type: 'toolEvent',
+                payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'completed', content: `Read: ${filePath}`, meta: { path: filePath } },
+              });
+            } catch (e: any) {
+              userContent += `\n\n[File not found: ${filePath}]`;
+            }
+          }
         }
       }
-    } catch {
-      // No keys to restore or auth not supported — not an error
+    }
+
+    this.postMessage({ type: 'receiveMessage', payload: { role: 'user', content: userContent } });
+
+    try {
+      if (!this._opencode.isRunning) {
+        await this._opencode.start();
+      }
+
+      const sessionId = await this._sessions.ensureSession(prompt);
+
+      this.postMessage({ type: 'receiveMessage', payload: { role: 'assistant', content: '' } });
+
+      let accumulatedContent = '';
+      let eventDiffs: Array<{ path: string; added: number; deleted: number; content: string }> = [];
+
+      await this._opencode.sendPrompt(
+        sessionId,
+        prompt,
+        (text) => {
+          accumulatedContent += text;
+          this.postMessage({ type: 'receiveChunk', payload: { content: text, fullContent: accumulatedContent } });
+        },
+        (name, args) => {
+          this.postMessage({ type: 'receiveMessage', payload: { role: 'tool', content: `🔧 ${name} running...` } });
+        },
+        (error) => {
+          this.postMessage({ type: 'error', payload: { message: error } });
+        },
+        model,
+        agent,
+        extraParts.length > 0 ? extraParts : undefined,
+        (event) => { this.postMessage({ type: 'toolEvent', payload: event }); },
+        (meta) => { this.postMessage({ type: 'messageMeta', payload: meta }); },
+        (reasoning) => { this.postMessage({ type: 'reasoningContent', payload: reasoning }); },
+        (diffs) => { eventDiffs = diffs; },
+      );
+
+      this.postMessage({ type: 'streamEnd', payload: { content: accumulatedContent } });
+
+      if (eventDiffs.length === 0) {
+        await new Promise<void>((resolve) => {
+          const check = setInterval(() => {
+            if (eventDiffs.length > 0) { clearInterval(check); clearTimeout(timer); resolve(); }
+          }, 300);
+          const timer = setTimeout(() => { clearInterval(check); resolve(); }, 10000);
+        });
+      }
+
+      const diffs = eventDiffs.length > 0 ? eventDiffs : await this._pollDiffs(sessionId);
+      if (Array.isArray(diffs) && diffs.length > 0) {
+        for (const diff of diffs) {
+          if (diff.path && (diff.added > 0 || diff.deleted > 0)) {
+            this.postMessage({
+              type: 'toolEvent',
+              payload: {
+                id: `file_edit_${diff.path}_${Date.now()}`,
+                type: 'file_edit',
+                name: 'file_edit',
+                status: 'completed',
+                content: diff.path,
+                meta: { path: diff.path, added: diff.added, deleted: diff.deleted, content: diff.content },
+              },
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      const msg = err?.message || err?.toString?.() || 'Unknown error';
+      this.postMessage({ type: 'error', payload: { message: msg } });
+      this.postMessage({ type: 'streamEnd', payload: { content: '' } });
+    }
+  }
+
+  private async _handleOpenDiff(payload: any): Promise<void> {
+    const { filePath } = payload;
+    if (filePath && vscode.workspace.workspaceFolders) {
+      try {
+        const fileUri = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, filePath);
+        const doc = await vscode.workspace.openTextDocument(fileUri);
+        await vscode.window.showTextDocument(doc);
+      } catch (e: any) {
+        console.error('[opencode] Open diff error:', e.message);
+      }
+    }
+  }
+
+  private async _handleListProviders(): Promise<void> {
+    try {
+      const result = await this._opencode.listProviders();
+      this.postMessage({ type: 'providerList', payload: result });
+    } catch (err: any) {
+      this.postMessage({ type: 'error', payload: { message: `Failed to list providers: ${err.message}` } });
+    }
+  }
+
+  private async _handleSetApiKey(payload: any): Promise<void> {
+    const { providerId, key } = payload;
+    try {
+      const success = await this._auth.setApiKey(providerId, key);
+      if (success) {
+        const result = await this._opencode.listProviders();
+        this.postMessage({ type: 'providerUpdated', payload: { providerId, success: true } });
+        this.postMessage({ type: 'providerList', payload: result });
+      } else {
+        this.postMessage({ type: 'providerUpdated', payload: { providerId, success: false, error: 'Failed to save API key' } });
+      }
+    } catch (err: any) {
+      this.postMessage({ type: 'providerUpdated', payload: { providerId, success: false, error: err.message } });
+    }
+  }
+
+  private async _handleRemoveApiKey(payload: any): Promise<void> {
+    const { providerId } = payload;
+    try {
+      await this._auth.removeApiKey(providerId);
+      const result = await this._opencode.listProviders();
+      this.postMessage({ type: 'providerUpdated', payload: { providerId, success: true, removed: true } });
+      this.postMessage({ type: 'providerList', payload: result });
+    } catch (err: any) {
+      this.postMessage({ type: 'providerUpdated', payload: { providerId, success: false, error: err.message } });
+    }
+  }
+
+  private async _handleGetSessions(): Promise<void> {
+    try {
+      const sessions = await this._sessions.listSessions();
+      this.postMessage({ type: 'sessionList', payload: sessions });
+    } catch (err: any) {
+      this.postMessage({ type: 'error', payload: { message: `Failed to list sessions: ${err.message}` } });
+    }
+  }
+
+  private async _handleLoadSession(payload: any): Promise<void> {
+    const { sessionId } = payload;
+    try {
+      const messages = await this._sessions.loadSession(sessionId);
+      this.postMessage({ type: 'sessionLoaded', payload: { sessionId, messages } });
+    } catch (err: any) {
+      this.postMessage({ type: 'error', payload: { message: `Failed to load session: ${err.message}` } });
+    }
+  }
+
+  private async _handleDeleteSession(payload: any): Promise<void> {
+    const { sessionId } = payload;
+    try {
+      await this._sessions.deleteSession(sessionId);
+      this.postMessage({ type: 'sessionDeleted', payload: { sessionId } });
+    } catch (err: any) {
+      this.postMessage({ type: 'error', payload: { message: `Failed to delete session: ${err.message}` } });
     }
   }
 
@@ -633,8 +564,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async _processPrompt(prompt: string, mode: string, context?: any): Promise<void> {
-    const sessionId = this._currentSessionId || (await this._opencode.createSession(`Review - ${prompt.slice(0, 50)}...`)).id;
-    if (!this._currentSessionId) this._currentSessionId = sessionId;
+    const sessionId = this._sessions.currentSessionId || (await this._opencode.createSession(`Review - ${prompt.slice(0, 50)}...`)).id;
+    if (!this._sessions.currentSessionId) this._sessions.currentSessionId = sessionId;
 
     this.postMessage({
       type: 'receiveMessage',

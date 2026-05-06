@@ -11,7 +11,7 @@ interface Props {
   onUnrevert?: () => void;
   contextEvents?: Array<{ id: string; name: string; status: string; content: string; meta?: any }>;
   onLoadSession?: (sessionId: string) => void;
-  onRespondPermission?: (permId: string, sessionId: string, response: string, remember?: boolean) => void;
+  onRespondPermission?: (permId: string, sessionId: string, response: 'allow' | 'deny', remember?: boolean) => void;
   onOpenDiff?: (filePath: string) => void;
 }
 
@@ -307,7 +307,7 @@ function ContextGroup({ events, allDone }: { events: Array<{ id: string; name: s
   );
 }
 
-function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: { message: ChatMessage; onLoadSession?: (id: string) => void; onRespondPermission?: (permId: string, sessionId: string, response: string, remember?: boolean) => void; onOpenDiff?: (filePath: string) => void }) {
+function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: { message: ChatMessage; onLoadSession?: (id: string) => void; onRespondPermission?: (permId: string, sessionId: string, response: 'allow' | 'deny', remember?: boolean) => void; onOpenDiff?: (filePath: string) => void }) {
   const eventType = message.eventType;
   const status = message.eventStatus;
   const meta = message.eventMeta;
@@ -334,7 +334,7 @@ function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: 
     const permType = meta?.permType || 'unknown';
     const patterns = meta?.patterns || [];
     const [responded, setResponded] = React.useState<string | null>(null);
-    const handleResponse = (resp: string, remember?: boolean) => {
+    const handleResponse = (resp: 'allow' | 'deny', remember?: boolean) => {
       setResponded(resp);
       onRespondPermission?.(meta?.permId ?? '', meta?.permSessionId ?? '', resp, remember);
     };
@@ -346,7 +346,7 @@ function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: 
           display: 'flex', alignItems: 'center', gap: 8, maxWidth: '90%', alignSelf: 'flex-start',
           fontSize: 12, color: '#a6e3a1',
         }}>
-          <span style={{ fontSize: 14 }}>{responded === 'reject' ? '🔒' : '🔓'}</span>
+          <span style={{ fontSize: 14 }}>{responded === 'deny' ? '🔒' : '🔓'}</span>
           <span>Permission {responded || 'resolved'}</span>
         </div>
       );
@@ -365,9 +365,9 @@ function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: 
           {permType}{patterns.length > 0 && <span style={{ color: '#cdd6f4', fontFamily: 'monospace', marginLeft: 4 }}>{patterns.join(', ')}</span>}
         </div>
         <div style={{ display: 'flex', gap: 6, paddingLeft: 22 }}>
-          <button onClick={() => handleResponse('once', false)} disabled={!!responded} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 6, border: '1px solid rgba(137,180,250,0.3)', background: 'rgba(137,180,250,0.15)', color: '#89b4fa', cursor: responded ? 'not-allowed' : 'pointer', opacity: responded ? 0.6 : 1 }}>Allow once</button>
-          <button onClick={() => handleResponse('always', true)} disabled={!!responded} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 6, border: '1px solid #7c3aed', background: '#7c3aed', color: '#fff', cursor: responded ? 'not-allowed' : 'pointer', opacity: responded ? 0.6 : 1 }}>Always</button>
-          <button onClick={() => handleResponse('reject', false)} disabled={!!responded} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 6, border: '1px solid #45475a', background: 'transparent', color: '#f38ba8', cursor: responded ? 'not-allowed' : 'pointer', opacity: responded ? 0.6 : 1 }}>Deny</button>
+          <button onClick={() => handleResponse('allow', false)} disabled={!!responded} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 6, border: '1px solid rgba(137,180,250,0.3)', background: 'rgba(137,180,250,0.15)', color: '#89b4fa', cursor: responded ? 'not-allowed' : 'pointer', opacity: responded ? 0.6 : 1 }}>Allow once</button>
+          <button onClick={() => handleResponse('allow', true)} disabled={!!responded} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 6, border: '1px solid #7c3aed', background: '#7c3aed', color: '#fff', cursor: responded ? 'not-allowed' : 'pointer', opacity: responded ? 0.6 : 1 }}>Always</button>
+          <button onClick={() => handleResponse('deny', false)} disabled={!!responded} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 6, border: '1px solid #45475a', background: 'transparent', color: '#f38ba8', cursor: responded ? 'not-allowed' : 'pointer', opacity: responded ? 0.6 : 1 }}>Deny</button>
         </div>
       </div>
     );
