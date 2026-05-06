@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ContextPart } from '../../extension/types';
+import { CommandItem } from '../slashCommands';
+import { SlashCommandPopup } from './SlashCommandPopup';
 
 interface FileResult {
   name: string;
@@ -12,16 +14,21 @@ interface Props {
   onSearchFiles: (query: string) => void;
   fileSearchResults: FileResult[];
   fileSearchQuery: string;
+  onSlashCommand?: (cmd: CommandItem) => void;
+  skills?: Array<{ name: string; description?: string }>;
 }
 
-export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults, fileSearchQuery }: Readonly<Props>) {
+export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults, fileSearchQuery, onSlashCommand, skills }: Readonly<Props>) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<ContextPart[]>([]);
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [fileSearchInput, setFileSearchInput] = useState('');
   const [mentionEnabled, setMentionEnabled] = useState(false);
+  const [showSlashPopup, setShowSlashPopup] = useState(false);
+  const [slashFilter, setSlashFilter] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileSearchRef = useRef<HTMLDivElement>(null);
+  const slashPopupRef = useRef<HTMLDivElement>(null);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -42,15 +49,40 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Close slash popup on outside click
+  useEffect(() => {
+    if (!showSlashPopup) return;
+    const handler = (e: MouseEvent) => {
+      if (slashPopupRef.current && !slashPopupRef.current.contains(e.target as Node) &&
+          textareaRef.current && !textareaRef.current.contains(e.target as Node)) {
+        setShowSlashPopup(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSlashPopup]);
+
   const handleSend = () => {
     if ((!text.trim() && attachments.length === 0) || disabled) return;
     onSend(text.trim(), attachments);
     setText('');
     setAttachments([]);
+    setShowSlashPopup(false);
+  };
+
+  const handleSlashSelect = (cmd: CommandItem) => {
+    setText('');
+    setShowSlashPopup(false);
+    onSlashCommand?.(cmd);
+    setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !disabled) {
+      if (showSlashPopup) {
+        // Let the popup handle Enter
+        return;
+      }
       e.preventDefault();
       handleSend();
     }
@@ -74,6 +106,17 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
       }
     } else {
       if (mentionEnabled) setMentionEnabled(false);
+    }
+
+    // Detect / slash command at start
+    const trimmed = val.trimStart();
+    if (trimmed.startsWith('/') && !val.includes(' ')) {
+      const afterSlash = trimmed.slice(1);
+      setSlashFilter(afterSlash);
+      setShowSlashPopup(true);
+      setShowFileSearch(false);
+    } else {
+      setShowSlashPopup(false);
     }
   };
 
@@ -140,6 +183,17 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
 
   return (
     <div style={{ padding: '12px 16px', backgroundColor: '#181825', position: 'relative' }}>
+      {/* Slash Command Popup */}
+      {showSlashPopup && (
+        <div ref={slashPopupRef}>
+          <SlashCommandPopup
+            filter={slashFilter}
+            skills={skills || []}
+            onSelect={handleSlashSelect}
+            onClose={() => setShowSlashPopup(false)}
+          />
+        </div>
+      )}
       {/* File Search Popup */}
       {showFileSearch && (
         <div
@@ -296,7 +350,7 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           disabled={disabled}
-          placeholder='Ask something... (@ to search files, Ctrl+V to paste images)'
+          placeholder='Ask something... (/ for commands, @ to search files, Ctrl+V to paste images)'
           style={{
             backgroundColor: 'transparent',
             border: 'none',

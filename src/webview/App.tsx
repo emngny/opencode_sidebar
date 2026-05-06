@@ -9,6 +9,7 @@ import { SessionListPopup } from './components/SessionListPopup';
 import { ChatMessage, ExtensionToWebviewMessage, GitInfo, ProviderListResult, ContextPart } from '../extension/types';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { postMessage, onMessage } from './vscode-api';
+import { CommandItem } from './slashCommands';
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -28,6 +29,7 @@ export default function App() {
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [readPermissionPrompt, setReadPermissionPrompt] = useState<{ filePath: string; reason: string; requestId: string } | null>(null);
   const [contextEvents, setContextEvents] = useState<Array<{ id: string; name: string; status: string; content: string; meta?: any }>>([]);
+  const [skills, setSkills] = useState<Array<{ name: string; description?: string }>>([]);
   const pendingRevertRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -214,6 +216,10 @@ export default function App() {
           });
           break;
         }
+        case 'skillList': {
+          setSkills(msg.payload.skills || []);
+          break;
+        }
         case 'providerList': {
           const result: ProviderListResult = msg.payload;
           const all = result.all || [];
@@ -263,7 +269,7 @@ export default function App() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  useEffect(() => { postMessage({ type: 'listProviders' }); postMessage({ type: 'getSavedModel' }); }, []);
+  useEffect(() => { postMessage({ type: 'listProviders' }); postMessage({ type: 'getSavedModel' }); postMessage({ type: 'loadSkills' }); }, []);
 
   // Save model when it changes
   useEffect(() => {
@@ -309,6 +315,20 @@ export default function App() {
   const handleUnrevert = () => {
     postMessage({ type: 'unrevert' });
   };
+  const handleSlashCommand = (cmd: CommandItem) => {
+    if (cmd.command === 'init' || cmd.command === 'review') {
+      postMessage({ type: 'runCommand', payload: { command: cmd.command, args: '' } });
+    } else if (cmd.agent) {
+      const modeMap: Record<string, string> = {
+        build: 'Build', plan: 'Plan', ask: 'Ask',
+        debug: 'Debug', docs: 'Docs', code: 'Code', review: 'Review',
+      };
+      if (modeMap[cmd.agent]) {
+        setMode(modeMap[cmd.agent]);
+      }
+    }
+  };
+
   const handleRespondPermission = (permId: string, permSessionId: string, response: string, remember?: boolean) => {
     postMessage({ type: 'respondPermission', payload: { permId, permSessionId, response, remember } });
   };
@@ -355,6 +375,8 @@ export default function App() {
           onSearchFiles={(query) => postMessage({ type: 'searchFiles', payload: { query } })}
           fileSearchResults={fileSearchResults}
           fileSearchQuery={fileSearchQuery}
+          onSlashCommand={handleSlashCommand}
+          skills={skills}
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px 12px', backgroundColor: '#181825', borderTop: '1px solid #313244' }}>
           <ModeSelector mode={mode} onChange={setMode} />

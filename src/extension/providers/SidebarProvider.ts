@@ -1,14 +1,27 @@
 import * as vscode from 'vscode';
+import * as path from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import { OpencodeCli } from '../services/OpencodeCli';
 import { getNonce } from '../utils';
 import { ExtensionToWebviewMessage } from '../types';
 import { getGitInfo } from '../services/GitInfo';
 import { isReadDenied, READ_DENY_PATTERNS } from '../services/readPatterns';
 
+const MODE_TO_AGENT: Record<string, string> = {
+  'Build': 'build',
+  'Plan': 'plan',
+  'Ask': 'ask',
+  'Debug': 'debug',
+  'Docs': 'docs',
+  'Code': 'code',
+  'Review': 'review',
+};
+
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'opencode.sidebar';
   private _view?: vscode.WebviewView;
   private readonly _opencode: OpencodeCli;
+  private _currentSessionId: string | null = null;
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -66,12 +79,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       });
     });
 
-    let currentSessionId: string | null = null;
     const readAllowCache = new Map<string, string>(); // pattern → filePath
     const pendingReadPermResolvers = new Map<string, (response: { allowed: boolean; remember?: boolean }) => void>();
 
     webviewView.webview.onDidReceiveMessage(async (data) => {
-      const validTypes = ['sendMessage','clearChat','abort','listProviders','setApiKey','removeApiKey','getSessions','loadSession','deleteSession','switchAgent','searchFiles','getSavedModel','saveModel','revertMessage','unrevert','respondPermission','respondReadPermission','openDiff'];
+      const validTypes = ['sendMessage','clearChat','abort','listProviders','setApiKey','removeApiKey','getSessions','loadSession','deleteSession','switchAgent','searchFiles','getSavedModel','saveModel','revertMessage','unrevert','respondPermission','respondReadPermission','openDiff','runCommand','loadSkills'];
       if (!data || typeof data !== 'object' || !validTypes.includes(data.type)) {
         console.warn('[opencode] Ignored message with unknown type:', data?.type);
         return;
@@ -116,10 +128,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
         case 'revertMessage': {
           const { messageId } = data.payload || {};
-          if (!currentSessionId || !messageId) break;
+          if (!this._currentSessionId || !messageId) break;
           try {
-            const result = await this._opencode.revertSession(currentSessionId, messageId);
-            const messages = await this._opencode.getSessionMessages(currentSessionId);
+            const result = await this._opencode.revertSession(this._currentSessionId, messageId);
+            const messages = await this._opencode.getSessionMessages(this._currentSessionId);
             this.postMessage({ type: 'revertResult', payload: { result, messages, reverted: true } });
           } catch (err: any) {
             this.postMessage({ type: 'error', payload: { message: `Revert failed: ${err.message}` } });
@@ -127,10 +139,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         }
         case 'unrevert': {
-          if (!currentSessionId) break;
+          if (!this._currentSessionId) break;
           try {
-            const result = await this._opencode.unrevertSession(currentSessionId);
-            const messages = await this._opencode.getSessionMessages(currentSessionId);
+            const result = await this._opencode.unrevertSession(this._currentSessionId);
+            const messages = await this._opencode.getSessionMessages(this._currentSessionId);
             this.postMessage({ type: 'revertResult', payload: { result, messages, reverted: false } });
           } catch (err: any) {
             this.postMessage({ type: 'error', payload: { message: `Unrevert failed: ${err.message}` } });
@@ -165,9 +177,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           }
           break;
         }
+        case 'loadSkills': {
+          const skills = this._loadSkills();
+          this.postMessage({ type: 'skillList', payload: { skills } });
+          break;
+        }
+        case 'runCommand': {
+          const { command, args } = data.payload;
+          if (command === 'init') {
+            this._handleInitCommand();
+            this.postMessage({ type: 'receiveMessage', payload: { role: 'system', content: `✅ AGENTS.md created in workspace root. You can now customize it for your project.` } });
+          } else if (command === 'review') {
+            this._handleReviewCommand(args || '');
+          }
+          break;
+        }
         case 'sendMessage': {
           const { prompt, model, mode, context } = data.payload;
-          const agent = mode === 'Plan' ? 'plan' : 'build';
+          const agent = MODE_TO_AGENT[mode] || 'build';
           console.log('[opencode] Received sendMessage:', prompt?.slice(0, 50), 'mode:', mode);
 
           // Show user message in chat
@@ -237,16 +264,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
 
             // Reuse existing session if available, otherwise create a new one
-            if (currentSessionId) {
-              console.log('[opencode] Reusing session:', currentSessionId);
+            if (this._currentSessionId) {
+              console.log('[opencode] Reusing session:', this._currentSessionId);
             } else {
               const session = await this._opencode.createSession(
                 `VS Code - ${prompt.slice(0, 50)}...`,
               );
-              currentSessionId = session.id;
+              this._currentSessionId = session.id;
               console.log('[opencode] Session created:', session.id);
             }
-            const sessionId = currentSessionId;
+            const sessionId = this._currentSessionId;
 
             // Show empty assistant message so chunks can be appended
             this.postMessage({
@@ -363,9 +390,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
         case 'clearChat':
         case 'abort': {
-          if (currentSessionId) {
-            this._opencode.abortSession(currentSessionId).catch(() => {});
-            currentSessionId = null;
+          if (this._currentSessionId) {
+            this._opencode.abortSession(this._currentSessionId).catch(() => {});
+            this._currentSessionId = null;
           }
           break;
         }
@@ -436,7 +463,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'loadSession': {
           const { sessionId } = data.payload;
           try {
-            currentSessionId = sessionId;
+            this._currentSessionId = sessionId;
             const messages = await this._opencode.getSessionMessages(sessionId);
             this.postMessage({ type: 'sessionLoaded', payload: { sessionId, messages } });
           } catch (err: any) {
@@ -505,6 +532,116 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   dispose() {
     this._opencode.stop();
+  }
+
+  private _loadSkills(): Array<{ name: string; description?: string }> {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) return [];
+    const skillsDir = path.join(workspaceFolders[0].uri.fsPath, '.agents', 'skills');
+    if (!existsSync(skillsDir)) return [];
+    try {
+      const entries = vscode.workspace.fs.readDirectory(vscode.Uri.file(skillsDir));
+      // Can't easily use readDirectory sync, fall back to fs
+      const dirs = require('node:fs').readdirSync(skillsDir, { withFileTypes: true });
+      const result: Array<{ name: string; description?: string }> = [];
+      for (const entry of dirs) {
+        if (!entry.isDirectory()) continue;
+        const skillMdPath = path.join(skillsDir, entry.name, 'SKILL.md');
+        if (existsSync(skillMdPath)) {
+          const content = readFileSync(skillMdPath, 'utf-8');
+          const lines = content.split('\n');
+          const descLine = lines.find((l) => l.startsWith('# ') || l.startsWith('## ')) || lines[0];
+          const description = descLine.replace(/^#+ /, '').trim();
+          result.push({ name: entry.name, description });
+        }
+      }
+      return result;
+    } catch {
+      return [];
+    }
+  }
+
+  private async _handleInitCommand(): Promise<void> {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) return;
+    const root = workspaceFolders[0].uri.fsPath;
+    const agentsMdPath = path.join(root, 'AGENTS.md');
+    if (existsSync(agentsMdPath)) {
+      this.postMessage({ type: 'receiveMessage', payload: { role: 'system', content: '⚠️ AGENTS.md already exists. Skipping creation.' } });
+      return;
+    }
+    const content = `# Project Guide for Opencode AI
+
+## Project Overview
+- **What does this project do?**
+-
+
+## Conventions
+- **Language/Framework:**
+- **Testing:**
+- **Code style:**
+
+## Commands
+- **Build:**
+- **Test:**
+- **Lint:**
+
+## Key Files
+- **Entry point:**
+- **Configuration:`
+
+    try {
+      require('node:fs').writeFileSync(agentsMdPath, content, 'utf-8');
+    } catch (err: any) {
+      this.postMessage({ type: 'error', payload: { message: `Failed to create AGENTS.md: ${err.message}` } });
+    }
+  }
+
+  private async _handleReviewCommand(args: string): Promise<void> {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) return;
+    const root = workspaceFolders[0].uri.fsPath;
+    try {
+      const { execFileSync } = require('node:child_process');
+      const diff = execFileSync('git', ['diff', '--cached', ...(args ? args.split(' ') : [])], { cwd: root, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+      const prompt = `Review the following uncommitted changes:\n\n${diff.slice(0, 10000)}${diff.length > 10000 ? '\n...(truncated)' : ''}\n\nProvide a concise code review focusing on potential bugs, security issues, and improvements.`;
+      // Send as a user message like normal sendMessage
+      this._processPrompt(prompt, 'review', undefined);
+    } catch (err: any) {
+      this.postMessage({ type: 'error', payload: { message: `Review failed: ${err.message}` } });
+    }
+  }
+
+  private async _processPrompt(prompt: string, mode: string, context?: any): Promise<void> {
+    const sessionId = this._currentSessionId || (await this._opencode.createSession(`Review - ${prompt.slice(0, 50)}...`)).id;
+    if (!this._currentSessionId) this._currentSessionId = sessionId;
+
+    this.postMessage({
+      type: 'receiveMessage',
+      payload: { role: 'user', content: prompt },
+    });
+    this.postMessage({ type: 'receiveMessage', payload: { role: 'assistant', content: '' } });
+
+    const agent = MODE_TO_AGENT[mode] || 'build';
+    let accumulatedContent = '';
+
+    await this._opencode.sendPrompt(
+      sessionId,
+      prompt,
+      (chunk) => {
+        accumulatedContent += chunk;
+        this.postMessage({ type: 'receiveChunk', payload: { content: chunk, fullContent: accumulatedContent } });
+      },
+      () => {},
+      (error) => {
+        this.postMessage({ type: 'error', payload: { message: error } });
+      },
+      undefined,
+      agent,
+      [],
+      (event) => { this.postMessage({ type: 'toolEvent', payload: event }); },
+      (meta) => { this.postMessage({ type: 'messageMeta', payload: meta }); },
+    );
   }
 
   private _getHtmlForWebview(webview: vscode.Webview) {

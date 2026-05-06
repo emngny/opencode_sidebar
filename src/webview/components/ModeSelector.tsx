@@ -6,7 +6,7 @@ interface Props {
   onChange: (mode: string) => void;
 }
 
-const MODES = ['Build', 'Plan'];
+const MODES = ['Build', 'Plan', 'Ask', 'Debug', 'Docs', 'Code'];
 
 export function ModeSelector({ mode, onChange }: Props) {
   const color = getAgentColor(mode);

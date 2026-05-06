@@ -102,7 +102,9 @@ export interface WebviewToExtensionMessage {
     | 'unrevert'
     | 'respondPermission'
     | 'respondReadPermission'
-    | 'openDiff';
+    | 'openDiff'
+    | 'runCommand'
+    | 'loadSkills';
   payload?: any;
 }
 
@@ -129,7 +131,8 @@ export interface ExtensionToWebviewMessage {
     | 'revertResult'
     | 'messageMeta'
     | 'reasoningContent'
-    | 'readFilePrompt';
+    | 'readFilePrompt'
+    | 'skillList';
   payload?: any;
 }
 

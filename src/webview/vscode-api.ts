@@ -5,7 +5,7 @@ const VALID_EXTENSION_TYPES: readonly string[] = [
   'status', 'gitInfo', 'projectInfo', 'sessionList', 'sessionLoaded', 'sessionDeleted',
   'agentList', 'error', 'providerList', 'providerUpdated', 'fileSearchResults',
   'savedModel', 'toolEvent', 'revertResult', 'messageMeta', 'reasoningContent',
-  'readFilePrompt',
+  'readFilePrompt', 'skillList',
 ];
 
 declare function acquireVsCodeApi(): any;
