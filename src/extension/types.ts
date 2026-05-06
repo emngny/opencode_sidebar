@@ -101,6 +101,7 @@ export interface WebviewToExtensionMessage {
     | 'revertMessage'
     | 'unrevert'
     | 'respondPermission'
+    | 'respondReadPermission'
     | 'openDiff';
   payload?: any;
 }
@@ -127,7 +128,8 @@ export interface ExtensionToWebviewMessage {
     | 'toolEvent'
     | 'revertResult'
     | 'messageMeta'
-    | 'reasoningContent';
+    | 'reasoningContent'
+    | 'readFilePrompt';
   payload?: any;
 }
 

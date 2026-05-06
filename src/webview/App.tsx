@@ -25,10 +25,9 @@ export default function App() {
   const [fileSearchResults, setFileSearchResults] = useState<Array<{ name: string; path: string }>>([]);
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [revertActive, setRevertActive] = useState(false);
-  const [currentMeta, setCurrentMeta] = useState<{ id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } } | null>(null);
-  // Context group: accumulates read/glob/grep/list/search tools
-  const [contextEvents, setContextEvents] = useState<Array<{ id: string; name: string; status: string; content: string; meta?: any }>>([]);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [readPermissionPrompt, setReadPermissionPrompt] = useState<{ filePath: string; reason: string; requestId: string } | null>(null);
+  const [contextEvents, setContextEvents] = useState<Array<{ id: string; name: string; status: string; content: string; meta?: any }>>([]);
   const pendingRevertRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -185,7 +184,6 @@ export default function App() {
         }
         case 'messageMeta': {
           const meta = msg.payload;
-          setCurrentMeta(meta);
           // Apply metadata to the last assistant message that doesn't have it yet
           setMessages((prev) => {
             const updated = [...prev];
@@ -254,6 +252,10 @@ export default function App() {
           setProvidersLoaded(true);
           break;
         }
+        case 'readFilePrompt': {
+          setReadPermissionPrompt({ filePath: msg.payload.filePath, reason: msg.payload.reason, requestId: msg.payload.requestId });
+          break;
+        }
       }
     });
     return unsubscribe;
@@ -309,6 +311,11 @@ export default function App() {
   };
   const handleRespondPermission = (permId: string, permSessionId: string, response: string, remember?: boolean) => {
     postMessage({ type: 'respondPermission', payload: { permId, permSessionId, response, remember } });
+  };
+  const handleRespondReadPermission = (response: string, remember?: boolean) => {
+    if (!readPermissionPrompt) return;
+    postMessage({ type: 'respondReadPermission', payload: { filePath: readPermissionPrompt.filePath, response, remember } });
+    setReadPermissionPrompt(null);
   };
   const handleLoadSession = (sessionId: string) => {
     setMessages([]);
@@ -433,6 +440,52 @@ export default function App() {
           onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}
           onCancel={() => setConfirmDialog(null)}
         />
+      )}
+
+      {/* Read Permission Prompt */}
+      {readPermissionPrompt && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div style={{
+            backgroundColor: '#1e1e2e', border: '1px solid #45475a',
+            borderRadius: 12, padding: 24, maxWidth: 400, width: '90%',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#f38ba8', marginBottom: 8 }}>
+              Read Permission Required
+            </div>
+            <div style={{ fontSize: 12, color: '#cdd6f4', marginBottom: 4 }}>
+              The AI wants to read this file:
+            </div>
+            <div style={{
+              fontSize: 13, color: '#89b4fa', fontFamily: 'monospace',
+              padding: '8px 12px', backgroundColor: '#11111b',
+              borderRadius: 6, marginBottom: 8, wordBreak: 'break-all',
+            }}>
+              {readPermissionPrompt.filePath}
+            </div>
+            <div style={{ fontSize: 11, color: '#a6adc8', marginBottom: 16 }}>
+              {readPermissionPrompt.reason}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => handleRespondReadPermission('reject')} style={{
+                padding: '6px 14px', borderRadius: 6, border: '1px solid #45475a',
+                backgroundColor: 'transparent', color: '#cdd6f4', cursor: 'pointer', fontSize: 12,
+              }}>Deny</button>
+              <button onClick={() => handleRespondReadPermission('allow')} style={{
+                padding: '6px 14px', borderRadius: 6, border: 'none',
+                backgroundColor: '#a6e3a1', color: '#11111b', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              }}>Allow Once</button>
+              <button onClick={() => handleRespondReadPermission('allow', true)} style={{
+                padding: '6px 14px', borderRadius: 6, border: 'none',
+                backgroundColor: '#89b4fa', color: '#11111b', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              }}>Always Allow</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

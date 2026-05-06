@@ -16,13 +16,33 @@ function normalizeDiff(d: any): NormalizedDiff {
   let added = typeof d.added === 'number' ? d.added : 0;
   let deleted = typeof d.deleted === 'number' ? d.deleted : 0;
   if (added === 0 && deleted === 0 && content) {
-    // Parse added/deleted from unified diff
     for (const line of content.split('\n')) {
       if (line.startsWith('+') && !line.startsWith('+++')) added++;
       if (line.startsWith('-') && !line.startsWith('---')) deleted++;
     }
   }
   return { path, added, deleted, content };
+}
+
+const READ_TOOLS = ['read', 'grep', 'glob', 'list', 'webfetch'];
+
+function extractReadPaths(tool: string, args: any): string[] {
+  if (!args) return [];
+  const a = typeof args === 'string' ? JSON.parse(args) : args;
+  switch (tool) {
+    case 'read':
+      return a.path ? [a.path] : (Array.isArray(a) ? a.filter((x: any) => typeof x === 'string') : []);
+    case 'grep':
+      return a.include ? [a.include] : [];
+    case 'glob':
+      return a.pattern ? [a.pattern] : [];
+    case 'list':
+      return a.path ? [a.path] : [];
+    case 'webfetch':
+      return a.url ? [a.url] : [];
+    default:
+      return [];
+  }
 }
 
 interface OpencodeServerInfo {
@@ -86,13 +106,31 @@ export class OpencodeCli {
     const password = 'oc-vsc-' + randomBytes(12).toString('hex');
 
     return new Promise((resolve, reject) => {
+      const minimalEnv: Record<string, string | undefined> = {
+        OPENCODE_SERVER_PASSWORD: password,
+        PATH: process.env.PATH,
+        USERPROFILE: process.env.USERPROFILE,
+        APPDATA: process.env.APPDATA,
+        LOCALAPPDATA: process.env.LOCALAPPDATA,
+        SYSTEMROOT: process.env.SYSTEMROOT,
+        TEMP: process.env.TEMP,
+        TMP: process.env.TMP,
+        OPENCODE_SERVER_USERNAME: process.env.OPENCODE_SERVER_USERNAME || 'opencode',
+        OPENCODE_CLIENT: process.env.OPENCODE_CLIENT,
+        OPENCODE_DISABLE_EMBEDDED_WEB_UI: process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI,
+        OPENCODE_EXPERIMENTAL_FILEWATCHER: process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER,
+        OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY,
+        OPENCODE_BIN_PATH: process.env.OPENCODE_BIN_PATH,
+      };
+      // Remove any undefined entries
+      for (const key of Object.keys(minimalEnv)) {
+        if (minimalEnv[key] === undefined) delete minimalEnv[key];
+      }
+
       const proc = spawn(this.binaryPath, ['serve', '--port', '0'], {
         stdio: ['ignore', 'pipe', 'pipe'],
         cwd: this.cwd,
-        env: {
-          ...process.env,
-          OPENCODE_SERVER_PASSWORD: password,
-        },
+        env: minimalEnv,
       });
 
       let started = false;
@@ -377,6 +415,7 @@ export class OpencodeCli {
         if (contentType.includes('event-stream')) {
           this.readSSEStream(response, (event: SSEMessage) => {
             console.log('[opencode] POST event:', event.type, JSON.stringify(event.properties).slice(0, 200));
+            resetTimeout();
         this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent, onMessageMeta, onReasoning, onDiffs);
             if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
             if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
@@ -396,19 +435,23 @@ export class OpencodeCli {
         if (!idle) { idle = true; resolve(); }
       });
 
-      // Timeout
-      setTimeout(() => {
-        if (!idle) {
-          idle = true;
-          console.log('[opencode] Session timeout expired for', sessionId);
-          // Clean up server-side
-          fetch(`${this.server!.url}/session/${sessionId}/abort`, {
-            method: 'POST',
-            headers: { ...this.authHeader },
-          }).catch(() => {});
-          resolve();
-        }
-      }, 60000);
+      // Timeout — reset on every incoming event
+      let timeout: NodeJS.Timeout;
+      const resetTimeout = () => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          if (!idle) {
+            idle = true;
+            console.log('[opencode] Session timeout expired for', sessionId);
+            fetch(`${this.server!.url}/session/${sessionId}/abort`, {
+              method: 'POST',
+              headers: { ...this.authHeader },
+            }).catch(() => {});
+            resolve();
+          }
+        }, 300000); // 5 minutes
+      };
+      resetTimeout();
     });
 
     await idlePromise;
@@ -510,15 +553,34 @@ export class OpencodeCli {
           break;
         }
         if (part?.type === 'tool_call') {
+          const toolName = part.name || 'unknown';
+          const toolArgs = part.args;
+          // Check if this is a file-reading tool and emit file_read event
+          const readTools = ['read', 'grep', 'glob', 'list', 'webfetch'];
+          if (readTools.includes(toolName)) {
+            const paths = extractReadPaths(toolName, toolArgs);
+            if (paths.length > 0) {
+              for (const p of paths) {
+                onToolEvent?.({
+                  id: `${part.id || toolName}_read_${p}`,
+                  type: 'file_read',
+                  name: toolName,
+                  status: 'running',
+                  content: `Reading: ${p}`,
+                  meta: { path: p, tool: toolName },
+                });
+              }
+            }
+          }
           onToolEvent?.({
             id: part.id || part.name || 'tool',
             type: 'tool_call',
-            name: part.name || 'unknown',
+            name: toolName,
             status: 'running',
-            content: `${part.name || 'unknown'} calling...`,
-            meta: { args: part.args },
+            content: `${toolName} calling...`,
+            meta: { args: toolArgs },
           });
-          onToolCall?.(part.name || 'unknown', part.args);
+          onToolCall?.(toolName, toolArgs);
         }
         if (part?.type === 'tool') {
           const toolName = part?.tool || 'unknown';
@@ -539,6 +601,20 @@ export class OpencodeCli {
               meta.description = part?.state?.input?.description;
               meta.subagentType = part?.state?.input?.subagent_type;
             }
+            // Emit file_read completed for read tools
+            if (READ_TOOLS.includes(toolName)) {
+              const paths = extractReadPaths(toolName, part?.state?.input?.args || part?.args || toolResult);
+              for (const p of paths) {
+                onToolEvent?.({
+                  id: `${part.id || toolName}_read_${p}`,
+                  type: 'file_read',
+                  name: toolName,
+                  status: 'completed',
+                  content: `Read: ${p}`,
+                  meta: { path: p, tool: toolName, result: toolResult },
+                });
+              }
+            }
             onToolEvent?.({
               id: part.id || toolName,
               type: 'tool_result',
@@ -552,6 +628,19 @@ export class OpencodeCli {
               onContent?.(`\n[${toolName} result]\n${typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)}\n[/${toolName}]\n`);
             }
           } else if (status === 'failed') {
+            if (READ_TOOLS.includes(toolName)) {
+              const paths = extractReadPaths(toolName, part?.state?.input?.args || part?.args);
+              for (const p of paths) {
+                onToolEvent?.({
+                  id: `${part.id || toolName}_read_${p}`,
+                  type: 'file_read',
+                  name: toolName,
+                  status: 'failed',
+                  content: `Read failed: ${p}`,
+                  meta: { path: p, tool: toolName, error: part.state.error || part.state.reason },
+                });
+              }
+            }
             onToolEvent?.({
               id: part.id || toolName,
               type: 'tool_result',

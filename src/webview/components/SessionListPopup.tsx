@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { postMessage, onMessage } from '../vscode-api';
 
 interface Props {
@@ -15,6 +15,7 @@ interface SessionItem {
 export function SessionListPopup({ onClose, onSelect }: Props) {
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showDeleteMenu, setShowDeleteMenu] = useState(false);
 
   useEffect(() => {
     postMessage({ type: 'getSessions' });
@@ -33,11 +34,32 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
     setSessions((prev) => prev.filter((s) => s.id !== sessionId));
   };
 
+  const handleDeleteOld = async (days: number) => {
+    const now = Date.now();
+    const cutoff = now - days * 24 * 60 * 60 * 1000;
+    const oldSessions = sessions.filter(s => s.time?.created && s.time.created < cutoff);
+    for (const s of oldSessions) {
+      postMessage({ type: 'deleteSession', payload: { sessionId: s.id } });
+    }
+    setSessions(prev => prev.filter(s => !oldSessions.includes(s)));
+    setShowDeleteMenu(false);
+  };
+
+  const getSessionAge = (ts?: number): string => {
+    if (!ts) return '';
+    const days = Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000));
+    if (days === 0) return 'Today';
+    if (days === 1) return '1 day ago';
+    return `${days} days ago`;
+  };
+
   const formatDate = (ts?: number) => {
     if (!ts) return '';
     const d = new Date(ts);
     return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   };
+
+  const oldCount = sessions.filter(s => s.time?.created && s.time.created < Date.now() - 7 * 24 * 60 * 60 * 1000).length;
 
   return (
     <div
@@ -64,7 +86,50 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
               {loading ? 'Loading...' : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#a6adc8', cursor: 'pointer', fontSize: 20, padding: 4, lineHeight: 1 }}>✕</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {sessions.length > 0 && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setShowDeleteMenu(!showDeleteMenu)}
+                  style={{
+                    background: 'none', border: '1px solid #313244', color: '#a6adc8', cursor: 'pointer',
+                    fontSize: 12, padding: '6px 10px', borderRadius: 6,
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#585b70')}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#313244')}
+                >
+                  Delete old ▼
+                </button>
+                {showDeleteMenu && (
+                  <div style={{
+                    position: 'absolute', right: 0, top: '100%', marginTop: 4,
+                    backgroundColor: '#181825', border: '1px solid #313244',
+                    borderRadius: 8, padding: '4px 0', minWidth: 140, zIndex: 10,
+                  }}>
+                    {[
+                      { days: 7, label: 'Older than 7 days' },
+                      { days: 30, label: 'Older than 30 days' },
+                      { days: 90, label: 'Older than 90 days' },
+                      { days: 0, label: 'All sessions' },
+                    ].map(opt => (
+                      <div
+                        key={opt.days}
+                        onClick={() => handleDeleteOld(opt.days)}
+                        style={{
+                          padding: '8px 12px', cursor: 'pointer', fontSize: 12, color: '#cdd6f4',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#313244')}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      >
+                        {opt.label}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#a6adc8', cursor: 'pointer', fontSize: 20, padding: 4, lineHeight: 1 }}>✕</button>
+          </div>
         </div>
 
         {/* List */}
@@ -88,10 +153,10 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, color: '#cdd6f4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {s.title || `Oturum ${s.id.slice(0, 8)}`}
+                    {s.title || `Session ${s.id.slice(0, 8)}`}
                   </div>
                   <div style={{ fontSize: 11, color: '#585b70', marginTop: 2 }}>
-                    {s.time?.created ? formatDate(s.time.created) : ''}
+                    {s.time?.created ? `${formatDate(s.time.created)} · ${getSessionAge(s.time.created)}` : ''}
                   </div>
                 </div>
                 <button
@@ -102,7 +167,7 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.color = '#f38ba8')}
                   onMouseLeave={(e) => (e.currentTarget.style.color = '#585b70')}
-                  title="Sil"
+                  title="Delete"
                 >
                   🗑
                 </button>

@@ -373,7 +373,12 @@ function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: 
     );
   }
 
-  if (status === 'running') {
+  if (eventType === 'file_read') {
+    icon = '📖';
+    borderColor = 'rgba(137,180,250,0.3)';
+    bgColor = 'rgba(137,180,250,0.04)';
+    titleColor = '#89b4fa';
+  } else if (status === 'running') {
     icon = '⏳';
     borderColor = '#585b70';
     titleColor = '#89b4fa';
@@ -421,11 +426,11 @@ function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: 
     );
   }
 
-  // Handle file changes
-  if ((eventType === 'file_edit' || eventType === 'tool_result') && meta?.path) {
+  // Handle file info
+  if ((eventType === 'file_edit' || eventType === 'tool_result' || eventType === 'file_read') && meta?.path) {
     const added = meta.added ?? 0;
     const deleted = meta.deleted ?? 0;
-    if (added > 0 || deleted > 0) {
+    if (eventType === 'file_read' || added > 0 || deleted > 0) {
       fileInfo = (
         <div style={{ display: 'flex', gap: 8, fontSize: 11, alignItems: 'center' }}>
           <DiffChanges additions={added} deletions={deleted} variant="bars" />
@@ -446,7 +451,7 @@ function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: 
       );
     }
     title = meta.path;
-  } else if ((eventType === 'file_edit' || eventType === 'tool_result') && meta?.path) {
+  } else if ((eventType === 'file_edit' || eventType === 'file_read' || eventType === 'tool_result') && meta?.path) {
     title = meta.path;
   }
 

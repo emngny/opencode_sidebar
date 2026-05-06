@@ -3,6 +3,7 @@ import { OpencodeCli } from '../services/OpencodeCli';
 import { getNonce } from '../utils';
 import { ExtensionToWebviewMessage } from '../types';
 import { getGitInfo } from '../services/GitInfo';
+import { isReadDenied, READ_DENY_PATTERNS } from '../services/readPatterns';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'opencode.sidebar';
@@ -66,8 +67,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
 
     let currentSessionId: string | null = null;
+    const readAllowCache = new Map<string, string>(); // pattern → filePath
+    const pendingReadPermResolvers = new Map<string, (response: { allowed: boolean; remember?: boolean }) => void>();
 
     webviewView.webview.onDidReceiveMessage(async (data) => {
+      const validTypes = ['sendMessage','clearChat','abort','listProviders','setApiKey','removeApiKey','getSessions','loadSession','deleteSession','switchAgent','searchFiles','getSavedModel','saveModel','revertMessage','unrevert','respondPermission','respondReadPermission','openDiff'];
+      if (!data || typeof data !== 'object' || !validTypes.includes(data.type)) {
+        console.warn('[opencode] Ignored message with unknown type:', data?.type);
+        return;
+      }
       switch (data.type) {
         case 'searchFiles': {
           const { query } = data.payload || {};
@@ -144,6 +152,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           }
           break;
         }
+        case 'respondReadPermission': {
+          const { filePath, response, remember } = data.payload;
+          const resolver = pendingReadPermResolvers.get(filePath);
+          if (resolver) {
+            if (response === 'allow' && remember) {
+              const pattern = isReadDenied(filePath);
+              if (pattern) readAllowCache.set(pattern, filePath);
+            }
+            resolver({ allowed: response === 'allow', remember });
+            pendingReadPermResolvers.delete(filePath);
+          }
+          break;
+        }
         case 'sendMessage': {
           const { prompt, model, mode, context } = data.payload;
           const agent = mode === 'Plan' ? 'plan' : 'build';
@@ -158,17 +179,47 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               if (item.type === 'file') {
                 const workspaceFolders = vscode.workspace.workspaceFolders;
                 if (workspaceFolders) {
-                  const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, item.path);
-                  try {
-                    const content = await vscode.workspace.fs.readFile(fileUri);
-                    const text = new TextDecoder().decode(content);
-                    extraParts.push({
-                      type: 'text',
-                      text: `File: ${item.path}\n\n${text}\n`,
+                  const filePath = item.path;
+                  // Check read permission
+                  let allowed = true;
+                  const deniedPattern = isReadDenied(filePath);
+                  if (deniedPattern) {
+                    if (readAllowCache.has(deniedPattern)) {
+                      allowed = true;
+                    } else {
+                      allowed = await new Promise<boolean>((resolve) => {
+                        const reqId = `${filePath}_${Date.now()}`;
+                        pendingReadPermResolvers.set(filePath, (resp) => resolve(resp.allowed));
+                        this.postMessage({
+                          type: 'readFilePrompt',
+                          payload: { filePath, reason: `Matches deny pattern: ${deniedPattern}`, requestId: reqId },
+                        });
+                      });
+                    }
+                  }
+                  if (allowed) {
+                    const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filePath);
+                    try {
+                      const content = await vscode.workspace.fs.readFile(fileUri);
+                      const text = new TextDecoder().decode(content);
+                      extraParts.push({
+                        type: 'text',
+                        text: `File: ${filePath}\n\n${text}\n`,
+                      });
+                      this.postMessage({
+                        type: 'toolEvent',
+                        payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'completed', content: `Read: ${filePath}`, meta: { path: filePath } },
+                      });
+                    } catch (e: any) {
+                      console.log('[opencode] Failed to read file:', filePath, e.message);
+                      userContent += `\n\n[File not found: ${filePath}]`;
+                    }
+                  } else {
+                    userContent += `\n\n[Skipped: ${filePath} — read denied by pattern]`;
+                    this.postMessage({
+                      type: 'toolEvent',
+                      payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'failed', content: `Read denied: ${filePath}`, meta: { path: filePath, error: 'Permission denied' } },
                     });
-                  } catch (e: any) {
-                    console.log('[opencode] Failed to read file:', item.path, e.message);
-                    userContent += `\n\n[File not found: ${item.path}]`;
                   }
                 }
               }
@@ -426,7 +477,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private async _restoreApiKeys(): Promise<void> {
     try {
       const authData = await this._opencode.getProviderAuth();
-      for (const [providerId, methods] of Object.entries(authData)) {
+      for (const [providerId] of Object.entries(authData)) {
         const stored = await this._context.secrets.get(`opencode-key-${providerId}`);
         if (stored) {
           await this._opencode.setAuth(providerId, stored);
