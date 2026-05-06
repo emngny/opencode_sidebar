@@ -1,4 +1,5 @@
 import React from 'react';
+import { getAgentColor } from './agentColors';
 
 interface Props {
   mode: string;
@@ -8,6 +9,7 @@ interface Props {
 const MODES = ['Build', 'Plan'];
 
 export function ModeSelector({ mode, onChange }: Props) {
+  const color = getAgentColor(mode);
   return (
     <div
       style={{
@@ -19,6 +21,11 @@ export function ModeSelector({ mode, onChange }: Props) {
         cursor: 'pointer'
       }}
     >
+      <div style={{
+        width: 8, height: 8, borderRadius: '50%',
+        backgroundColor: color?.text || '#585b70',
+        flexShrink: 0,
+      }} />
       <select
         value={mode}
         onChange={(e) => onChange(e.target.value)}

@@ -1,37 +1,55 @@
 {
-  "name": "opencode",
-  "displayName": "Opencode",
-  "description": "Opencode AI integration for VS Code",
+  "name": "opencode-sidebar-chat",
+  "displayName": "Opencode Sidebar Chat",
+  "description": "Professional AI coding assistant with multi-provider support, diff review, and brutalist design.",
   "version": "0.1.0",
-  "publisher": "opencode",
+  "publisher": "NovadaysTech",
+  "author": {
+    "name": "Emin"
+  },
+  "license": "MIT",
+  "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "Machine Learning",
-    "Programming Languages"
+    "Programming Languages",
+    "Education"
   ],
+  "keywords": [
+    "ai",
+    "chat",
+    "sidebar",
+    "diff",
+    "review",
+    "opencode"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opencode/opencode-sidebar-chat"
+  },
+  "main": "./out/extension.js",
   "activationEvents": [
     "onView:opencode.sidebar",
     "onCommand:opencode.run",
     "onCommand:opencode.acceptChange",
     "onCommand:opencode.rejectChange"
   ],
-  "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
           "id": "opencode",
           "title": "Opencode",
-          "icon": "$(sparkle)"
+          "icon": "resources/icon.png"
         }
       ],
       "secondarySidebar": [
         {
           "id": "opencode",
           "title": "Opencode",
-          "icon": "$(sparkle)"
+          "icon": "resources/icon.png"
         }
       ]
     },
@@ -41,7 +59,7 @@
           "type": "webview",
           "id": "opencode.sidebar",
           "name": "Opencode",
-          "icon": "$(sparkle)"
+          "icon": "resources/icon.png"
         }
       ]
     },
@@ -86,6 +104,7 @@
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
+    "@types/marked": "^5.0.2",
     "@types/node": "20.x",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
@@ -94,6 +113,7 @@
     "typescript": "^5.6.0"
   },
   "dependencies": {
+    "marked": "^18.0.3",
     "opencode-ai": "^1.14.39",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

@@ -27,13 +27,15 @@ export class OpencodeCli {
   private readonly eventHandlers: Set<EventHandler> = new Set();
   private abortController: AbortController | null = null;
   private readonly binaryPath: string = 'opencode';
+  private readonly cwd: string | undefined;
   // Track which part IDs have received deltas (to avoid duplicating full text updates)
   private readonly sessionPartDeltas: Map<string, Set<string>> = new Map();
   // Track partID -> partType for each session (to skip reasoning deltas)
   private readonly sessionPartTypes: Map<string, Map<string, string>> = new Map();
 
-  constructor() {
+  constructor(cwd?: string) {
     this.binaryPath = this.resolveBinary();
+    this.cwd = cwd;
   }
 
   private resolveBinary(): string {
@@ -63,6 +65,7 @@ export class OpencodeCli {
     return new Promise((resolve, reject) => {
       const proc = spawn(this.binaryPath, ['serve', '--port', '0'], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: this.cwd,
         env: {
           ...process.env,
           OPENCODE_SERVER_PASSWORD: password,
@@ -286,6 +289,8 @@ export class OpencodeCli {
     agent?: string,
     extraParts?: Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
     onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: any }) => void,
+    onMessageMeta?: (meta: { id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } }) => void,
+    onReasoning?: (text: string) => void,
   ): Promise<string> {
     await this.start();
 
@@ -319,7 +324,7 @@ export class OpencodeCli {
       // Start reading /event SSE
       this.readSSE('/event', (event: SSEMessage) => {
         console.log('[opencode] /event:', event.type, JSON.stringify(event.properties).slice(0, 200));
-        this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent);
+        this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent, onMessageMeta, onReasoning);
         if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
         if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
           idle = true;
@@ -346,7 +351,7 @@ export class OpencodeCli {
         if (contentType.includes('event-stream')) {
           this.readSSEStream(response, (event: SSEMessage) => {
             console.log('[opencode] POST event:', event.type, JSON.stringify(event.properties).slice(0, 200));
-            this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent);
+        this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent, onMessageMeta, onReasoning);
             if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
             if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
               idle = true;
@@ -437,7 +442,19 @@ export class OpencodeCli {
     onToolCall?: (name: string, args: any) => void,
     onError?: (error: string) => void,
     onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: any }) => void,
+    onMessageMeta?: (meta: { id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } }) => void,
+    onReasoning?: (text: string) => void,
   ): void {
+    // Track message metadata from event info
+    const info = event.properties?.info;
+    if (info?.id && onMessageMeta) {
+      const agent = info.agent || undefined;
+      const modelId = info.model ? `${info.model.providerID}/${info.model.modelID}` : undefined;
+      const time = info.time ? { created: info.time.created, completed: info.time.completed } : undefined;
+      if (agent || modelId || time) {
+        onMessageMeta({ id: info.id, agent, modelId, time });
+      }
+    }
     switch (event.type) {
       case 'message.part.updated': {
         const part = event.properties?.part;
@@ -451,13 +468,17 @@ export class OpencodeCli {
           break;
         }
         if (part?.type === 'reasoning') {
-          // Thinking/reasoning event
+          // Thinking/reasoning - handled by ChatBubble isStreaming indicator
+          break;
+        }
+        if (part?.type === 'compaction') {
           onToolEvent?.({
-            id: part.id || 'reasoning',
-            type: 'thinking',
-            name: 'reasoning',
-            status: 'running',
-            content: 'Thinking...',
+            id: part.id || 'compaction',
+            type: 'compacting',
+            name: 'compaction',
+            status: part?.state?.status === 'completed' ? 'completed' : 'running',
+            content: part?.state?.status === 'completed' ? 'Conversation compacted' : 'Compacting conversation...',
+            meta: { result: part?.result || part?.state?.result },
           });
           break;
         }
@@ -485,17 +506,23 @@ export class OpencodeCli {
             });
           } else if (status === 'completed') {
             const toolResult = part?.result || part?.state?.result;
+            const meta: any = { result: toolResult };
+            if (toolName === 'task') {
+              meta.sessionId = part?.state?.metadata?.sessionId;
+              meta.description = part?.state?.input?.description;
+              meta.subagentType = part?.state?.input?.subagent_type;
+            }
             onToolEvent?.({
               id: part.id || toolName,
               type: 'tool_result',
               name: toolName,
               status: 'completed',
-              content: `${toolName} completed`,
-              meta: { result: toolResult },
+              content: toolName === 'task' ? 'Task completed' : `${toolName} completed`,
+              meta,
             });
             // Also send as content for backward compatibility
             if (toolResult) {
-              onContent?.(`\n[${toolName} sonucu]\n${typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)}\n[/${toolName}]\n`);
+              onContent?.(`\n[${toolName} result]\n${typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)}\n[/${toolName}]\n`);
             }
           } else if (status === 'failed') {
             onToolEvent?.({
@@ -528,8 +555,10 @@ export class OpencodeCli {
           // Check if this part is a "text" type (not "reasoning")
           const types = this.sessionPartTypes.get(sessionId);
           const partType = props.partID ? types?.get(props.partID) : undefined;
-          // Only show content for text parts, skip reasoning deltas
-          if (partType === 'reasoning') break;
+          if (partType === 'reasoning') {
+            onReasoning?.(props.delta);
+            break;
+          }
           // Track that this part has received deltas
           const deltas = this.sessionPartDeltas.get(sessionId);
           if (deltas && props.partID) deltas.add(props.partID);
@@ -548,16 +577,20 @@ export class OpencodeCli {
         break;
       }
       case 'permission.asked': {
-        const permId = event.properties?.id;
-        const permSessionId = event.properties?.sessionID || sessionId;
+        const permId = event.properties?.id || event.properties?.permissionID || event.properties?.permissionId;
+        const permSessionId = event.properties?.sessionID || event.properties?.sessionId || sessionId;
         const permType = event.properties?.permission;
         const patterns = event.properties?.patterns || [];
-        console.log('[opencode] Permission asked:', permType, patterns, 'id:', permId);
-        if (permId) {
-          this.grantPermission(permSessionId, permId).catch((err) => {
-            console.error('[opencode] Failed to grant permission:', err?.message);
-          });
-        }
+        console.log('[opencode] Permission asked:', permType, patterns, 'id:', permId, 'session:', permSessionId);
+        // Send permission prompt to UI instead of auto-granting
+        onToolEvent?.({
+          id: permId || 'permission',
+          type: 'permission',
+          name: 'permission',
+          status: 'running',
+          content: `${permType}${patterns.length > 0 ? ' ' + patterns.join(', ') : ''}`,
+          meta: { permId, permSessionId, permType, patterns },
+        });
         break;
       }
     }
@@ -580,6 +613,57 @@ export class OpencodeCli {
       }
     } catch (err: any) {
       console.error('[opencode] Failed to grant permission:', err?.message);
+    }
+  }
+
+  async summarizeSession(sessionId: string, providerID: string, modelID: string): Promise<boolean> {
+    await this.start();
+    try {
+      const result = await this.apiFetch(`/session/${sessionId}/summarize`, {
+        method: 'POST',
+        body: JSON.stringify({ providerID, modelID, auto: false }),
+      });
+      return result === true || result === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  async revertSession(sessionId: string, messageId: string): Promise<any> {
+    await this.start();
+    try {
+      return await this.apiFetch(`/session/${sessionId}/revert`, {
+        method: 'POST',
+        body: JSON.stringify({ messageID: messageId }),
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async unrevertSession(sessionId: string): Promise<any> {
+    await this.start();
+    try {
+      return await this.apiFetch(`/session/${sessionId}/unrevert`, {
+        method: 'POST',
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async respondPermission(sessionID: string, permissionId: string, response: string, remember?: boolean): Promise<boolean> {
+    await this.start();
+    try {
+      const url = `${this.server!.url}/session/${sessionID}/permissions/${permissionId}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.authHeader },
+        body: JSON.stringify({ response, remember: remember ?? false }),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 

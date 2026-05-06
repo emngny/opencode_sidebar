@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChatContainer } from './components/ChatContainer';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { BottomInput } from './components/BottomInput';
@@ -8,6 +8,7 @@ import { ReviewActions } from './components/ReviewActions';
 import { ProviderPopup } from './components/ProviderPopup';
 import { SessionListPopup } from './components/SessionListPopup';
 import { ChatMessage, ExtensionToWebviewMessage, GitInfo, ProviderListResult, ContextPart } from '../extension/types';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { postMessage, onMessage } from './vscode-api';
 
 export default function App() {
@@ -26,6 +27,12 @@ export default function App() {
   const [hiddenModels, setHiddenModels] = useState<Record<string, boolean>>({});
   const [fileSearchResults, setFileSearchResults] = useState<Array<{ name: string; path: string }>>([]);
   const [fileSearchQuery, setFileSearchQuery] = useState('');
+  const [revertActive, setRevertActive] = useState(false);
+  const [currentMeta, setCurrentMeta] = useState<{ id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } } | null>(null);
+  // Context group: accumulates read/glob/grep/list/search tools
+  const [contextEvents, setContextEvents] = useState<Array<{ id: string; name: string; status: string; content: string; meta?: any }>>([]);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const pendingRevertRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -132,29 +139,85 @@ export default function App() {
         }
         case 'toolEvent': {
           const event = msg.payload;
-          const baseId = event.id || '';
+          const isContextTool = ['read', 'glob', 'grep', 'list', 'webfetch', 'websearch', 'search'].includes(event.name);
+          if (isContextTool) {
+            setContextEvents((prev) => {
+              const idx = prev.findIndex((e) => e.id === event.id);
+              if (idx >= 0) {
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], status: event.status, content: event.content, meta: event.meta };
+                return updated;
+              }
+              return [...prev, { id: event.id, name: event.name, status: event.status, content: event.content, meta: event.meta }];
+            });
+          } else {
+            setContextEvents([]); // clear context group when non-context event arrives
+            const baseId = event.id || '';
+            setMessages((prev) => {
+              // Find exact match first, then fall back to startsWith for legacy/compat
+              const idx = prev.findIndex((m) => 
+                m.role === 'event' && 
+                baseId.length > 0 && 
+                (m.id === baseId || m.id === `${baseId}_fixed` || (m.id && m.id.startsWith(baseId + '_')))
+              );
+              
+              if (idx >= 0) {
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], content: event.content, eventStatus: event.status, eventMeta: event.meta, timestamp: Date.now() };
+                return updated;
+              }
+              // Use baseId as the primary ID if provided, to ensure updates find it
+              const msgId = baseId ? `${baseId}_${Date.now()}` : `event_${Date.now()}`;
+              return [...prev, { role: 'event', content: event.content, timestamp: Date.now(), id: msgId, eventType: event.type, eventStatus: event.status, eventMeta: event.meta }];
+            });
+          }
+          break;
+        }
+        case 'revertResult': {
+          const { messages: sessionMessages, reverted } = msg.payload;
+          setMessages([]);
+          if (Array.isArray(sessionMessages)) {
+            const converted: ChatMessage[] = sessionMessages.map((m: any) => ({
+              role: m.info?.role === 'user' ? 'user' : 'assistant',
+              content: m.parts?.map((p: any) => p.text || p.content || '').join('\n') || m.info?.content || '',
+              timestamp: m.info?.time?.created || Date.now(),
+              id: m.info?.id || Math.random().toString(36).slice(2),
+            }));
+            setMessages(converted);
+          }
+          setRevertActive(reverted);
+          break;
+        }
+        case 'messageMeta': {
+          const meta = msg.payload;
+          setCurrentMeta(meta);
+          // Apply metadata to the last assistant message that doesn't have it yet
           setMessages((prev) => {
-            const idx = prev.findIndex((m) => m.id && m.role === 'event' && m.id.startsWith(baseId) && baseId.length > 0);
-            if (idx >= 0) {
-              const updated = [...prev];
-              updated[idx] = {
-                ...updated[idx],
-                content: event.content,
-                eventStatus: event.status,
-                eventMeta: event.meta,
-                timestamp: Date.now(),
-              };
-              return updated;
+            const updated = [...prev];
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].role === 'assistant' && !updated[i].agent) {
+                const duration = meta.time?.completed && meta.time?.created
+                  ? Math.round((meta.time.completed - meta.time.created) / 1000)
+                  : undefined;
+                updated[i] = { ...updated[i], agent: meta.agent, modelId: meta.modelId, duration };
+                break;
+              }
             }
-            return [...prev, {
-              role: 'event',
-              content: event.content,
-              timestamp: Date.now(),
-              id: `${baseId}_${Date.now()}`,
-              eventType: event.type,
-              eventStatus: event.status,
-              eventMeta: event.meta,
-            }];
+            return updated;
+          });
+          break;
+        }
+        case 'reasoningContent': {
+          const text = msg.payload;
+          setMessages((prev) => {
+            const updated = [...prev];
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].role === 'assistant') {
+                updated[i] = { ...updated[i], reasoning: (updated[i].reasoning || '') + text };
+                break;
+              }
+            }
+            return updated;
           });
           break;
         }
@@ -177,9 +240,13 @@ export default function App() {
             }
           }
           models.sort((a, b) => {
+            // Pinned providers first
             const aIsPinned = a.providerId === 'opencode' || a.providerId === 'opencode-go' ? 0 : 1;
             const bIsPinned = b.providerId === 'opencode' || b.providerId === 'opencode-go' ? 0 : 1;
-            return aIsPinned - bIsPinned;
+            if (aIsPinned !== bIsPinned) return aIsPinned - bIsPinned;
+            // Same provider: sort by name alphabetically
+            if (a.providerId !== b.providerId) return a.providerId.localeCompare(b.providerId);
+            return a.name.localeCompare(b.name);
           });
 
           // Auto-select first model if none is selected
@@ -213,6 +280,7 @@ export default function App() {
   const handleSend = (prompt: string, context?: ContextPart[]) => {
     console.log('[webview] Sending prompt:', prompt, 'context:', context?.length || 0, 'items');
     setBusy(true);
+    setContextEvents([]);
     postMessage({ type: 'sendMessage', payload: { prompt, model, mode, context } });
   };
   const handleAccept = () => { postMessage({ type: 'acceptReview' }); setReview(null); };
@@ -231,6 +299,23 @@ export default function App() {
     });
   };
   const handleAbort = () => { postMessage({ type: 'abort' }); setBusy(false); };
+  const handleRevert = (messageId: string) => {
+    pendingRevertRef.current = messageId;
+    setConfirmDialog({
+      message: 'Revert to this message? This will undo all file changes made after it.',
+      onConfirm: () => {
+        const id = pendingRevertRef.current;
+        pendingRevertRef.current = null;
+        if (id) postMessage({ type: 'revertMessage', payload: { messageId: id } });
+      },
+    });
+  };
+  const handleUnrevert = () => {
+    postMessage({ type: 'unrevert' });
+  };
+  const handleRespondPermission = (permId: string, permSessionId: string, response: string, remember?: boolean) => {
+    postMessage({ type: 'respondPermission', payload: { permId, permSessionId, response, remember } });
+  };
   const handleLoadSession = (sessionId: string) => {
     setMessages([]);
     setShowSessions(false);
@@ -246,7 +331,7 @@ export default function App() {
           <WelcomeScreen projectPath={gitInfo.projectPath} branch={gitInfo.branch} lastCommitTime={gitInfo.lastCommitTime} />
         ) : (
           <div style={{ flex: 1, padding: '16px 12px' }}>
-            <ChatContainer messages={messages} />
+            <ChatContainer messages={messages} onRevert={handleRevert} revertActive={revertActive} onUnrevert={handleUnrevert} contextEvents={contextEvents} onLoadSession={handleLoadSession} onRespondPermission={handleRespondPermission} />
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -353,6 +438,15 @@ export default function App() {
         <SessionListPopup
           onClose={() => setShowSessions(false)}
           onSelect={handleLoadSession}
+        />
+      )}
+
+      {/* Confirm Dialog */}
+      {confirmDialog && (
+        <ConfirmDialog
+          message={confirmDialog.message}
+          onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}
+          onCancel={() => setConfirmDialog(null)}
         />
       )}
     </div>

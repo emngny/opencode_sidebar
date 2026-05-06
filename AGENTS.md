@@ -8,6 +8,7 @@
 - **Watch:** `npm run watch:extension` (tsc) and `npm run watch:webview` (esbuild) in parallel
 - **Package:** `npx vsce package`
 - **No lint, no tests, no CI** — skipping these will not fail the build
+- **Dependencies:** `marked` (markdown render), `opencode-ai` (server package), `react` 18, `esbuild` for bundling
 
 ## Architecture
 
@@ -18,32 +19,44 @@ Two independent compilation targets under `src/`:
 | Extension (Node.js) | `src/extension/` | `extension.ts` | tsc |
 | Webview (React/DOM) | `src/webview/` | `index.tsx` | esbuild → IIFE `out/webview.js` |
 
-- Webview imports types from `src/extension/types.ts` (included in `tsconfig.webview.json` via `include`)
-- Extension runtime is VS Code's Electron Node — Node.js builtins are available
-- Webview communicates with extension via `postMessage`/`onMessage` using typed messages in `types.ts`
-- No npm workspace/monorepo — single `package.json`
+- Webview imports types from `src/extension/types.ts` (included via `tsconfig.webview.json` `include`)
+- Webview <-> Extension communication via typed `postMessage`/`onMessage` in `types.ts`
+- Extension runs in VS Code's Electron Node — Node builtins are available
+- Single `package.json`, no monorepo
 
 ## Key Files
 
-- **`src/extension/extension.ts`** — activation entrypoint; wires up SidebarProvider, PreviewProvider, ReviewQueue, commands
-- **`src/extension/providers/SidebarProvider.ts`** — webview view provider; message dispatch hub
-- **`src/extension/services/OpencodeCli.ts`** — manages `opencode serve` subprocess (spawns with `--port 0`), HTTP API client, SSE streaming
-- **`src/extension/services/ReviewQueue.ts`** — review queue with Accept/Reject; shows diff via `opencode-preview://` virtual documents
-- **`src/extension/providers/PreviewProvider.ts`** — text content provider for `opencode-preview://` scheme
-- **`src/webview/App.tsx`** — main React app; handles all webview message types
+| File | Role |
+|------|------|
+| `src/extension/extension.ts` | Activation entrypoint; wires SidebarProvider, PreviewProvider, ReviewQueue, commands |
+| `src/extension/providers/SidebarProvider.ts` | Webview view provider; message dispatch hub |
+| `src/extension/services/OpencodeCli.ts` | Manages `opencode serve` subprocess (spawns with `--port 0`), HTTP API client, SSE streaming |
+| `src/extension/services/ReviewQueue.ts` | Review queue with Accept/Reject; virtual doc via `opencode-preview://` |
+| `src/extension/providers/PreviewProvider.ts` | Text content provider for `opencode-preview://` scheme |
+| `src/extension/types.ts` | Shared types: ChatMessage, message types (WebviewTo/ExtensionTo), ProviderInfo, etc. |
+| `src/webview/App.tsx` | Main React app; message handler hub |
+| `src/webview/components/ChatContainer.tsx` | Message renderer: ChatBubble, EventCard, ContextGroup, CompactionDivider |
 
 ## Critical Gotchas
 
-- **Model IDs use `providerId/modelId` format** (e.g., `opencode/glm-5.1`) to avoid duplicates — the `model` state in App.tsx follows this convention
-- **`sendPrompt` reads POST `/session/:id/message` as SSE stream** (content-type `text/event-stream`), not JSON. Parses `data:` lines, stops on `session.status` → `idle`
-- **Extension protects own files** — ReviewQueue blocks edits to files under the extension's install directory
-- **No README.md** exists
-- **UI language is English** — all user-facing strings are in English
-- **No authentication UI** — server auto-generates password (`oc-vsc-{random}`) and sends via Basic Auth header
+- **Model IDs use `providerId/modelId` format** (e.g., `opencode/glm-5.1`) to avoid duplicates
+- **`sendPrompt` reads POST `/session/:id/message` as SSE stream** (`text/event-stream`), not JSON. Parses `data:` lines, stops on `session.status` → `idle`
+- **Extension protects own install directory** — ReviewQueue blocks edits to files under the extension's path
 - **`opencode serve` binary resolution** hardcoded to Windows paths in `resolveBinary()`
+- **No authentication UI** — server generates password (`oc-vsc-{random}`), uses Basic Auth
+- **Permission asked events** are sent to webview for user decision (Allow/Always/Deny), not auto-granted
+- **Session is reused** across messages with the same `currentSessionId`; only `clearChat`/`abort` creates a new one
+- **Event stream** sends `message.part.delta` for streaming text (field=`"text"`), `message.part.updated` for tool/compaction/reasoning status
+- **Reasoning content** comes as `message.part.delta` with `partType === 'reasoning'` — accumulated in `ChatMessage.reasoning`
+- **Context gathering tools** (read/glob/grep/list/webfetch) are grouped into a single `ContextGroup` component
+- **Tool event types** in webview: `tool_call`, `tool_result`, `thinking`, `permission`, `compacting`, `file_edit`
+- **Revert API**: `POST /session/:id/revert` with `{ messageID }` — undoes file changes via git snapshots
+- **Markdown** is rendered via `marked` library in `Markdown.tsx` (code blocks get copy buttons)
+- **Agent colors** defined in `agentColors.ts` — build=blue, plan=pink, ask=green, debug=yellow, docs=teal, code=purple, review=orange
+- **UI language is English** — all user-facing strings are in English
 
 ## Commands & Activation
 
-- Extension activates on `onView:opencode.sidebar` (sidebar open), `opencode.run`, `opencode.acceptChange`, `opencode.rejectChange`
-- Accept/Reject buttons appear in diff editor toolbar via `when: "isInDiffEditor && opencode.hasActiveReview"`
-- **View container defined in both `activitybar` and `secondarySidebar`** — appears in Secondary Side Bar (right) automatically on supported VS Code versions
+- Activates on `onView:opencode.sidebar` (sidebar open), `opencode.run`, `opencode.acceptChange`, `opencode.rejectChange`
+- Accept/Reject buttons in diff editor toolbar via `when: "isInDiffEditor && opencode.hasActiveReview"`
+- View container defined in both `activitybar` (left) and `secondarySidebar` (right) — appears in right panel automatically on supported VS Code versions

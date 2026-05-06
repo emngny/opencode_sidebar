@@ -1,4 +1,5 @@
 import React from 'react';
+import { DiffChanges } from './DiffChanges';
 
 interface Props {
   filename: string;
@@ -14,9 +15,10 @@ export function ReviewActions({ filename, inserts, deletes, onAccept, onReject }
       <div style={{ fontSize: 12, marginBottom: 8, color: '#a6adc8' }}>
         Review: <strong style={{ color: '#cdd6f4' }}>{filename}</strong>
       </div>
-      <div style={{ display: 'flex', gap: 16, fontSize: 12, marginBottom: 12 }}>
-        <span style={{ color: '#a6e3a1', fontWeight: 500 }}>+{inserts} lines</span>
-        <span style={{ color: '#f38ba8', fontWeight: 500 }}>-{deletes} lines</span>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 12, marginBottom: 12 }}>
+        <DiffChanges additions={inserts} deletions={deletes} variant="bars" />
+        <span style={{ color: '#a6e3a1', fontWeight: 500 }}>+{inserts}</span>
+        <span style={{ color: '#f38ba8', fontWeight: 500 }}>-{deletes}</span>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button

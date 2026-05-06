@@ -4,7 +4,7 @@ export interface ChatMessage {
   timestamp: number;
   id?: string;
   isStreaming?: boolean;
-  eventType?: 'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery';
+  eventType?: 'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
   eventStatus?: 'running' | 'completed' | 'failed';
   eventMeta?: {
     path?: string;
@@ -13,7 +13,20 @@ export interface ChatMessage {
     name?: string;
     args?: any;
     result?: any;
+    error?: string;
+    sessionId?: string;
+    description?: string;
+    subagentType?: string;
+    permId?: string;
+    permSessionId?: string;
+    patterns?: string[];
+    permType?: string;
   };
+  agent?: string;
+  modelId?: string;
+  duration?: number;
+  interrupted?: boolean;
+  reasoning?: string;
 }
 
 export interface GitInfo {
@@ -83,7 +96,10 @@ export interface WebviewToExtensionMessage {
     | 'removeApiKey'
     | 'searchFiles'
     | 'getSavedModel'
-    | 'saveModel';
+    | 'saveModel'
+    | 'revertMessage'
+    | 'unrevert'
+    | 'respondPermission';
   payload?: any;
 }
 
@@ -106,7 +122,10 @@ export interface ExtensionToWebviewMessage {
     | 'providerUpdated'
     | 'fileSearchResults'
     | 'savedModel'
-    | 'toolEvent';
+    | 'toolEvent'
+    | 'revertResult'
+    | 'messageMeta'
+    | 'reasoningContent';
   payload?: any;
 }
 

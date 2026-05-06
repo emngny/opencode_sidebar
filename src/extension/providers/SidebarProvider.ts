@@ -15,7 +15,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private readonly _reviewQueue: ReviewQueue,
     private readonly _context: vscode.ExtensionContext,
   ) {
-    this._opencode = new OpencodeCli();
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    this._opencode = new OpencodeCli(workspaceFolder);
   }
 
   resolveWebviewView(
@@ -105,6 +106,44 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           await this._context.workspaceState.update('selectedModel', model);
           break;
         }
+        case 'revertMessage': {
+          const { messageId } = data.payload || {};
+          if (!currentSessionId || !messageId) break;
+          try {
+            const result = await this._opencode.revertSession(currentSessionId, messageId);
+            const messages = await this._opencode.getSessionMessages(currentSessionId);
+            this.postMessage({ type: 'revertResult', payload: { result, messages, reverted: true } });
+          } catch (err: any) {
+            this.postMessage({ type: 'error', payload: { message: `Revert failed: ${err.message}` } });
+          }
+          break;
+        }
+        case 'unrevert': {
+          if (!currentSessionId) break;
+          try {
+            const result = await this._opencode.unrevertSession(currentSessionId);
+            const messages = await this._opencode.getSessionMessages(currentSessionId);
+            this.postMessage({ type: 'revertResult', payload: { result, messages, reverted: false } });
+          } catch (err: any) {
+            this.postMessage({ type: 'error', payload: { message: `Unrevert failed: ${err.message}` } });
+          }
+          break;
+        }
+        case 'respondPermission': {
+          const { permId, permSessionId, response, remember } = data.payload;
+          try {
+            const success = await this._opencode.respondPermission(permSessionId, permId, response, remember);
+            if (success) {
+              this.postMessage({ type: 'toolEvent', payload: { id: permId, type: 'permission', name: 'permission', status: 'completed', content: `Permission ${response}`, meta: { permId, permSessionId, response } } });
+            } else {
+              this.postMessage({ type: 'error', payload: { message: `Failed to respond to permission request${permId ? ' (' + permId + ')' : ''}` } });
+            }
+          } catch (err: any) {
+            console.error('[opencode] Failed to respond permission:', err.message);
+            this.postMessage({ type: 'error', payload: { message: `Permission response failed: ${err.message}` } });
+          }
+          break;
+        }
         case 'sendMessage': {
           const { prompt, model, mode, context } = data.payload;
           const agent = mode === 'Plan' ? 'plan' : 'build';
@@ -146,12 +185,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               await this._opencode.start();
             }
 
-            // Create a new session for this conversation
-            const session = await this._opencode.createSession(
-              `VS Code - ${prompt.slice(0, 50)}...`,
-            );
-            currentSessionId = session.id;
-            console.log('[opencode] Session created:', session.id);
+            // Reuse existing session if available, otherwise create a new one
+            let sessionId = currentSessionId;
+            if (!sessionId) {
+              const session = await this._opencode.createSession(
+                `VS Code - ${prompt.slice(0, 50)}...`,
+              );
+              sessionId = session.id;
+              currentSessionId = session.id;
+              console.log('[opencode] Session created:', session.id);
+            } else {
+              console.log('[opencode] Reusing session:', sessionId);
+            }
 
             // Show empty assistant message so chunks can be appended
             this.postMessage({
@@ -163,7 +208,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             let accumulatedContent = '';
 
             await this._opencode.sendPrompt(
-              session.id,
+              sessionId,
               prompt,
               (text) => {
                 accumulatedContent += text;
@@ -187,6 +232,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               (event) => {
                 this.postMessage({ type: 'toolEvent', payload: event });
               },
+              (meta) => {
+                this.postMessage({ type: 'messageMeta', payload: meta });
+              },
+              (reasoning) => {
+                this.postMessage({ type: 'reasoningContent', payload: reasoning });
+              },
             );
 
             // Notify webview that streaming is complete
@@ -197,7 +248,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               let diffs: any[] = [];
               for (let attempt = 0; attempt < 3; attempt++) {
                 await new Promise((r) => setTimeout(r, 1000));
-                diffs = await this._opencode.getSessionDiff(session.id);
+                diffs = await this._opencode.getSessionDiff(sessionId);
                 if (Array.isArray(diffs) && diffs.length > 0) break;
                 console.log(`[opencode] Diff check attempt ${attempt + 1}: no diffs yet`);
               }
@@ -224,7 +275,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               console.log('[opencode] Diff check error:', e.message);
             }
           } catch (err: any) {
-            const msg = err?.message || err?.toString?.() || 'Bilinmeyen hata';
+            const msg = err?.message || err?.toString?.() || 'Unknown error';
             console.error('[opencode] sendMessage error:', err);
             this.postMessage({
               type: 'error',
