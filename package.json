@@ -2,7 +2,7 @@
   "name": "opencode-sidebar-chat",
   "displayName": "Opencode Sidebar Chat",
   "description": "Professional AI coding assistant with multi-provider support, diff review, and brutalist design.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "NovadaysTech",
   "author": {
     "name": "Emin"
@@ -27,14 +27,16 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/opencode/opencode-sidebar-chat"
+    "url": "https://github.com/emngny/opencode_sidebar"
+  },
+  "homepage": "https://github.com/emngny/opencode_sidebar#readme",
+  "bugs": {
+    "url": "https://github.com/emngny/opencode_sidebar/issues"
   },
   "main": "./out/extension.js",
   "activationEvents": [
     "onView:opencode.sidebar",
-    "onCommand:opencode.run",
-    "onCommand:opencode.acceptChange",
-    "onCommand:opencode.rejectChange"
+    "onCommand:opencode.run"
   ],
   "contributes": {
     "viewsContainers": {
@@ -68,32 +70,8 @@
         "command": "opencode.run",
         "title": "Run Opencode",
         "icon": "$(play)"
-      },
-      {
-        "command": "opencode.acceptChange",
-        "title": "Accept Change",
-        "icon": "$(check)"
-      },
-      {
-        "command": "opencode.rejectChange",
-        "title": "Reject Change",
-        "icon": "$(chrome-close)"
       }
-    ],
-    "menus": {
-      "editor/title": [
-        {
-          "command": "opencode.acceptChange",
-          "group": "navigation@1",
-          "when": "isInDiffEditor && opencode.hasActiveReview"
-        },
-        {
-          "command": "opencode.rejectChange",
-          "group": "navigation@2",
-          "when": "isInDiffEditor && opencode.hasActiveReview"
-        }
-      ]
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

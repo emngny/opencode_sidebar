@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { ReviewQueue } from '../services/ReviewQueue';
 import { OpencodeCli } from '../services/OpencodeCli';
 import { getNonce } from '../utils';
 import { ExtensionToWebviewMessage } from '../types';
@@ -8,11 +7,10 @@ import { getGitInfo } from '../services/GitInfo';
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'opencode.sidebar';
   private _view?: vscode.WebviewView;
-  private _opencode: OpencodeCli;
+  private readonly _opencode: OpencodeCli;
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
-    private readonly _reviewQueue: ReviewQueue,
     private readonly _context: vscode.ExtensionContext,
   ) {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -82,7 +80,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             const root = workspaceFolders[0].uri.fsPath;
             const files = results
               .map((uri) => {
-                const relative = uri.fsPath.slice(root.length + 1).replace(/\\/g, '/');
+                const relative = uri.fsPath.slice(root.length + 1).replaceAll('\\', '/');
                 return { name: relative.split('/').pop() || '', path: relative };
               })
               .filter((f) => !query || f.path.toLowerCase().includes(query.toLowerCase()))
@@ -186,17 +184,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
 
             // Reuse existing session if available, otherwise create a new one
-            let sessionId = currentSessionId;
-            if (!sessionId) {
+            if (currentSessionId) {
+              console.log('[opencode] Reusing session:', currentSessionId);
+            } else {
               const session = await this._opencode.createSession(
                 `VS Code - ${prompt.slice(0, 50)}...`,
               );
-              sessionId = session.id;
               currentSessionId = session.id;
               console.log('[opencode] Session created:', session.id);
-            } else {
-              console.log('[opencode] Reusing session:', sessionId);
             }
+            const sessionId = currentSessionId;
 
             // Show empty assistant message so chunks can be appended
             this.postMessage({
@@ -206,6 +203,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
             // Send the prompt and handle streaming
             let accumulatedContent = '';
+            let eventDiffs: Array<{ path: string; added: number; deleted: number; content: string }> = [];
 
             await this._opencode.sendPrompt(
               sessionId,
@@ -238,41 +236,52 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               (reasoning) => {
                 this.postMessage({ type: 'reasoningContent', payload: reasoning });
               },
+              (diffs) => {
+                eventDiffs = diffs;
+              },
             );
 
             // Notify webview that streaming is complete
             this.postMessage({ type: 'streamEnd', payload: { content: accumulatedContent } });
 
-            // Check for file changes from this session (with retry for server processing delay)
-            try {
-              let diffs: any[] = [];
-              for (let attempt = 0; attempt < 3; attempt++) {
-                await new Promise((r) => setTimeout(r, 1000));
-                diffs = await this._opencode.getSessionDiff(sessionId);
-                if (Array.isArray(diffs) && diffs.length > 0) break;
-                console.log(`[opencode] Diff check attempt ${attempt + 1}: no diffs yet`);
-              }
-              console.log('[opencode] Diffs from session:', JSON.stringify(diffs).slice(0, 500));
-              if (Array.isArray(diffs) && diffs.length > 0) {
-                for (const diff of diffs) {
-                  if (diff.path && (diff.added > 0 || diff.deleted > 0)) {
-                    const workspaceFolders = vscode.workspace.workspaceFolders;
-                    if (workspaceFolders && workspaceFolders.length > 0) {
-                      const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, diff.path);
-                      try {
-                        const doc = await vscode.workspace.openTextDocument(fileUri);
-                        await this._reviewQueue.addReview(doc, '', diff.content || '');
-                      } catch (e: any) {
-                        console.log('[opencode] Review file error:', e.message);
-                      }
-                    }
+            // Wait for diffs from SSE stream (they arrive after idle via session.diff / message.updated)
+            if (eventDiffs.length === 0) {
+              await new Promise<void>((resolve) => {
+                const check = setInterval(() => {
+                  if (eventDiffs.length > 0) {
+                    clearInterval(check); clearTimeout(timer); resolve();
                   }
+                }, 300);
+                const timer = setTimeout(() => { clearInterval(check); resolve(); }, 10000);
+              });
+            }
+
+            // Process diffs — send file_edit events to webview so user can click to open files
+            const diffs = eventDiffs.length > 0 ? eventDiffs : await this._pollDiffs(sessionId);
+            console.log('[opencode] Diffs to review:', JSON.stringify(diffs).slice(0, 500));
+            if (Array.isArray(diffs) && diffs.length > 0) {
+              for (const diff of diffs) {
+                if (diff.path && (diff.added > 0 || diff.deleted > 0)) {
+                  this.postMessage({
+                    type: 'toolEvent',
+                    payload: {
+                      id: `file_edit_${diff.path}_${Date.now()}`,
+                      type: 'file_edit',
+                      name: 'file_edit',
+                      status: 'completed',
+                      content: diff.path,
+                      meta: {
+                        path: diff.path,
+                        added: diff.added,
+                        deleted: diff.deleted,
+                        content: diff.content,
+                      },
+                    },
+                  });
                 }
-              } else {
-                console.log('[opencode] No diffs found after 3 attempts');
               }
-            } catch (e: any) {
-              console.log('[opencode] Diff check error:', e.message);
+            } else {
+              console.log('[opencode] No diffs found');
             }
           } catch (err: any) {
             const msg = err?.message || err?.toString?.() || 'Unknown error';
@@ -286,21 +295,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         }
 
-        case 'acceptReview': {
-          await this._reviewQueue.acceptActive();
-          break;
-        }
-        case 'rejectReview': {
-          await this._reviewQueue.rejectActive();
-          break;
-        }
-        case 'clearChat': {
-          if (currentSessionId) {
-            this._opencode.abortSession(currentSessionId).catch(() => {});
-            currentSessionId = null;
+        case 'openDiff': {
+          const { filePath } = data.payload;
+          if (filePath && vscode.workspace.workspaceFolders) {
+            try {
+              const fileUri = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, filePath);
+              const doc = await vscode.workspace.openTextDocument(fileUri);
+              await vscode.window.showTextDocument(doc);
+            } catch (e: any) {
+              console.error('[opencode] Open diff error:', e.message);
+            }
           }
           break;
         }
+        case 'clearChat':
         case 'abort': {
           if (currentSessionId) {
             this._opencode.abortSession(currentSessionId).catch(() => {});
@@ -409,6 +417,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (this._view) {
       this._view.webview.postMessage(message);
     }
+  }
+
+  private async _pollDiffs(sessionId: string): Promise<any[]> {
+    try {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const diffs = await this._opencode.getSessionDiff(sessionId);
+        if (Array.isArray(diffs) && diffs.length > 0) return diffs;
+        console.log(`[opencode] Diff poll attempt ${attempt + 1}: no diffs yet`);
+      }
+    } catch (e: any) {
+      console.log('[opencode] Diff poll error:', e.message);
+    }
+    return [];
   }
 
   dispose() {

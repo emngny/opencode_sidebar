@@ -99,7 +99,8 @@ export interface WebviewToExtensionMessage {
     | 'saveModel'
     | 'revertMessage'
     | 'unrevert'
-    | 'respondPermission';
+    | 'respondPermission'
+    | 'openDiff';
   payload?: any;
 }
 
@@ -127,15 +128,6 @@ export interface ExtensionToWebviewMessage {
     | 'messageMeta'
     | 'reasoningContent';
   payload?: any;
-}
-
-export interface ReviewItem {
-  id: string;
-  originalUri: string;
-  previewUri: string;
-  filename: string;
-  inserts: number;
-  deletes: number;
 }
 
 export interface SessionDiffFile {

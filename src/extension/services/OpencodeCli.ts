@@ -2,6 +2,28 @@ import { spawn, ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { ProviderListResult } from '../types';
 
+interface NormalizedDiff {
+  path: string;
+  added: number;
+  deleted: number;
+  content: string;
+}
+
+function normalizeDiff(d: any): NormalizedDiff {
+  const path = d.path || d.file || '';
+  const content = d.content || d.patch || '';
+  let added = typeof d.added === 'number' ? d.added : 0;
+  let deleted = typeof d.deleted === 'number' ? d.deleted : 0;
+  if (added === 0 && deleted === 0 && content) {
+    // Parse added/deleted from unified diff
+    for (const line of content.split('\n')) {
+      if (line.startsWith('+') && !line.startsWith('+++')) added++;
+      if (line.startsWith('-') && !line.startsWith('---')) deleted++;
+    }
+  }
+  return { path, added, deleted, content };
+}
+
 interface OpencodeServerInfo {
   port: number;
   password: string;
@@ -173,12 +195,14 @@ export class OpencodeCli {
     return Array.isArray(data) ? data : [];
   }
 
-  async getSessionDiff(sessionId: string): Promise<any> {
+  async getSessionDiff(sessionId: string): Promise<NormalizedDiff[]> {
     await this.start();
     try {
       const result = await this.apiFetch(`/session/${sessionId}/diff`);
-      console.log('[opencode] Session diff result:', JSON.stringify(result).slice(0, 300));
-      return result;
+      const arr = Array.isArray(result) ? result : (result?.files ? result.files : []);
+      const normalized = arr.map(normalizeDiff);
+      console.log('[opencode] Session diff result:', normalized.length, 'files');
+      return normalized;
     } catch (err: any) {
       console.log('[opencode] Session diff not available:', err?.message);
       return [];
@@ -291,6 +315,7 @@ export class OpencodeCli {
     onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: any }) => void,
     onMessageMeta?: (meta: { id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } }) => void,
     onReasoning?: (text: string) => void,
+    onDiffs?: (diffs: NormalizedDiff[]) => void,
   ): Promise<string> {
     await this.start();
 
@@ -324,7 +349,7 @@ export class OpencodeCli {
       // Start reading /event SSE
       this.readSSE('/event', (event: SSEMessage) => {
         console.log('[opencode] /event:', event.type, JSON.stringify(event.properties).slice(0, 200));
-        this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent, onMessageMeta, onReasoning);
+        this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent, onMessageMeta, onReasoning, onDiffs);
         if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
         if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
           idle = true;
@@ -351,7 +376,7 @@ export class OpencodeCli {
         if (contentType.includes('event-stream')) {
           this.readSSEStream(response, (event: SSEMessage) => {
             console.log('[opencode] POST event:', event.type, JSON.stringify(event.properties).slice(0, 200));
-        this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent, onMessageMeta, onReasoning);
+        this.handleEvent(event, sessionId, onContent, onToolCall, onError, onToolEvent, onMessageMeta, onReasoning, onDiffs);
             if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
             if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
               idle = true;
@@ -444,6 +469,7 @@ export class OpencodeCli {
     onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: any }) => void,
     onMessageMeta?: (meta: { id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } }) => void,
     onReasoning?: (text: string) => void,
+    onDiffs?: (diffs: NormalizedDiff[]) => void,
   ): void {
     // Track message metadata from event info
     const info = event.properties?.info;
@@ -573,6 +599,24 @@ export class OpencodeCli {
       case 'session.status': {
         if (event.properties?.status?.type === 'idle') {
           // Session became idle = done processing
+        }
+        break;
+      }
+      case 'message.updated': {
+        const rawSummaryDiffs = event.properties?.info?.summary?.diffs;
+        if (Array.isArray(rawSummaryDiffs) && rawSummaryDiffs.length > 0 && onDiffs) {
+          const normalized = rawSummaryDiffs.map(normalizeDiff);
+          console.log('[opencode] Diffs from message.updated:', normalized.length, 'files');
+          onDiffs(normalized);
+        }
+        break;
+      }
+      case 'session.diff': {
+        const rawDiff = event.properties?.diff;
+        if (Array.isArray(rawDiff) && rawDiff.length > 0 && onDiffs) {
+          const normalized = rawDiff.map(normalizeDiff);
+          console.log('[opencode] Diffs from session.diff:', normalized.length, 'files');
+          onDiffs(normalized);
         }
         break;
       }

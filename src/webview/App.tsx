@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChatContainer } from './components/ChatContainer';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { BottomInput } from './components/BottomInput';
 import { ModelSelector } from './components/ModelSelector';
 import { ModeSelector } from './components/ModeSelector';
-import { ReviewActions } from './components/ReviewActions';
 import { ProviderPopup } from './components/ProviderPopup';
 import { SessionListPopup } from './components/SessionListPopup';
 import { ChatMessage, ExtensionToWebviewMessage, GitInfo, ProviderListResult, ContextPart } from '../extension/types';
@@ -18,11 +17,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [showProviders, setShowProviders] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
-  const [providerCount, setProviderCount] = useState(0);
-  const [connectedCount, setConnectedCount] = useState(0);
+
   const [providersLoaded, setProvidersLoaded] = useState(false);
   const [gitInfo, setGitInfo] = useState<GitInfo>({ branch: 'main', lastCommitTime: 'a minute ago', projectPath: 'C:/Projects/opencode_sidebar' });
-  const [review, setReview] = useState<{ filename: string; inserts: number; deletes: number } | null>(null);
   const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string; providerId: string }>>([]);
   const [hiddenModels, setHiddenModels] = useState<Record<string, boolean>>({});
   const [fileSearchResults, setFileSearchResults] = useState<Array<{ name: string; path: string }>>([]);
@@ -97,8 +94,6 @@ export default function App() {
           break;
         }
         case 'status': setBusy(msg.payload.busy); break;
-        case 'reviewReady': setReview(msg.payload); break;
-        case 'reviewResolved': setReview(null); break;
         case 'sessionLoaded': {
           setMessages([]);
           const { messages: sessionMessages } = msg.payload;
@@ -225,8 +220,6 @@ export default function App() {
           const result: ProviderListResult = msg.payload;
           const all = result.all || [];
           const conn = result.connected || [];
-          setProviderCount(all.length);
-          setConnectedCount(conn.length);
           const models: Array<{ id: string; name: string; providerId: string }> = [];
           for (const provider of all) {
             if (conn.includes(provider.id)) {
@@ -283,8 +276,9 @@ export default function App() {
     setContextEvents([]);
     postMessage({ type: 'sendMessage', payload: { prompt, model, mode, context } });
   };
-  const handleAccept = () => { postMessage({ type: 'acceptReview' }); setReview(null); };
-  const handleReject = () => { postMessage({ type: 'rejectReview' }); setReview(null); };
+  const handleOpenDiff = (filePath: string) => {
+    postMessage({ type: 'openDiff', payload: { filePath } });
+  };
   const toggleModelVisibility = (modelId: string) => { setHiddenModels((prev) => ({ ...prev, [modelId]: !prev[modelId] })); };
   const handleToggleAllModels = (providerId: string, show: boolean) => {
     setHiddenModels((prev) => {
@@ -331,7 +325,7 @@ export default function App() {
           <WelcomeScreen projectPath={gitInfo.projectPath} branch={gitInfo.branch} lastCommitTime={gitInfo.lastCommitTime} />
         ) : (
           <div style={{ flex: 1, padding: '16px 12px' }}>
-            <ChatContainer messages={messages} onRevert={handleRevert} revertActive={revertActive} onUnrevert={handleUnrevert} contextEvents={contextEvents} onLoadSession={handleLoadSession} onRespondPermission={handleRespondPermission} />
+            <ChatContainer messages={messages} onRevert={handleRevert} revertActive={revertActive} onUnrevert={handleUnrevert} contextEvents={contextEvents} onLoadSession={handleLoadSession} onRespondPermission={handleRespondPermission} onOpenDiff={handleOpenDiff} />
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -347,13 +341,6 @@ export default function App() {
       )}
 
       <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
-
-      {/* Review Actions */}
-      {review && (
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #313244', backgroundColor: '#181825' }}>
-          <ReviewActions filename={review.filename} inserts={review.inserts} deletes={review.deletes} onAccept={handleAccept} onReject={handleReject} />
-        </div>
-      )}
 
       {/* Bottom Bar: Input + Bottom Row */}
       <div>

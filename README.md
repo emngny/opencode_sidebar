@@ -2,24 +2,23 @@
 
 ![Logo](resources/logo.png)
 
-**Opencode Sidebar Chat** is a powerful, flexible AI coding assistant for Visual Studio Code with a minimalist brutalist aesthetic. It allows you to manage multiple AI providers (OpenAI, Anthropic, Gemini, etc.) through a single, streamlined interface.
-Note: "This is an unofficial community extension and is not affiliated with or endorsed by Opencode.ai."
-## 🚀 Key Features
+**Opencode Sidebar Chat** is an AI coding assistant for Visual Studio Code. It connects to the Opencode CLI and provides a chat interface in the VS Code sidebar with multi-provider support. Note: "This is an unofficial community extension and is not affiliated with or endorsed by Opencode.ai."
 
-- **Multi-Model Support**: Switch between your favorite AI providers in seconds.
-- **Side-by-Side Diff Review**: Inspect AI-suggested changes in VS Code's native diff editor without touching the terminal.
-- **One-Click Accept/Reject**: Apply or discard changes instantly with dedicated UI controls.
-- **Secure Access**: Granular permission controls for file reading and writing operations.
-- **Brutalist Design**: A clean, developer-centric interface inspired by the Opencode.ai aesthetic.
+## Features
 
-## 🛠️ Installation
+- **Multi-Provider Chat**: Switch between AI providers and models directly from the sidebar.
+- **File Change Cards**: AI-edited files appear as clickable cards in chat — click to open the file in VS Code.
+- **Permission Controls**: Granular Allow/Always/Deny prompts for file access.
+- **Event Stream**: See tool calls, reasoning, and context gathering in real-time.
+- **Session Management**: Browse, load, and delete past chat sessions.
+- **Diff Visualization**: Bar charts show add/delete stats for each changed file.
 
-1. Install the extension from the Marketplace.
-2. Click the **Opencode** icon in the Activity Bar (left or right).
-3. Start chatting and let the AI help you build faster!
+## Installation
 
-## 🔒 Security & Permissions
+1. Install the extension from the VS Code Marketplace.
+2. Click the **Opencode** icon in the sidebar.
+3. Start chatting — the extension automatically starts an `opencode serve` backend.
 
-Opencode Sidebar always asks for your permission before making any changes to your files. With options for "Allow Once" or "Always Allow", you remain in full control of your codebase.
+## Security
 
----
+Opencode Sidebar Chat always asks for your permission before the AI reads or writes files. Use Allow Once, Always, or Deny to control access.

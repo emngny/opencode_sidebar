@@ -12,9 +12,10 @@ interface Props {
   contextEvents?: Array<{ id: string; name: string; status: string; content: string; meta?: any }>;
   onLoadSession?: (sessionId: string) => void;
   onRespondPermission?: (permId: string, sessionId: string, response: string, remember?: boolean) => void;
+  onOpenDiff?: (filePath: string) => void;
 }
 
-export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, contextEvents, onLoadSession, onRespondPermission }: Readonly<Props>) {
+export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, contextEvents, onLoadSession, onRespondPermission, onOpenDiff }: Readonly<Props>) {
   if (messages.length === 0 && (!contextEvents || contextEvents.length === 0)) return null;
 
   const hasContext = contextEvents && contextEvents.length > 0;
@@ -35,7 +36,7 @@ export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, co
           {msg.eventType === 'compacting' ? (
             <CompactionDivider status={msg.eventStatus} />
           ) : msg.role === 'event' ? (
-            <EventCard message={msg} onLoadSession={onLoadSession} onRespondPermission={onRespondPermission} />
+            <EventCard message={msg} onLoadSession={onLoadSession} onRespondPermission={onRespondPermission} onOpenDiff={onOpenDiff} />
           ) : msg.role === 'tool' ? (
             <ToolMessage content={msg.content} />
           ) : (
@@ -313,7 +314,7 @@ function ContextGroup({ events, allDone }: { events: Array<{ id: string; name: s
   );
 }
 
-function EventCard({ message, onLoadSession, onRespondPermission }: { message: ChatMessage; onLoadSession?: (id: string) => void; onRespondPermission?: (permId: string, sessionId: string, response: string, remember?: boolean) => void }) {
+function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: { message: ChatMessage; onLoadSession?: (id: string) => void; onRespondPermission?: (permId: string, sessionId: string, response: string, remember?: boolean) => void; onOpenDiff?: (filePath: string) => void }) {
   const eventType = message.eventType;
   const status = message.eventStatus;
   const meta = message.eventMeta;
@@ -437,9 +438,22 @@ function EventCard({ message, onLoadSession, onRespondPermission }: { message: C
           <DiffChanges additions={added} deletions={deleted} variant="bars" />
           <span style={{ color: '#a6e3a1' }}>+{added}</span>
           <span style={{ color: '#f38ba8' }}>-{deleted}</span>
+          <button
+            onClick={(e) => { e.stopPropagation(); if (meta.path) onOpenDiff?.(meta.path); }}
+            style={{
+              marginLeft: 8, padding: '2px 8px', fontSize: 10, borderRadius: 4,
+              border: '1px solid rgba(137,180,250,0.3)',
+              background: 'rgba(137,180,250,0.1)',
+              color: '#89b4fa', cursor: 'pointer',
+            }}
+          >
+            Open
+          </button>
         </div>
       );
     }
+    title = meta.path;
+  } else if ((eventType === 'file_edit' || eventType === 'tool_result') && meta?.path) {
     title = meta.path;
   }
 
@@ -501,6 +515,7 @@ function EventCard({ message, onLoadSession, onRespondPermission }: { message: C
       {expanded && hasDetail && (
         <div style={{ paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {fileInfo}
+          {eventType === 'file_edit' && meta?.content && <DiffPreview patch={meta.content} />}
           {argsContent}
           {resultContent}
           {errorContent}
@@ -606,6 +621,45 @@ function highlightMentions(text: string): React.ReactNode {
       </span>
     );
   });
+}
+
+function DiffPreview({ patch }: { patch: string }) {
+  return (
+    <pre
+      style={{
+        margin: 0,
+        fontSize: 11,
+        lineHeight: 1.5,
+        maxHeight: 300,
+        overflow: 'auto',
+        borderRadius: 8,
+        backgroundColor: '#181825',
+        border: '1px solid #313244',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+      }}
+    >
+      {patch.split('\n').map((line, i) => {
+        let bg = 'transparent';
+        let color = '#cdd6f4';
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          bg = 'rgba(166,227,161,0.08)';
+          color = '#a6e3a1';
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          bg = 'rgba(243,139,168,0.08)';
+          color = '#f38ba8';
+        } else if (line.startsWith('@@')) {
+          color = '#89b4fa';
+        } else if (line.startsWith('Index:') || line.startsWith('===')) {
+          color = '#6c7086';
+        }
+        return (
+          <div key={i} style={{ backgroundColor: bg, color, padding: '1px 8px', whiteSpace: 'pre' }}>
+            {line}
+          </div>
+        );
+      })}
+    </pre>
+  );
 }
 
 function collapseWhitespace(text: string): string {
