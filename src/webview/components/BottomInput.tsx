@@ -71,7 +71,11 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
   };
 
   const handleSlashSelect = (cmd: CommandItem) => {
-    setText('');
+    if (cmd.type === 'skill') {
+      setText(`/${cmd.command} `);
+    } else {
+      setText('');
+    }
     setShowSlashPopup(false);
     onSlashCommand?.(cmd);
     setTimeout(() => textareaRef.current?.focus(), 0);

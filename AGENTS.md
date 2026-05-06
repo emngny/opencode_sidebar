@@ -7,8 +7,8 @@
 - **Webview only:** `node esbuild.config.js`
 - **Watch:** `npm run watch:extension` (tsc) and `npm run watch:webview` (esbuild) in parallel
 - **Package:** `npx vsce package`
-- **No lint, no tests, no CI** — skipping these will not fail the build
-- **Dependencies:** `marked` (markdown render), `opencode-ai` (server package), `react` 18, `esbuild` for bundling
+- **No CI, no tests** — these won't block the build. `lint` script exists but has no eslint dep; don't rely on it.
+- **Dependencies:** `marked` + `dompurify` (markdown), `opencode-ai` (server), `react` 18, `esbuild`
 
 ## Architecture
 
@@ -16,47 +16,56 @@ Two independent compilation targets under `src/`:
 
 | Target | Dir | Entry | Build |
 |--------|-----|-------|-------|
-| Extension (Node.js) | `src/extension/` | `extension.ts` | tsc |
-| Webview (React/DOM) | `src/webview/` | `index.tsx` | esbuild → IIFE `out/webview.js` |
+| Extension (Node.js) | `src/extension/` | `extension.ts` | tsc → `out/` |
+| Webview (React/DOM) | `src/webview/` | `index.tsx` | esbuild → `out/webview.js` |
 
-- Webview imports types from `src/extension/types.ts` (included via `tsconfig.webview.json` `include`)
-- Webview <-> Extension communication via typed `postMessage`/`onMessage` in `types.ts`
-- Extension runs in VS Code's Electron Node — Node builtins are available
+- Webview imports types from `src/extension/types.ts` (included via `tsconfig.webview.json`)
+- Webview ↔ Extension via typed `postMessage`/`onMessage` in `types.ts` + `vscode-api.ts`
+- Extension runs in VS Code's Electron Node — Node builtins available
 - Single `package.json`, no monorepo
+- The `commands/` directory is empty — no VS Code commands are registered beyond the webview provider. The `opencode.run` command declared in `package.json` is never wired up.
 
 ## Key Files
 
 | File | Role |
 |------|------|
-| `src/extension/extension.ts` | Activation entrypoint; wires SidebarProvider, PreviewProvider, ReviewQueue, commands |
-| `src/extension/providers/SidebarProvider.ts` | Webview view provider; message dispatch hub |
-| `src/extension/services/OpencodeCli.ts` | Manages `opencode serve` subprocess (spawns with `--port 0`), HTTP API client, SSE streaming |
-| `src/extension/services/ReviewQueue.ts` | Review queue with Accept/Reject; virtual doc via `opencode-preview://` |
-| `src/extension/providers/PreviewProvider.ts` | Text content provider for `opencode-preview://` scheme |
-| `src/extension/types.ts` | Shared types: ChatMessage, message types (WebviewTo/ExtensionTo), ProviderInfo, etc. |
-| `src/webview/App.tsx` | Main React app; message handler hub |
-| `src/webview/components/ChatContainer.tsx` | Message renderer: ChatBubble, EventCard, ContextGroup, CompactionDivider |
+| `src/extension/extension.ts` | Activation entrypoint; registers SidebarProvider only |
+| `src/extension/providers/SidebarProvider.ts` | Webview view provider; message dispatch, session management, permission prompts, skills loading |
+| `src/extension/services/OpencodeCli.ts` | Spawns `opencode serve --port 0`, HTTP API client, SSE streaming, diff polling, permission granting |
+| `src/extension/types.ts` | Shared types: ChatMessage, message types (WebviewTo/ExtensionTo), ProviderInfo, SessionDiff, etc. |
+| `src/extension/services/readPatterns.ts` | Deny patterns blocking reads of `.env`, secrets, `node_modules`, build artifacts |
+| `src/webview/App.tsx` | Main React app; message handler hub, model/mode/session state, revert, abort |
+| `src/webview/components/ChatContainer.tsx` | Message renderer: ChatBubble, EventCard, ContextGroup, CompactionDivider, DiffPreview |
 
 ## Critical Gotchas
 
-- **Model IDs use `providerId/modelId` format** (e.g., `opencode/glm-5.1`) to avoid duplicates
-- **`sendPrompt` reads POST `/session/:id/message` as SSE stream** (`text/event-stream`), not JSON. Parses `data:` lines, stops on `session.status` → `idle`
-- **Extension protects own install directory** — ReviewQueue blocks edits to files under the extension's path
-- **`opencode serve` binary resolution** hardcoded to Windows paths in `resolveBinary()`
-- **No authentication UI** — server generates password (`oc-vsc-{random}`), uses Basic Auth
-- **Permission asked events** are sent to webview for user decision (Allow/Always/Deny), not auto-granted
-- **Session is reused** across messages with the same `currentSessionId`; only `clearChat`/`abort` creates a new one
-- **Event stream** sends `message.part.delta` for streaming text (field=`"text"`), `message.part.updated` for tool/compaction/reasoning status
-- **Reasoning content** comes as `message.part.delta` with `partType === 'reasoning'` — accumulated in `ChatMessage.reasoning`
-- **Context gathering tools** (read/glob/grep/list/webfetch) are grouped into a single `ContextGroup` component
-- **Tool event types** in webview: `tool_call`, `tool_result`, `thinking`, `permission`, `compacting`, `file_edit`
-- **Revert API**: `POST /session/:id/revert` with `{ messageID }` — undoes file changes via git snapshots
-- **Markdown** is rendered via `marked` library in `Markdown.tsx` (code blocks get copy buttons)
-- **Agent colors** defined in `agentColors.ts` — build=blue, plan=pink, ask=green, debug=yellow, docs=teal, code=purple, review=orange
-- **UI language is English** — all user-facing strings are in English
+- **Model IDs use `providerId/modelId` format** (e.g., `opencode/glm-5.1`) to avoid duplicates across providers
+- **`sendPrompt` reads POST `/session/:id/message` as SSE stream** (`text/event-stream`), not JSON. Also listens to `/event` SSE endpoint. Parses `data:` lines, stops on `session.status` → `idle`
+- **`opencode serve` binary resolution** hardcoded to Windows paths in `resolveBinary()` — tries 3 candidate paths before falling back to `PATH`
+- **API keys stored in VS Code SecretStorage**, restored on startup via `_restoreApiKeys()`
+- **No auth UI** — server generates `oc-vsc-{random}` password, uses Basic Auth
+- **Permission events** sent to webview for user decision (Allow Once/Always/Deny), not auto-granted. Read prompts also appear for files matching `readPatterns.ts` deny rules
+- **Session reused** with same `currentSessionId`; `clearChat`/`abort` resets it to null, forcing a new session on next message
+- **Event stream**: `message.part.delta` for streaming text (field=`"text"`), `message.part.updated` for tool/compaction/reasoning, `message.updated`/`session.diff` for file diffs
+- **Reasoning** arrives as `message.part.delta` with `partType === 'reasoning'`, accumulated in `ChatMessage.reasoning`, toggleable in UI
+- **Context tools** (read/glob/grep/list/webfetch) grouped into `ContextGroup` component; non-context tools render as `EventCard`
+- **Tool event types** in webview: `tool_call`, `tool_result`, `thinking`, `permission`, `compacting`, `file_edit`, `file_read`
+- **Revert API**: `POST /session/:id/revert` with `{ messageID }` undoes file changes via git snapshots; `POST /session/:id/unrevert` restores
+- **Markdown** uses `marked` + `DOMPurify` sanitization; code blocks get copy buttons
+- **Agent colors** (`agentColors.ts`): build=blue, plan=pink, ask=green, debug=yellow, docs=teal, code=purple, review=orange
+- **AGENTS.md and SKILL.md are gitignored** — won't appear in git status
+- **CSP** in the HTML template restricts `connect-src` to the specific dynamic server port (read from `opencode.url`)
+- **Skills** loaded from `.agents/skills/` — each subdirectory with a `SKILL.md` becomes a `/skillname` slash command
 
-## Commands & Activation
+## Slash Commands
 
-- Activates on `onView:opencode.sidebar` (sidebar open), `opencode.run`, `opencode.acceptChange`, `opencode.rejectChange`
-- Accept/Reject buttons in diff editor toolbar via `when: "isInDiffEditor && opencode.hasActiveReview"`
-- View container defined in both `activitybar` (left) and `secondarySidebar` (right) — appears in right panel automatically on supported VS Code versions
+Built-in (handled in `App.tsx` + `slashCommands.ts`):
+- `/init` — Creates a template `AGENTS.md` in workspace root
+- `/review` — Runs `git diff --cached`, sends output for AI review
+- `/plan`, `/build`, `/ask`, `/debug`, `/docs`, `/code` — Switch agent mode; any remaining text after the command is sent as a prompt in that mode
+
+## Activation
+
+- Activates on `onView:opencode.sidebar` (sidebar opens) and `onCommand:opencode.run`
+- View container in both `activitybar` (left) and `secondarySidebar` (right) — appears on the right on supported VS Code versions
+- The extension only registers a `WebviewViewProvider` — no other commands, tree views, or toolbar items are wired despite the declared activation events

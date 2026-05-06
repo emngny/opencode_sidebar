@@ -1,6 +1,6 @@
-import { spawn, ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { spawn, ChildProcess } from 'child_process';
+import { existsSync } from 'fs';
+import { randomBytes } from 'crypto';
 import { ProviderListResult } from '../types';
 
 interface NormalizedDiff {
@@ -24,14 +24,16 @@ function normalizeDiff(d: any): NormalizedDiff {
   return { path, added, deleted, content };
 }
 
-const READ_TOOLS = ['read', 'grep', 'glob', 'list', 'webfetch'];
+const READ_TOOLS = new Set(['read', 'grep', 'glob', 'list', 'webfetch']);
 
 function extractReadPaths(tool: string, args: any): string[] {
   if (!args) return [];
   const a = typeof args === 'string' ? JSON.parse(args) : args;
   switch (tool) {
     case 'read':
-      return a.path ? [a.path] : (Array.isArray(a) ? a.filter((x: any) => typeof x === 'string') : []);
+      if (a.path) return [a.path];
+      if (Array.isArray(a)) return a.filter((x: any) => typeof x === 'string');
+      return [];
     case 'grep':
       return a.include ? [a.include] : [];
     case 'glob':
@@ -160,7 +162,7 @@ export class OpencodeCli {
         if (!started) reject(err);
       });
 
-      proc.on('exit', (code) => {
+      proc.on('exit', (code: any) => {
         if (!started) reject(new Error(`opencode serve exited with code ${code}`));
         this.server = null;
         this.process = null;
@@ -238,7 +240,12 @@ export class OpencodeCli {
     await this.start();
     try {
       const result = await this.apiFetch(`/session/${sessionId}/diff`);
-      const arr = Array.isArray(result) ? result : (result?.files ? result.files : []);
+      let arr: any[] = [];
+      if (Array.isArray(result)) {
+        arr = result;
+      } else if (result?.files) {
+        arr = result.files;
+      }
       const normalized = arr.map(normalizeDiff);
       console.log('[opencode] Session diff result:', normalized.length, 'files');
       return normalized;
@@ -439,17 +446,20 @@ export class OpencodeCli {
       let timeout: NodeJS.Timeout;
       const resetTimeout = () => {
         clearTimeout(timeout);
-        timeout = setTimeout(() => {
+        const abortSession = async () => {
           if (!idle) {
             idle = true;
             console.log('[opencode] Session timeout expired for', sessionId);
-            fetch(`${this.server!.url}/session/${sessionId}/abort`, {
-              method: 'POST',
-              headers: { ...this.authHeader },
-            }).catch(() => {});
+            try {
+              await fetch(`${this.server!.url}/session/${sessionId}/abort`, {
+                method: 'POST',
+                headers: { ...this.authHeader },
+              });
+            } catch {}
             resolve();
           }
-        }, 300000); // 5 minutes
+        };
+        timeout = setTimeout(abortSession, 300000); // 5 minutes
       };
       resetTimeout();
     });
@@ -602,7 +612,7 @@ export class OpencodeCli {
               meta.subagentType = part?.state?.input?.subagent_type;
             }
             // Emit file_read completed for read tools
-            if (READ_TOOLS.includes(toolName)) {
+            if (READ_TOOLS.has(toolName)) {
               const paths = extractReadPaths(toolName, part?.state?.input?.args || part?.args || toolResult);
               for (const p of paths) {
                 onToolEvent?.({
@@ -628,7 +638,7 @@ export class OpencodeCli {
               onContent?.(`\n[${toolName} result]\n${typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)}\n[/${toolName}]\n`);
             }
           } else if (status === 'failed') {
-            if (READ_TOOLS.includes(toolName)) {
+            if (READ_TOOLS.has(toolName)) {
               const paths = extractReadPaths(toolName, part?.state?.input?.args || part?.args);
               for (const p of paths) {
                 onToolEvent?.({

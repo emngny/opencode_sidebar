@@ -282,6 +282,35 @@ export default function App() {
     console.log('[webview] Sending prompt:', prompt, 'context:', context?.length || 0, 'items');
     setBusy(true);
     setContextEvents([]);
+    // Check for slash command in prompt
+    const firstWord = prompt.split(' ')[0];
+    if (firstWord.startsWith('/')) {
+      const cmdName = firstWord.slice(1);
+      const rest = prompt.slice(firstWord.length).trim();
+      const skill = skills.find((s) => s.name === cmdName);
+      if (skill) {
+        postMessage({ type: 'runCommand', payload: { command: cmdName, args: rest, isSkill: true } });
+        return;
+      }
+      if (cmdName === 'init' || cmdName === 'review') {
+        postMessage({ type: 'runCommand', payload: { command: cmdName, args: rest } });
+        return;
+      }
+      // Agent commands (plan, build, etc.) - switch mode and send remaining text
+      const modeMap: Record<string, string> = {
+        build: 'Build', plan: 'Plan', ask: 'Ask',
+        debug: 'Debug', docs: 'Docs', code: 'Code',
+      };
+      if (modeMap[cmdName]) {
+        setMode(modeMap[cmdName]);
+        if (rest) {
+          postMessage({ type: 'sendMessage', payload: { prompt: rest, model, mode: modeMap[cmdName], context } });
+          return;
+        }
+        setBusy(false);
+        return;
+      }
+    }
     postMessage({ type: 'sendMessage', payload: { prompt, model, mode, context } });
   };
   const handleOpenDiff = (filePath: string) => {

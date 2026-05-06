@@ -183,12 +183,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         }
         case 'runCommand': {
-          const { command, args } = data.payload;
+          const { command, args, isSkill } = data.payload;
           if (command === 'init') {
             this._handleInitCommand();
             this.postMessage({ type: 'receiveMessage', payload: { role: 'system', content: `✅ AGENTS.md created in workspace root. You can now customize it for your project.` } });
           } else if (command === 'review') {
             this._handleReviewCommand(args || '');
+          } else if (isSkill) {
+            const skillContent = this._loadSkillContent(command);
+            if (skillContent) {
+              const prompt = args ? `${skillContent}\n\n${args}` : skillContent;
+              this._processPrompt(prompt, 'build');
+            } else {
+              this.postMessage({ type: 'error', payload: { message: `Skill "${command}" not found` } });
+            }
           }
           break;
         }
@@ -558,6 +566,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       return result;
     } catch {
       return [];
+    }
+  }
+
+  private _loadSkillContent(name: string): string | null {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) return null;
+    const skillMdPath = path.join(workspaceFolders[0].uri.fsPath, '.agents', 'skills', name, 'SKILL.md');
+    if (!existsSync(skillMdPath)) return null;
+    try {
+      return readFileSync(skillMdPath, 'utf-8');
+    } catch {
+      return null;
     }
   }
 
