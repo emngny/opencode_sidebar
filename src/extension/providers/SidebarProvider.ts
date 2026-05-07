@@ -6,7 +6,6 @@ import { OpencodeCli } from '../services/OpencodeCli';
 import { getNonce } from '../utils';
 import { ExtensionToWebviewMessage, WEBVIEW_TO_EXTENSION_TYPES } from '../types';
 import { getGitInfo } from '../services/GitInfo';
-import { isReadDenied } from '../services/readPatterns';
 import { SessionService } from '../services/SessionService';
 import { PermissionService } from '../services/PermissionService';
 import { AuthService } from '../services/AuthService';
@@ -164,10 +163,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         type: 'projectInfo',
         payload: { project, path: pathInfo, vcs: vcsInfo },
       });
+      await this._handleListProviders();
+      this._handleLoadSkills();
     } catch (err: any) {
       console.warn('[opencode] Project info fetch failed, using git info:', err);
       const gitInfo = getGitInfo();
       this.postMessage({ type: 'gitInfo', payload: gitInfo });
+      await this._handleListProviders();
+      this._handleLoadSkills();
     }
   }
 
@@ -336,7 +339,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           type: 'toolEvent',
           payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'completed', content: `Read: ${filePath}`, meta: { path: filePath } },
         });
-      } catch (e: any) {
+      } catch (e: unknown) {
+        console.error(`Failed to read file ${filePath}:`, e);
         userContent += `\n\n[File not found: ${filePath}]`;
       }
     }
@@ -487,15 +491,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private validatePayload(type: string, payload: any): boolean {
-    if (!payload && type !== 'clearChat' && type !== 'unrevert' && type !== 'getSavedModel' && type !== 'loadSkills' && type !== 'webviewReady') {
+      if (!payload && type !== 'clearChat' && type !== 'unrevert' && type !== 'getSavedModel' && type !== 'loadSkills' && type !== 'webviewReady' && type !== 'listProviders' && type !== 'abort' && type !== 'getSessions') {
       return false;
     }
     switch (type) {
       case 'searchFiles':
         return typeof payload?.query === 'string';
-      case 'saveModel':
       case 'revertMessage':
         return typeof payload?.messageId === 'string';
+      case 'saveModel':
+        return typeof payload?.model === 'string';
       case 'respondPermission':
         return typeof payload?.permId === 'string' && typeof payload?.response === 'string';
       case 'respondReadPermission':
@@ -621,7 +626,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     try {
       const diff = execFileSync('git', ['diff', '--cached', ...safeArgs], { cwd: root, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
       const prompt = `Review the following uncommitted changes:\n\n${diff.slice(0, 10000)}${diff.length > 10000 ? '\n...(truncated)' : ''}\n\nProvide a concise code review focusing on potential bugs, security issues, and improvements.`;
-      this._processPrompt(prompt, 'review', undefined);
+      this._processPrompt(prompt, 'review');
     } catch (err: any) {
       this.postMessage({ type: 'error', payload: { message: `Review failed: ${err.message}` } });
     }

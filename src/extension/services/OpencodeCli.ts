@@ -33,9 +33,9 @@ export class OpencodeCli {
   private readonly binaryPath: string = 'opencode';
   private readonly cwd: string | undefined;
   private apiClient: ApiClient | null = null;
-  private sseStream: SseStream;
+  private readonly sseStream: SseStream;
   private eventDispatcher: EventDispatcher | null = null;
-  private idleResolveRefs = new Map<string, () => void>();
+  private readonly idleResolveRefs = new Map<string, () => void>();
 
   constructor(cwd?: string) {
     this.binaryPath = this.resolveBinary();
@@ -61,7 +61,7 @@ export class OpencodeCli {
             '/usr/lib',
           ].filter(Boolean);
           const resolvedPath = resolve(envPath).replace(/\\/g, '/').toLowerCase();
-          const isAllowed = allowedRoots.some(root => resolvedPath.startsWith(root.replace(/\\/g, '/').toLowerCase()));
+          const isAllowed = allowedRoots.some(root => resolvedPath.startsWith(root.replaceAll('\\', '/').toLowerCase()));
           if (isAllowed) return envPath;
           console.warn('[opencode] OPENCODE_BIN_PATH not in allowed directories:', envPath);
         }
@@ -382,13 +382,23 @@ proc.on('exit', (code: any) => {
         headers: { 'Content-Type': 'application/json', ...this.authHeader },
         body: JSON.stringify(body),
         signal: this.abortController!.signal,
-      }).catch((err) => {
-        console.error('[opencode:post] Error:', err?.message);
-        onError?.(err.message || 'POST error');
-        guard();
-      });
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          await this.sseStream.parse(response, (event: SSEMessage) => {
+            if (event.type === 'message.part.delta' || event.type === 'message.part.updated') {
+              this.eventDispatcher!.dispatch(event, sessionId);
+            }
+            if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
+          }, this.abortController!.signal);
+        })
+        .catch((err) => {
+          console.error('[opencode:post] Error:', err?.message);
+          onError?.(err.message || 'POST error');
+          guard();
+        });
 
-      setTimeout(() => guard(), 600000);
+      setTimeout(() => guard(), 120000);
     });
 
     await idlePromise;

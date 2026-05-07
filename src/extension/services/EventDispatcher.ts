@@ -250,7 +250,7 @@ export class EventDispatcher {
   private handleMessagePartDelta(event: SSEMessage, sessionId: string): void {
     const cb = this.callbacks;
     const props = event.properties;
-    if (props?.field === 'text' && props?.delta) {
+    if (props?.delta) {
       const types = this.sessionPartTypes.get(sessionId);
       const partType = props.partID ? types?.get(props.partID) : undefined;
       if (partType === 'reasoning') {

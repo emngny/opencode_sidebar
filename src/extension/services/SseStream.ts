@@ -116,6 +116,16 @@ export class SseStream {
         buffer = lines.pop() || '';
 
         for (const line of lines) {
+          if (line === '' && currentEvent.data) {
+            try {
+              onEvent(JSON.parse(currentEvent.data) as SSEMessage);
+            } catch {
+              // skip parse error
+            }
+            currentEvent = {};
+            continue;
+          }
+
           const event = this.parseEventLine(line);
           if (!event) continue;
 
@@ -128,17 +138,6 @@ export class SseStream {
           }
           if (event.data !== undefined) {
             currentEvent.data = (currentEvent.data || '') + event.data;
-          }
-
-          if (line === '' && currentEvent.data) {
-            if (currentEvent.data) {
-              try {
-                onEvent(JSON.parse(currentEvent.data) as SSEMessage);
-              } catch {
-                // skip parse error
-              }
-            }
-            currentEvent = {};
           }
         }
       }
