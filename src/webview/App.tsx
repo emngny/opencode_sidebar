@@ -13,6 +13,7 @@ import { CommandItem } from './slashCommands';
 import { useChatState } from './hooks/useChatState';
 import { useModelManager } from './hooks/useModelManager';
 import { useMessageHandler } from './hooks/useMessageHandler';
+import { COLORS, flexRow, flexCenter, flexBetween, overlay, card, btnIcon, transitionColor, textSmall, textHeader, gap } from './styles';
 
 export default function App() {
   const {
@@ -52,14 +53,13 @@ export default function App() {
     processProviderList, tryAutoSelectModel,
   });
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, contextEvents]);
 
   useEffect(() => {
     postMessage({ type: 'webviewReady' });
   }, []);
 
   const handleSend = useCallback((prompt: string, context?: ContextPart[]) => {
-    console.log('[webview] Sending prompt:', prompt, 'context:', context?.length || 0, 'items');
     setBusy(true);
     setContextEvents([]);
     const firstWord = prompt.split(' ')[0];
@@ -194,40 +194,34 @@ export default function App() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px 12px', backgroundColor: '#181825', borderTop: '1px solid #313244' }}>
           <ModeSelector mode={mode} onChange={setMode} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              onClick={() => setShowSessions(true)}
-              style={{
-                backgroundColor: 'transparent', border: 'none', color: '#585b70',
-                cursor: 'pointer', padding: 4, borderRadius: 4,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#cdd6f4')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = '#585b70')}
-              title="Session History"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-            </button>
-            {providersLoaded ? (
-              <ModelSelector model={model} onChange={setModel} availableModels={availableModels.filter(m => !hiddenModels[m.id])} />
-            ) : (
-              <span style={{ fontSize: 11, color: '#585b70', padding: '4px 8px' }}>Loading...</span>
-            )}
-            <button
-              onClick={() => setShowProviders(true)}
-              style={{
-                backgroundColor: 'transparent', border: 'none',
-                color: showProviders ? '#89b4fa' : '#585b70',
-                cursor: 'pointer', padding: 4, borderRadius: 4,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'color 0.15s',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#cdd6f4')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = showProviders ? '#89b4fa' : '#585b70')}
-              title="Provider Settings"
-            >
+              <button
+                onClick={() => setShowSessions(true)}
+                style={btnIcon}
+                onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
+                onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textMuted)}
+                title="Session History"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              </button>
+              {providersLoaded ? (
+                <ModelSelector model={model} onChange={setModel} availableModels={availableModels.filter(m => !hiddenModels[m.id])} />
+              ) : (
+                <span style={{ ...textSmall, padding: '4px 8px' }}>Loading...</span>
+              )}
+              <button
+                onClick={() => setShowProviders(true)}
+                style={{
+                  ...btnIcon,
+                  color: showProviders ? COLORS.accent : COLORS.textMuted,
+                  transition: 'color 0.15s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
+                onMouseLeave={(e) => (e.currentTarget.style.color = showProviders ? COLORS.accent : COLORS.textMuted)}
+                title="Provider Settings"
+              >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -264,44 +258,36 @@ export default function App() {
       )}
 
       {readPermissionPrompt && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-        }}>
-          <div style={{
-            backgroundColor: '#1e1e2e', border: '1px solid #45475a',
-            borderRadius: 12, padding: 24, maxWidth: 400, width: '90%',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-          }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#f38ba8', marginBottom: 8 }}>
+        <div style={overlay}>
+          <div style={card}>
+            <div style={{ ...textHeader, color: COLORS.red }}>
               Read Permission Required
             </div>
-            <div style={{ fontSize: 12, color: '#cdd6f4', marginBottom: 4 }}>
+            <div style={{ fontSize: 12, color: COLORS.text, marginBottom: 4 }}>
               The AI wants to read this file:
             </div>
             <div style={{
-              fontSize: 13, color: '#89b4fa', fontFamily: 'monospace',
+              fontSize: 13, color: COLORS.accent, fontFamily: 'monospace',
               padding: '8px 12px', backgroundColor: '#11111b',
               borderRadius: 6, marginBottom: 8, wordBreak: 'break-all',
             }}>
               {readPermissionPrompt.filePath}
             </div>
-            <div style={{ fontSize: 11, color: '#a6adc8', marginBottom: 16 }}>
+            <div style={{ ...textSmall, marginBottom: 16 }}>
               {readPermissionPrompt.reason}
             </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div style={{ ...flexRow, justifyContent: 'flex-end', gap: 8 }}>
               <button onClick={() => handleRespondReadPermission('deny')} style={{
-                padding: '6px 14px', borderRadius: 6, border: '1px solid #45475a',
-                backgroundColor: 'transparent', color: '#cdd6f4', cursor: 'pointer', fontSize: 12,
+                padding: '6px 14px', borderRadius: 6, border: `1px solid ${COLORS.border}`,
+                backgroundColor: 'transparent', color: COLORS.text, cursor: 'pointer', fontSize: 12,
               }}>Deny</button>
               <button onClick={() => handleRespondReadPermission('allow')} style={{
                 padding: '6px 14px', borderRadius: 6, border: 'none',
-                backgroundColor: '#a6e3a1', color: '#11111b', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                backgroundColor: COLORS.green, color: '#11111b', cursor: 'pointer', fontSize: 12, fontWeight: 600,
               }}>Allow Once</button>
               <button onClick={() => handleRespondReadPermission('allow', true)} style={{
                 padding: '6px 14px', borderRadius: 6, border: 'none',
-                backgroundColor: '#89b4fa', color: '#11111b', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                backgroundColor: COLORS.accent, color: '#11111b', cursor: 'pointer', fontSize: 12, fontWeight: 600,
               }}>Always Allow</button>
             </div>
           </div>

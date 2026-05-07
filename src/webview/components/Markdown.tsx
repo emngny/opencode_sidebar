@@ -12,7 +12,10 @@ export function Markdown({ content }: Props) {
   const html = useMemo(() => {
     const raw = marked.parse(content, { gfm: true, breaks: true }) as string;
     const withCopyBtns = raw.replace(/<pre>/g, '<pre><button class="copy-btn">Copy</button>');
-    return DOMPurify.sanitize(withCopyBtns, { ADD_ATTR: ['class'] });
+    return DOMPurify.sanitize(withCopyBtns, {
+      ADD_ATTR: ['class'],
+      ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[a-z]+:)/i,
+    });
   }, [content]);
 
   useEffect(() => {

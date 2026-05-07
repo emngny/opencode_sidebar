@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ContextPart } from '../../extension/types';
 import { CommandItem } from '../slashCommands';
 import { SlashCommandPopup } from './SlashCommandPopup';
+import { COLORS, flexRow, flexCenter, btnIcon, textSmall, inputBase } from '../styles';
 
 interface FileResult {
   name: string;
@@ -40,6 +41,7 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
 
   // Close file search on outside click
   useEffect(() => {
+    if (!showFileSearch) return;
     const handler = (e: MouseEvent) => {
       if (fileSearchRef.current && !fileSearchRef.current.contains(e.target as Node)) {
         setShowFileSearch(false);
@@ -47,7 +49,7 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, [showFileSearch]);
 
   // Close slash popup on outside click
   useEffect(() => {
@@ -209,14 +211,14 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
             right: 16,
             maxHeight: 250,
             overflowY: 'auto',
-            backgroundColor: '#1e1e2e',
-            border: '1px solid #45475a',
+            backgroundColor: COLORS.bg,
+            border: `1px solid ${COLORS.border}`,
             borderRadius: 12,
             boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
             zIndex: 100,
           }}
         >
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #313244' }}>
+          <div style={{ padding: '8px 12px', borderBottom: `1px solid ${COLORS.bgHover}` }}>
             <input
               autoFocus
               value={fileSearchInput}
@@ -228,11 +230,11 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
               placeholder="Search files..."
               style={{
                 width: '100%',
-                backgroundColor: '#313244',
+                backgroundColor: COLORS.bgHover,
                 border: 'none',
                 borderRadius: 8,
                 padding: '8px 12px',
-                color: '#cdd6f4',
+                color: COLORS.text,
                 fontSize: 13,
                 outline: 'none',
                 boxSizing: 'border-box',

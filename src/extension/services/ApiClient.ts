@@ -1,11 +1,5 @@
 import { ProviderListResult } from '../types';
-
-interface NormalizedDiff {
-  path: string;
-  added: number;
-  deleted: number;
-  content: string;
-}
+import { NormalizedDiff, normalizeDiff } from '../utils/diffUtils';
 
 export interface ApiClientOptions {
   baseUrl: string;
@@ -30,7 +24,7 @@ export class ApiClient {
     this.authHeader = authHeader;
   }
 
-  private async fetch(path: string, options: RequestInit = {}): Promise<any> {
+  private async fetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const response = await fetch(url, {
       ...options,
@@ -43,20 +37,22 @@ export class ApiClient {
 
     if (!response.ok) {
       const text = await response.text();
-      console.error(`[opencode:api] ${options.method || 'GET'} ${path} -> ${response.status}: ${text.slice(0, 500)}`);
+      const isJson = text.startsWith('{') || text.startsWith('[');
+      const safeMsg = isJson && text.includes('"error"') ? 'JSON error response' : text.slice(0, 100);
+      console.error(`[opencode:api] ${options.method || 'GET'} ${path} -> ${response.status}: ${safeMsg}`);
       throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
     }
 
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
-      return response.json();
+      return response.json() as Promise<T>;
     }
 
-    return response.text();
+    return response.text() as unknown as T;
   }
 
   async createSession(title?: string): Promise<{ id: string; title?: string }> {
-    const data = await this.fetch('/session', {
+    const data = await this.fetch<{ id: string; title?: string }>('/session', {
       method: 'POST',
       body: JSON.stringify({
         title: title || `VS Code - ${new Date().toLocaleString()}`,
@@ -66,20 +62,19 @@ export class ApiClient {
   }
 
   async listSessions(): Promise<{ id: string; title?: string }[]> {
-    const data = await this.fetch('/session');
+    const data = await this.fetch<{ id: string; title?: string }[]>('/session');
     return Array.isArray(data) ? data : [];
   }
 
   async getSessionDiff(sessionId: string): Promise<NormalizedDiff[]> {
-    const result = await this.fetch(`/session/${sessionId}/diff`);
+    const result = await this.fetch<{ files?: NormalizedDiff[] } | NormalizedDiff[]>(`/session/${sessionId}/diff`);
     let arr: any[] = [];
     if (Array.isArray(result)) {
       arr = result;
-    } else if (result?.files) {
-      arr = result.files;
+    } else if (result && 'files' in result) {
+      arr = result.files || [];
     }
     const normalized = arr.map(normalizeDiff);
-    console.log('[opencode] Session diff result:', normalized.length, 'files');
     return normalized;
   }
 
@@ -229,7 +224,6 @@ export class ApiClient {
         body: JSON.stringify({ response: 'always', remember: true }),
       });
       if (response.ok) {
-        console.log('[opencode] Permission granted:', permissionId);
       } else {
         const text = await response.text();
         console.error('[opencode] Permission grant failed:', response.status, text.slice(0, 200));
@@ -255,18 +249,4 @@ export class ApiClient {
 
     return response;
   }
-}
-
-function normalizeDiff(d: any): NormalizedDiff {
-  const path = d.path || d.file || '';
-  const content = d.content || d.patch || '';
-  let added = typeof d.added === 'number' ? d.added : 0;
-  let deleted = typeof d.deleted === 'number' ? d.deleted : 0;
-  if (added === 0 && deleted === 0 && content) {
-    for (const line of content.split('\n')) {
-      if (line.startsWith('+') && !line.startsWith('+++')) added++;
-      if (line.startsWith('-') && !line.startsWith('---')) deleted++;
-    }
-  }
-  return { path, added, deleted, content };
 }

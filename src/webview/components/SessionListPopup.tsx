@@ -36,8 +36,10 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
 
   const handleDeleteOld = async (days: number) => {
     const now = Date.now();
-    const cutoff = now - days * 24 * 60 * 60 * 1000;
-    const oldSessions = sessions.filter(s => s.time?.created && s.time.created < cutoff);
+    const cutoff = days === 0 ? 0 : now - days * 24 * 60 * 60 * 1000;
+    const oldSessions = cutoff === 0
+      ? sessions
+      : sessions.filter(s => s.time?.created && s.time.created < cutoff);
     for (const s of oldSessions) {
       postMessage({ type: 'deleteSession', payload: { sessionId: s.id } });
     }

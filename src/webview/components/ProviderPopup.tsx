@@ -18,7 +18,7 @@ export function ProviderPopup({ onClose, onModelSelect, availableModels, hiddenM
   const [connected, setConnected] = useState<string[]>([]);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [messages, setMessages] = useState<Record<string, string>>({});
-  const apiKeyInputs = useRef<Record<string, string>>({});
+  const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,12 +56,12 @@ export function ProviderPopup({ onClose, onModelSelect, availableModels, hiddenM
   }, {} as Record<string, typeof availableModels>);
 
   const handleSave = (providerId: string) => {
-    const key = apiKeyInputs.current[providerId];
+    const key = apiKeyInputs[providerId];
     if (!key) return;
     setSaving((prev) => ({ ...prev, [providerId]: true }));
     setMessages((prev) => ({ ...prev, [providerId]: 'Saving...' }));
     postMessage({ type: 'setApiKey', payload: { providerId, key } });
-    apiKeyInputs.current[providerId] = '';
+    setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
   };
 
   const handleRemove = (providerId: string) => {
@@ -315,8 +315,8 @@ export function ProviderPopup({ onClose, onModelSelect, availableModels, hiddenM
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                             <input
                               type="password"
-                              value={apiKeyInputs.current[provider.id] || ''}
-                              onChange={(e) => { apiKeyInputs.current[provider.id] = e.target.value; }}
+                              value={apiKeyInputs[provider.id] || ''}
+                              onChange={(e) => { setApiKeyInputs((prev) => ({ ...prev, [provider.id]: e.target.value })); }}
                               placeholder={isConnected ? 'New API key...' : `${provider.name} API key`}
                               style={{
                                 flex: 1,
@@ -332,14 +332,14 @@ export function ProviderPopup({ onClose, onModelSelect, availableModels, hiddenM
                             />
                           <button
                             onClick={() => handleSave(provider.id)}
-                            disabled={saving[provider.id] || !apiKeyInputs.current[provider.id]}
+                            disabled={saving[provider.id] || !apiKeyInputs[provider.id]}
                             style={{
                               padding: '7px 14px',
                               borderRadius: 6,
                               border: 'none',
-                              backgroundColor: saving[provider.id] || !apiKeyInputs.current[provider.id] ? '#45475a' : '#7c3aed',
+                              backgroundColor: saving[provider.id] || !apiKeyInputs[provider.id] ? '#45475a' : '#7c3aed',
                               color: '#fff',
-                              cursor: saving[provider.id] || !apiKeyInputs.current[provider.id] ? 'not-allowed' : 'pointer',
+                              cursor: saving[provider.id] || !apiKeyInputs[provider.id] ? 'not-allowed' : 'pointer',
                               fontWeight: 500,
                               fontSize: 12,
                               whiteSpace: 'nowrap',

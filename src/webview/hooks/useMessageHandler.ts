@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { ExtensionToWebviewMessage, ChatMessage, ProviderListResult, SavedModelPayload } from '../../extension/types';
 import { onMessage } from '../vscode-api';
 import { ModelItem } from './useModelManager';
+import { genId } from './useChatState';
 
 interface MessageHandlerState {
   // Chat state setters
@@ -37,38 +38,39 @@ export function useMessageHandler(state: MessageHandlerState): void {
     setMessages, setBusy, setContextEvents,
     pendingChunkRef, chunkFlushTimerRef, streamingMsgIdRef, DEBOUNCE_MS,
     flushPendingChunk, cleanupStreaming,
-    setModel, setGitInfo, setAvailableModels, setHiddenModels,
+    setModel, setMode, setGitInfo, setAvailableModels, setHiddenModels,
     setProvidersLoaded, setSkills, setFileSearchResults, setFileSearchQuery,
     setRevertActive, setConfirmDialog, setReadPermissionPrompt,
     processProviderList, tryAutoSelectModel,
   } = state;
 
-  // Use refs for values that change and are read inside callbacks
-  const processProviderListRef = useRef(processProviderList);
-  processProviderListRef.current = processProviderList;
-  const tryAutoSelectRef = useRef(tryAutoSelectModel);
-  tryAutoSelectRef.current = tryAutoSelectModel;
+  const streamEndedRef = useRef(false);
 
   useEffect(() => {
+    const processProviderListRef = { current: processProviderList };
+    const tryAutoSelectRef = { current: tryAutoSelectModel };
+
     const unsubscribe = onMessage((msg: ExtensionToWebviewMessage) => {
       switch (msg.type) {
         case 'receiveMessage': {
+          streamEndedRef.current = false;
           const newMsg: ChatMessage = {
             role: msg.payload.role,
             content: msg.payload.content,
             timestamp: Date.now(),
-            id: Math.random().toString(36).slice(2),
+            id: genId(),
           };
           if (msg.payload.role === 'assistant') newMsg.isStreaming = true;
           setMessages((prev) => {
             const updated = [...prev, newMsg];
-            console.log('[webview] Messages updated, new count:', updated.length);
             return updated;
           });
           break;
         }
         case 'receiveChunk': {
+          if (streamEndedRef.current) break;
           if (msg.payload.fullContent) {
+            cleanupStreaming();
             flushPendingChunk();
             setMessages((prev) => {
               const updated = [...prev];
@@ -80,7 +82,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
                   isStreaming: true,
                 };
               } else {
-                const newId = Math.random().toString(36).slice(2);
+                const newId = genId();
                 streamingMsgIdRef.current = newId;
                 updated.push({
                   role: 'assistant',
@@ -95,12 +97,16 @@ export function useMessageHandler(state: MessageHandlerState): void {
           } else {
             pendingChunkRef.current += msg.payload.content || '';
             if (!chunkFlushTimerRef.current) {
-              chunkFlushTimerRef.current = setTimeout(flushPendingChunk, DEBOUNCE_MS);
+              chunkFlushTimerRef.current = setTimeout(() => {
+                chunkFlushTimerRef.current = null;
+                if (!streamEndedRef.current) flushPendingChunk();
+              }, DEBOUNCE_MS);
             }
           }
           break;
         }
         case 'streamEnd': {
+          streamEndedRef.current = true;
           cleanupStreaming();
           flushPendingChunk();
           streamingMsgIdRef.current = null;
@@ -129,7 +135,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
               role: m.info?.role === 'user' ? 'user' : 'assistant',
               content: m.parts?.map((p: any) => p.text || p.content || '').join('\n') || m.info?.content || '',
               timestamp: m.info?.time?.created || Date.now(),
-              id: m.info?.id || Math.random().toString(36).slice(2),
+              id: m.info?.id || genId(),
             }));
             setMessages(converted);
           }
@@ -154,7 +160,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
         case 'error': {
           setMessages((prev) => [
             ...prev,
-            { role: 'assistant', content: `❌ ${msg.payload.message}`, timestamp: Date.now(), id: Math.random().toString(36).slice(2) },
+            { role: 'assistant', content: `❌ ${msg.payload.message}`, timestamp: Date.now(), id: genId() },
           ]);
           setBusy(false);
           break;
@@ -175,7 +181,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
         }
         case 'toolEvent': {
           const event = msg.payload;
-          const eventId = event.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+          const eventId = event.id || `tool_${Date.now()}_${genId()}`;
           const isContextTool = ['read', 'glob', 'grep', 'list', 'webfetch', 'websearch', 'search'].includes(event.name);
           if (isContextTool) {
             setContextEvents((prev) => {
@@ -215,7 +221,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
               role: m.info?.role === 'user' ? 'user' : 'assistant',
               content: m.parts?.map((p: any) => p.text || p.content || '').join('\n') || m.info?.content || '',
               timestamp: m.info?.time?.created || Date.now(),
-              id: m.info?.id || Math.random().toString(36).slice(2),
+              id: m.info?.id || genId(),
             }));
             setMessages(converted);
           }
@@ -301,7 +307,13 @@ export function useMessageHandler(state: MessageHandlerState): void {
       cleanupStreaming();
       flushPendingChunk();
     };
-    // All deps are stable setter functions or refs - run once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [
+    setMessages, setBusy, setContextEvents,
+    pendingChunkRef, chunkFlushTimerRef, streamingMsgIdRef, DEBOUNCE_MS,
+    flushPendingChunk, cleanupStreaming,
+    setModel, setMode, setGitInfo, setAvailableModels, setHiddenModels,
+    setProvidersLoaded, setSkills, setFileSearchResults, setFileSearchQuery,
+    setRevertActive, setConfirmDialog, setReadPermissionPrompt,
+    processProviderList, tryAutoSelectModel,
+  ]);
 }

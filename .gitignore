@@ -7,3 +7,16 @@ out/
 AGENTS.md
 SKILL.md
 AGENTS.md
+/.agents
+/_bmad-output
+/_bmad
+# Added by code-review-graph
+.code-review-graph/
+/.claude
+.cursorrules
+/.kiro
+.opencode.json
+.windsurfrules
+.mcp.json
+CLAUDE.md
+GEMINI.md

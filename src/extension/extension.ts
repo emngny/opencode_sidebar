@@ -1,15 +1,16 @@
 import * as vscode from 'vscode';
 import { SidebarProvider } from './providers/SidebarProvider';
 
-let sidebarProvider: SidebarProvider | undefined;
+let _sidebarProvider: SidebarProvider | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
-  sidebarProvider = new SidebarProvider(context.extensionUri, context);
+  _sidebarProvider = new SidebarProvider(context.extensionUri, context);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, sidebarProvider),
+    vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, _sidebarProvider),
   );
 }
 
 export function deactivate() {
-  sidebarProvider?.dispose();
+  _sidebarProvider?.dispose();
+  _sidebarProvider = undefined;
 }

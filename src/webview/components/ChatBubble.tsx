@@ -3,6 +3,7 @@ import { ChatMessage } from '../../extension/types';
 import { Markdown } from './Markdown';
 import { getAgentColor } from './agentColors';
 import { ThinkingDots } from './ThinkingDots';
+import { COLORS, textNormal, textSmall, flexRow, gap } from '../styles';
 
 interface Props {
   message: ChatMessage;
@@ -76,7 +77,7 @@ export function ChatBubble({ message, onRevert }: Readonly<Props>) {
       }}
     >
       {message.role === 'assistant' && message.isStreaming && message.content.length < 20 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#89b4fa', fontSize: 12 }}>
+        <div style={{ ...flexRow, color: COLORS.accent, fontSize: 12, gap: 8 }}>
           <ThinkingDots />
           <span>Thinking...</span>
         </div>
@@ -85,13 +86,10 @@ export function ChatBubble({ message, onRevert }: Readonly<Props>) {
         <div style={{ marginBottom: 4 }}>
           <div
             onClick={() => setShowReasoning(!showReasoning)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-              fontSize: 11, color: '#6c7086', userSelect: 'none',
-            }}
+            style={{ ...flexRow, gap: 6, cursor: 'pointer', fontSize: 11, color: COLORS.textDim, userSelect: 'none' }}
           >
-            <span style={{ fontSize: 10, transition: 'transform 0.2s', transform: showReasoning ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-            <span>{message.isStreaming ? 'Reasoning...' : 'Reasoned for a few seconds'}</span>
+            <span>{showReasoning ? '▾' : '▸'}</span>
+            <span>Reasoning ({message.reasoning.length} chars)</span>
           </div>
           {showReasoning && (
             <div style={{

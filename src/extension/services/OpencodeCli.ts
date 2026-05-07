@@ -1,10 +1,12 @@
 import { spawn, ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
+import { resolve } from 'path';
 import { randomBytes } from 'crypto';
 import { ProviderListResult } from '../types';
 import { ApiClient } from './ApiClient';
 import { SseStream, SSEMessage } from './SseStream';
-import { EventDispatcher, EventCallbacks, NormalizedDiff } from './EventDispatcher';
+import { EventDispatcher, EventCallbacks } from './EventDispatcher';
+import { NormalizedDiff } from '../utils/diffUtils';
 
 interface OpencodeServerInfo {
   port: number;
@@ -33,6 +35,7 @@ export class OpencodeCli {
   private apiClient: ApiClient | null = null;
   private sseStream: SseStream;
   private eventDispatcher: EventDispatcher | null = null;
+  private idleResolveRefs = new Map<string, () => void>();
 
   constructor(cwd?: string) {
     this.binaryPath = this.resolveBinary();
@@ -41,11 +44,27 @@ export class OpencodeCli {
   }
 
   private resolveBinary(): string {
-    // Priority 1: explicit env var override
+    // Priority 1: explicit env var override (restricted to allowed directories)
     const envPath = process.env.OPENCODE_BIN_PATH;
     if (envPath) {
       try {
-        if (existsSync(envPath)) return envPath;
+        if (existsSync(envPath)) {
+          const allowedRoots = [
+            process.env.HOME || process.env.USERPROFILE || '',
+            process.env.LOCALAPPDATA || '',
+            process.env.APPDATA || '',
+            process.env.SystemRoot || '',
+            process.env.WINDIR || '',
+            '/usr/local',
+            '/usr/bin',
+            '/bin',
+            '/usr/lib',
+          ].filter(Boolean);
+          const resolvedPath = resolve(envPath).replace(/\\/g, '/').toLowerCase();
+          const isAllowed = allowedRoots.some(root => resolvedPath.startsWith(root.replace(/\\/g, '/').toLowerCase()));
+          if (isAllowed) return envPath;
+          console.warn('[opencode] OPENCODE_BIN_PATH not in allowed directories:', envPath);
+        }
       } catch (err) { console.warn('[opencode] Binary path check failed:', err); }
     }
 
@@ -56,15 +75,10 @@ export class OpencodeCli {
     const npmPrefix = process.env.npm_config_prefix;
 
     if (platform === 'win32') {
-      const localAppData = process.env.LOCALAPPDATA;
       const appData = process.env.APPDATA;
-      // npm global installations
+      // npm global installations only
       if (appData) candidates.push(`${appData}\\npm\\node_modules\\opencode-ai\\node_modules\\opencode-windows-x64\\bin\\opencode.exe`);
       if (appData) candidates.push(`${appData}\\npm\\node_modules\\opencode-ai\\node_modules\\opencode-windows-x64-baseline\\bin\\opencode.exe`);
-      // Portable/local installs
-      if (localAppData) candidates.push(`${localAppData}\\opencode\\opencode.exe`);
-      candidates.push('C:\\opencode\\opencode.exe');
-      candidates.push('C:\\Program Files\\opencode\\opencode.exe');
     } else if (platform === 'darwin') {
       // macOS npm global + common package managers
       if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
@@ -98,7 +112,7 @@ export class OpencodeCli {
     return 'opencode';
   }
 
-  private get authHeader(): Record<string, string> {
+  get authHeader(): Record<string, string> {
     if (!this.server) return {};
     const encoded = Buffer.from(`opencode:${this.server.password}`).toString('base64');
     return { Authorization: `Basic ${encoded}` };
@@ -125,7 +139,7 @@ export class OpencodeCli {
   async start(): Promise<void> {
     if (this.server) return;
 
-    const password = 'oc-vsc-' + randomBytes(12).toString('hex');
+    const password = randomBytes(16).toString('hex');
 
     return new Promise((resolve, reject) => {
       const minimalEnv: Record<string, string | undefined> = {
@@ -165,7 +179,6 @@ export class OpencodeCli {
         if (match && !started) {
           started = true;
           const port = Number.parseInt(match[1], 10);
-          console.log('[opencode] Server started on port:', port);
           this.server = { port, password, url: `http://127.0.0.1:${port}` };
           this.process = proc;
           resolve();
@@ -181,10 +194,13 @@ export class OpencodeCli {
         if (!started) reject(err);
       });
 
-      proc.on('exit', (code: any) => {
+proc.on('exit', (code: any) => {
         if (!started) reject(new Error(`opencode serve exited with code ${code}`));
         this.server = null;
-        this.process = null;
+        for (const resolve of this.idleResolveRefs.values()) {
+          resolve();
+        }
+        this.idleResolveRefs.clear();
       });
 
       setTimeout(() => {
@@ -225,7 +241,6 @@ export class OpencodeCli {
     try {
       return await this.ensureApiClient().getSessionDiff(sessionId);
     } catch (err: any) {
-      console.log('[opencode] Session diff not available:', err?.message);
       return [];
     }
   }
@@ -286,32 +301,26 @@ export class OpencodeCli {
    * and resolves diffs via onDiffs. Returns once the session becomes idle or times out.
    * @param sessionId - Active session ID from createSession
    * @param prompt - User message text
-   * @param onContent - Called per text delta during streaming
-   * @param onToolCall - Called on tool_call events with name + args
-   * @param onError - Called on session.error or HTTP failures
-   * @param model - Optional model override in "providerId/modelId" format
-   * @param agent - Optional agent mode name
-   * @param extraParts - Additional message parts (images, files)
-   * @param onToolEvent - Called on tool events (tool_call, tool_result, file_read, etc.)
-   * @param onMessageMeta - Called when message metadata arrives (id, agent, modelId, time)
-   * @param onReasoning - Called with reasoning content delta
-   * @param onDiffs - Called with file diffs when session diff is available
+   * @param options - Optional callbacks and parameters
    * @returns Promise resolving to the message ID when streaming completes
    */
   async sendPrompt(
     sessionId: string,
     prompt: string,
-    onContent?: (text: string) => void,
-    onToolCall?: (name: string, args: any) => void,
-    onError?: (error: string) => void,
-    model?: string,
-    agent?: string,
-    extraParts?: Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
-    onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: any }) => void,
-    onMessageMeta?: (meta: { id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } }) => void,
-    onReasoning?: (text: string) => void,
-    onDiffs?: (diffs: NormalizedDiff[]) => void,
+    options?: {
+      onContent?: (text: string) => void;
+      onToolCall?: (name: string, args: any) => void;
+      onError?: (error: string) => void;
+      model?: string;
+      agent?: string;
+      extraParts?: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+      onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: any }) => void;
+      onMessageMeta?: (meta: { id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } }) => void;
+      onReasoning?: (text: string) => void;
+      onDiffs?: (diffs: NormalizedDiff[]) => void;
+    },
   ): Promise<string> {
+    const { onContent, onToolCall, onError, model, agent, extraParts, onToolEvent, onMessageMeta, onReasoning, onDiffs } = options || {};
     await this.start();
 
     const parts: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [
@@ -348,16 +357,17 @@ export class OpencodeCli {
 
     const idlePromise = new Promise<void>((resolve) => {
       let settled = false;
-      const guard = () => {
+      this.idleResolveRefs.set(sessionId, () => {
         if (!settled) {
           settled = true;
           resolve();
+          this.idleResolveRefs.delete(sessionId);
         }
-      };
+      });
+      const guard = this.idleResolveRefs.get(sessionId)!;
 
       const eventUrl = `${this.server!.url}/event`;
       this.sseStream.connect(eventUrl, this.authHeader, (event: SSEMessage) => {
-        console.log('[opencode] /event:', event.type, JSON.stringify(event.properties).slice(0, 200));
         this.eventDispatcher!.dispatch(event, sessionId);
         if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
         if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
@@ -378,7 +388,7 @@ export class OpencodeCli {
         guard();
       });
 
-      setTimeout(() => guard(), 300000);
+      setTimeout(() => guard(), 600000);
     });
 
     await idlePromise;
@@ -448,12 +458,7 @@ export class OpencodeCli {
   stop(): void {
     this.abortController?.abort();
     if (this.process) {
-      const platform = process.platform;
-      if (platform === 'win32') {
-        this.process.kill();
-      } else {
-        this.process.kill('SIGTERM');
-      }
+      this.process.kill('SIGTERM');
       this.process = null;
     }
     this.server = null;

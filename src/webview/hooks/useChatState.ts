@@ -1,6 +1,12 @@
 import { useState, useRef, useCallback } from 'react';
 import { ChatMessage } from '../../extension/types';
 
+export function genId(): string {
+  const arr = new Uint8Array(12);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 interface ContextEvent {
   id: string;
   name: string;
@@ -39,7 +45,7 @@ export function useChatState() {
       }
       const updated = [...prev];
       if (lastAssistantIdx < 0) {
-        const newId = Math.random().toString(36).slice(2);
+        const newId = genId();
         streamingMsgIdRef.current = newId;
         updated.push({
           role: 'assistant',

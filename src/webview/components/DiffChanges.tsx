@@ -6,14 +6,20 @@ interface Props {
   variant?: 'default' | 'bars';
 }
 
+const TOTAL_BLOCKS = 5;
+const SMALL_DIFF_THRESHOLD = 5;
+const MIN_BLOCKS_THRESHOLD = 20;
+const RATIO_THRESHOLD = 4;
+const SMALL_ADD_LIMIT = 5;
+const SMALL_ADD_LIMIT_2 = 10;
+
 export function DiffChanges({ additions, deletions, variant = 'default' }: Props) {
   const total = additions + deletions;
 
   const blocks = useMemo(() => {
-    const TOTAL_BLOCKS = 5;
     if (additions === 0 && deletions === 0) return Array(TOTAL_BLOCKS).fill('neutral');
 
-    if (total < 5) {
+    if (total < SMALL_DIFF_THRESHOLD) {
       const added = additions > 0 ? 1 : 0;
       const deleted = deletions > 0 ? 1 : 0;
       return [
@@ -25,7 +31,7 @@ export function DiffChanges({ additions, deletions, variant = 'default' }: Props
 
     const ratio = additions > deletions ? additions / deletions : deletions / additions;
     let blocksForColors = TOTAL_BLOCKS;
-    if (total < 20 || ratio < 4) blocksForColors = TOTAL_BLOCKS - 1;
+    if (total < MIN_BLOCKS_THRESHOLD || ratio < RATIO_THRESHOLD) blocksForColors = TOTAL_BLOCKS - 1;
 
     const percentAdded = additions / total;
     const percentDeleted = deletions / total;
@@ -33,10 +39,10 @@ export function DiffChanges({ additions, deletions, variant = 'default' }: Props
     let added = additions > 0 ? Math.max(1, Math.round(percentAdded * blocksForColors)) : 0;
     let deleted = deletions > 0 ? Math.max(1, Math.round(percentDeleted * blocksForColors)) : 0;
 
-    if (additions > 0 && additions <= 5) added = Math.min(added, 1);
-    if (additions > 5 && additions <= 10) added = Math.min(added, 2);
-    if (deletions > 0 && deletions <= 5) deleted = Math.min(deleted, 1);
-    if (deletions > 5 && deletions <= 10) deleted = Math.min(deleted, 2);
+    if (additions > 0 && additions <= SMALL_ADD_LIMIT) added = Math.min(added, 1);
+    if (additions > SMALL_ADD_LIMIT && additions <= SMALL_ADD_LIMIT_2) added = Math.min(added, 2);
+    if (deletions > 0 && deletions <= SMALL_ADD_LIMIT) deleted = Math.min(deleted, 1);
+    if (deletions > SMALL_ADD_LIMIT && deletions <= SMALL_ADD_LIMIT_2) deleted = Math.min(deleted, 2);
 
     let totalAlloc = added + deleted;
     if (totalAlloc > blocksForColors) {

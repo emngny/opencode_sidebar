@@ -218,7 +218,6 @@ interface ReceiveMessagePayload {
   id?: string;
   project?: string;
   reason?: string;
-  [key: string]: unknown;
 }
 
 interface ReceiveChunkPayload {
@@ -253,7 +252,6 @@ interface SessionDeletedPayload {
 interface ErrorPayload {
   message: string;
   error?: string;
-  [key: string]: unknown;
 }
 
 interface ProviderListPayload extends ProviderListResult {}
@@ -275,7 +273,6 @@ interface FileSearchResultsPayload {
  */
 export interface SavedModelPayload {
   model?: string;
-  [key: string]: unknown;
 }
 
 interface ToolEventPayload {
@@ -303,13 +300,11 @@ interface MessageMetaPayload {
   requestId?: string;
   filePath?: string;
   meta?: Record<string, unknown>;
-  [key: string]: unknown;
 }
 
 interface ReasoningContentPayload {
   messageId?: string;
   content?: string;
-  [key: string]: unknown;
 }
 
 interface ReadFilePromptPayload {
@@ -318,7 +313,6 @@ interface ReadFilePromptPayload {
   type?: string;
   reason?: string;
   requestId?: string;
-  [key: string]: unknown;
 }
 
 interface SkillListPayload {
@@ -386,7 +380,6 @@ export interface ProjectInfo {
   project?: string;
   agent?: string;
   vcs?: Record<string, unknown>;
-  [key: string]: unknown;
 }
 
 /**

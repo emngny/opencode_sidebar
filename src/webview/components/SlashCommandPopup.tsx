@@ -51,9 +51,10 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
   }, [filtered, selectedIndex, onSelect, onClose]);
 
   useEffect(() => {
+    if (filtered.length === 0) return;
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  }, [handleKeyDown, filtered.length]);
 
   // Scroll selected into view
   useEffect(() => {

@@ -66,10 +66,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
     webviewView.webview.onDidReceiveMessage(async (data) => {
-      if (!data || typeof data !== 'object' || !WEBVIEW_TO_EXTENSION_TYPES.includes(data.type as any)) {
-        console.warn('[opencode] Ignored message with unknown type:', data?.type);
+      const msgType = data?.type;
+      if (!data || typeof data !== 'object' || typeof msgType !== 'string' || !(WEBVIEW_TO_EXTENSION_TYPES as readonly string[]).includes(msgType)) {
+        console.warn('[opencode] Ignored message with unknown type:', msgType);
         return;
       }
+
+      const payload = data.payload;
+      if (!this.validatePayload(msgType, payload)) {
+        console.warn('[opencode] Invalid payload for:', msgType);
+        return;
+      }
+
       switch (data.type) {
         case 'searchFiles':
           await this._handleSearchFiles(data.payload);
@@ -130,6 +138,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           await this._handleDeleteSession(data.payload);
           break;
         case 'switchAgent':
+          // Agent switch handled client-side in webview (mode change)
+          // Could extend to track agent usage or persist preference
           break;
       }
     });
@@ -264,109 +274,136 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const { prompt, model, mode, context } = payload;
     const agent = MODE_TO_AGENT[mode] || 'build';
 
-    let userContent = prompt;
-    const extraParts: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
-
-    if (context && Array.isArray(context)) {
-      for (const item of context) {
-        if (item.type === 'file') {
-          const workspaceFolders = vscode.workspace.workspaceFolders;
-          if (workspaceFolders) {
-            const filePath = item.path;
-            const { allowed, deniedPattern } = this._permissions.isReadAllowed(filePath);
-            if (!allowed && deniedPattern) {
-              const reqId = `${filePath}_${Date.now()}`;
-              this.postMessage({
-                type: 'readFilePrompt',
-                payload: { filePath, reason: `Matches deny pattern: ${deniedPattern}`, requestId: reqId },
-              });
-              const userAllowed = await this._permissions.waitForReadPermission(filePath);
-              if (!userAllowed) {
-                userContent += `\n\n[Skipped: ${filePath} — read denied by pattern]`;
-                this.postMessage({
-                  type: 'toolEvent',
-                  payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'failed', content: `Read denied: ${filePath}`, meta: { path: filePath, error: 'Permission denied' } },
-                });
-                continue;
-              }
-            }
-            const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filePath);
-            try {
-              const content = await vscode.workspace.fs.readFile(fileUri);
-              const text = new TextDecoder().decode(content);
-              extraParts.push({ type: 'text', text: `File: ${filePath}\n\n${text}\n` });
-              this.postMessage({
-                type: 'toolEvent',
-                payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'completed', content: `Read: ${filePath}`, meta: { path: filePath } },
-              });
-            } catch (e: any) {
-              userContent += `\n\n[File not found: ${filePath}]`;
-            }
-          }
-        }
-      }
-    }
+    const { userContent, extraParts } = await this._processContext(prompt, context);
 
     this.postMessage({ type: 'receiveMessage', payload: { role: 'user', content: userContent } });
 
     try {
-      if (!this._opencode.isRunning) {
-        await this._opencode.start();
-      }
-
+      await this._ensureOpencodeRunning();
       const sessionId = await this._sessions.ensureSession(prompt);
-
-      this.postMessage({ type: 'receiveMessage', payload: { role: 'assistant', content: '' } });
-
-      let accumulatedContent = '';
-      let eventDiffs: Array<{ path: string; added: number; deleted: number; content: string }> = [];
-
-      await this._opencode.sendPrompt(
-        sessionId,
-        prompt,
-        (text) => {
-          accumulatedContent += text;
-          this.postMessage({ type: 'receiveChunk', payload: { content: text, fullContent: accumulatedContent } });
-        },
-        (name, args) => {
-          this.postMessage({ type: 'receiveMessage', payload: { role: 'tool', content: `🔧 ${name} running...` } });
-        },
-        (error) => {
-          this.postMessage({ type: 'error', payload: { message: error } });
-        },
-        model,
-        agent,
-        extraParts.length > 0 ? extraParts : undefined,
-        (event) => { this.postMessage({ type: 'toolEvent', payload: event }); },
-        (meta) => { this.postMessage({ type: 'messageMeta', payload: meta }); },
-        (reasoning) => { this.postMessage({ type: 'reasoningContent', payload: reasoning }); },
-        (diffs) => { eventDiffs = diffs; },
-      );
-
-      this.postMessage({ type: 'streamEnd', payload: { content: accumulatedContent } });
-
-      const diffs = eventDiffs.length > 0 ? eventDiffs : await this._opencode.getSessionDiff(sessionId);
-      if (Array.isArray(diffs) && diffs.length > 0) {
-        for (const diff of diffs) {
-          if (diff.path && (diff.added > 0 || diff.deleted > 0)) {
-            this.postMessage({
-              type: 'toolEvent',
-              payload: {
-                id: `file_edit_${diff.path}_${Date.now()}`,
-                type: 'file_edit',
-                name: 'file_edit',
-                status: 'completed',
-                content: diff.path,
-                meta: { path: diff.path, added: diff.added, deleted: diff.deleted, content: diff.content },
-              },
-            });
-          }
-        }
-      }
+      await this._handleStreaming(sessionId, prompt, model, agent, extraParts);
     } catch (err: any) {
       const msg = err?.message || err?.toString?.() || 'Unknown error';
       this.postMessage({ type: 'error', payload: { message: msg } });
       this.postMessage({ type: 'streamEnd', payload: { content: '' } });
+    }
+  }
+
+  private async _processContext(prompt: string, context: any): Promise<{
+    userContent: string;
+    extraParts: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+  }> {
+    let userContent = prompt;
+    const extraParts: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
+
+    if (!context || !Array.isArray(context)) {
+      return { userContent, extraParts };
+    }
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+      return { userContent, extraParts };
+    }
+
+    for (const item of context) {
+      if (item.type !== 'file') continue;
+
+      const filePath = item.path;
+      const { allowed, deniedPattern } = this._permissions.isReadAllowed(filePath);
+      if (!allowed && deniedPattern) {
+        const reqId = `${filePath}_${Date.now()}`;
+        this.postMessage({
+          type: 'readFilePrompt',
+          payload: { filePath, reason: `Matches deny pattern: ${deniedPattern}`, requestId: reqId },
+        });
+        const userAllowed = await this._permissions.waitForReadPermission(filePath);
+        if (!userAllowed) {
+          userContent += `\n\n[Skipped: ${filePath} — read denied by pattern]`;
+          this.postMessage({
+            type: 'toolEvent',
+            payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'failed', content: `Read denied: ${filePath}`, meta: { path: filePath, error: 'Permission denied' } },
+          });
+          continue;
+        }
+      }
+
+      const fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filePath);
+      try {
+        const content = await vscode.workspace.fs.readFile(fileUri);
+        const text = new TextDecoder().decode(content);
+        extraParts.push({ type: 'text', text: `File: ${filePath}\n\n${text}\n` });
+        this.postMessage({
+          type: 'toolEvent',
+          payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'completed', content: `Read: ${filePath}`, meta: { path: filePath } },
+        });
+      } catch (e: any) {
+        userContent += `\n\n[File not found: ${filePath}]`;
+      }
+    }
+
+    return { userContent, extraParts };
+  }
+
+  private async _ensureOpencodeRunning(): Promise<void> {
+    if (!this._opencode.isRunning) {
+      await this._opencode.start();
+    }
+  }
+
+  private async _handleStreaming(
+    sessionId: string,
+    prompt: string,
+    model: string,
+    agent: string,
+    extraParts?: Array<{ type: string; text?: string; data?: string; mimeType?: string }>
+  ): Promise<void> {
+    this.postMessage({ type: 'receiveMessage', payload: { role: 'assistant', content: '' } });
+
+    let accumulatedContent = '';
+    let eventDiffs: Array<{ path: string; added: number; deleted: number; content: string }> = [];
+
+    await this._opencode.sendPrompt(sessionId, prompt, {
+      onContent: (text) => {
+        accumulatedContent += text;
+        this.postMessage({ type: 'receiveChunk', payload: { content: text, fullContent: accumulatedContent } });
+      },
+      onToolCall: (name, _args) => {
+        this.postMessage({ type: 'receiveMessage', payload: { role: 'tool', content: `🔧 ${name} running...` } });
+      },
+      onError: (error) => {
+        this.postMessage({ type: 'error', payload: { message: error } });
+      },
+      model,
+      agent,
+      extraParts: extraParts && extraParts.length > 0 ? extraParts : undefined,
+      onToolEvent: (event) => { this.postMessage({ type: 'toolEvent', payload: event }); },
+      onMessageMeta: (meta) => { this.postMessage({ type: 'messageMeta', payload: meta }); },
+      onReasoning: (reasoning) => { this.postMessage({ type: 'reasoningContent', payload: reasoning }); },
+      onDiffs: (diffs) => { eventDiffs = diffs; },
+    });
+
+    this.postMessage({ type: 'streamEnd', payload: { content: accumulatedContent } });
+    await this._handleDiffs(sessionId, eventDiffs);
+  }
+
+  private async _handleDiffs(sessionId: string, eventDiffs: Array<{ path: string; added: number; deleted: number; content: string }>): Promise<void> {
+    const diffs = eventDiffs.length > 0 ? eventDiffs : await this._opencode.getSessionDiff(sessionId);
+    if (!Array.isArray(diffs) || diffs.length === 0) return;
+
+    for (const diff of diffs) {
+      if (diff.path && (diff.added > 0 || diff.deleted > 0)) {
+        this.postMessage({
+          type: 'toolEvent',
+          payload: {
+            id: `file_edit_${diff.path}_${Date.now()}`,
+            type: 'file_edit',
+            name: 'file_edit',
+            status: 'completed',
+            content: diff.path,
+            meta: { path: diff.path, added: diff.added, deleted: diff.deleted, content: diff.content },
+          },
+        });
+      }
     }
   }
 
@@ -449,8 +486,39 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private validatePayload(type: string, payload: any): boolean {
+    if (!payload && type !== 'clearChat' && type !== 'unrevert' && type !== 'getSavedModel' && type !== 'loadSkills' && type !== 'webviewReady') {
+      return false;
+    }
+    switch (type) {
+      case 'searchFiles':
+        return typeof payload?.query === 'string';
+      case 'saveModel':
+      case 'revertMessage':
+        return typeof payload?.messageId === 'string';
+      case 'respondPermission':
+        return typeof payload?.permId === 'string' && typeof payload?.response === 'string';
+      case 'respondReadPermission':
+        return typeof payload?.filePath === 'string' && typeof payload?.response === 'string';
+      case 'runCommand':
+        return typeof payload?.command === 'string';
+      case 'setApiKey':
+        return typeof payload?.providerId === 'string' && typeof payload?.key === 'string';
+      case 'removeApiKey':
+        return typeof payload?.providerId === 'string';
+      case 'openDiff':
+        return typeof payload?.filePath === 'string';
+      case 'loadSession':
+      case 'deleteSession':
+        return typeof payload?.sessionId === 'string';
+      default:
+        return true;
+    }
+  }
+
   dispose() {
     this._opencode.stop();
+    this._view = undefined;
   }
 
   private _loadSkills(): Array<{ name: string; description?: string }> {
@@ -459,8 +527,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const skillsDir = path.join(workspaceFolders[0].uri.fsPath, '.agents', 'skills');
     if (!existsSync(skillsDir)) return [];
     try {
-      const entries = vscode.workspace.fs.readDirectory(vscode.Uri.file(skillsDir));
-      // Can't easily use readDirectory sync, fall back to fs
       const dirs = readdirSync(skillsDir, { withFileTypes: true });
       const result: Array<{ name: string; description?: string }> = [];
       for (const entry of dirs) {
@@ -534,10 +600,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) return;
     const root = workspaceFolders[0].uri.fsPath;
+
+    const allowedFlags = new Set(['--no-index', '-U', '--unified', '--stat', '--shortstat', '--numstat', '--name-only', '--name-status', '--check', '--color', '--color-words']);
+    const safeArgs: string[] = [];
+    if (args) {
+      const regex = /[^\s"']+|"([^"]*)"|'([^']*)'/g;
+      const parsed: string[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(args)) !== null) {
+        parsed.push(m[1] || m[2] || m[0]);
+      }
+      for (const arg of parsed) {
+        if (arg.startsWith('--') && !allowedFlags.has(arg)) continue;
+        if (/^-.[^-]/.test(arg) && !/^-U\d+$/.test(arg)) continue;
+        if (arg.includes(';') || arg.includes('|') || arg.includes('&&') || arg.includes('||')) continue;
+        safeArgs.push(arg);
+      }
+    }
+
     try {
-      const diff = execFileSync('git', ['diff', '--cached', ...(args ? args.split(' ') : [])], { cwd: root, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+      const diff = execFileSync('git', ['diff', '--cached', ...safeArgs], { cwd: root, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
       const prompt = `Review the following uncommitted changes:\n\n${diff.slice(0, 10000)}${diff.length > 10000 ? '\n...(truncated)' : ''}\n\nProvide a concise code review focusing on potential bugs, security issues, and improvements.`;
-      // Send as a user message like normal sendMessage
       this._processPrompt(prompt, 'review', undefined);
     } catch (err: any) {
       this.postMessage({ type: 'error', payload: { message: `Review failed: ${err.message}` } });
@@ -557,23 +640,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const agent = MODE_TO_AGENT[mode] || 'build';
     let accumulatedContent = '';
 
-    await this._opencode.sendPrompt(
-      sessionId,
-      prompt,
-      (chunk) => {
+    await this._opencode.sendPrompt(sessionId, prompt, {
+      onContent: (chunk) => {
         accumulatedContent += chunk;
         this.postMessage({ type: 'receiveChunk', payload: { content: chunk, fullContent: accumulatedContent } });
       },
-      () => {},
-      (error) => {
+      onToolCall: () => {},
+      onError: (error) => {
         this.postMessage({ type: 'error', payload: { message: error } });
       },
-      undefined,
       agent,
-      [],
-      (event) => { this.postMessage({ type: 'toolEvent', payload: event }); },
-      (meta) => { this.postMessage({ type: 'messageMeta', payload: meta }); },
-    );
+      extraParts: [],
+      onToolEvent: (event) => { this.postMessage({ type: 'toolEvent', payload: event }); },
+      onMessageMeta: (meta) => { this.postMessage({ type: 'messageMeta', payload: meta }); },
+      onReasoning: (reasoning) => { this.postMessage({ type: 'reasoningContent', payload: reasoning }); },
+      onDiffs: () => {},
+    });
   }
 
   private _getHtmlForWebview(webview: vscode.Webview) {
@@ -588,7 +670,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       <html lang="en">
       <head>
         <meta charset="UTF-8">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; script-src 'nonce-${scriptNonce}'; style-src 'nonce-${styleNonce}'; connect-src ${webview.cspSource} http://127.0.0.1:${serverPort} http://localhost:${serverPort};">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'self'; img-src ${webview.cspSource} data:; script-src 'nonce-${scriptNonce}'; style-src 'nonce-${styleNonce}'; connect-src ${webview.cspSource}${serverPort ? ` http://127.0.0.1:${serverPort} http://localhost:${serverPort}` : ''}">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Opencode</title>
         <style nonce="${styleNonce}">
