@@ -390,7 +390,7 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
             }}
             onMouseEnter={(e) => (e.currentTarget.style.color = '#cdd6f4')}
             onMouseLeave={(e) => (e.currentTarget.style.color = showFileSearch ? '#89b4fa' : '#a6adc8')}
-            title="Dosya ekle"
+            title="Add file"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" />

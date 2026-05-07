@@ -35,8 +35,7 @@
   },
   "main": "./out/extension.js",
   "activationEvents": [
-    "onView:opencode.sidebar",
-    "onCommand:opencode.run"
+    "onView:opencode.sidebar"
   ],
   "contributes": {
     "viewsContainers": {
@@ -64,14 +63,7 @@
           "icon": "resources/icon.png"
         }
       ]
-    },
-    "commands": [
-      {
-        "command": "opencode.run",
-        "title": "Run Opencode",
-        "icon": "$(play)"
-      }
-    ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

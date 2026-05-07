@@ -19,6 +19,10 @@ interface SessionInfo {
 
 type EventHandler = (event: SSEMessage) => void;
 
+/**
+ * Opencode CLI wrapper that manages the server process, HTTP API client,
+ * SSE streaming, and event dispatching for the VS Code extension.
+ */
 export class OpencodeCli {
   private process: ChildProcess | null = null;
   private server: OpencodeServerInfo | null = null;
@@ -42,7 +46,7 @@ export class OpencodeCli {
     if (envPath) {
       try {
         if (existsSync(envPath)) return envPath;
-      } catch { /* ignore */ }
+      } catch (err) { console.warn('[opencode] Binary path check failed:', err); }
     }
 
     // Priority 2: platform-specific candidates
@@ -82,9 +86,7 @@ export class OpencodeCli {
         if (existsSync(candidate)) {
           return candidate;
         }
-      } catch {
-        // ignore
-      }
+      } catch (err) { /* ignore candidate */ }
     }
 
     // Priority 3: let Node.js resolve from PATH
@@ -110,6 +112,11 @@ export class OpencodeCli {
     return this.apiClient;
   }
 
+  /**
+   * Starts the opencode server process if not already running.
+   * Spawns `opencode serve --port 0` with a generated password for Basic Auth.
+   * @throws Error if server fails to start within 30s timeout
+   */
   async start(): Promise<void> {
     if (this.server) return;
 
@@ -192,6 +199,11 @@ export class OpencodeCli {
     return this.server?.url ?? null;
   }
 
+  /**
+   * Creates a new chat session.
+   * @param title - Optional session title
+   * @returns Session ID and title
+   */
   async createSession(title?: string): Promise<SessionInfo> {
     await this.start();
     const data = await this.ensureApiClient().createSession(title);
@@ -263,6 +275,24 @@ export class OpencodeCli {
     return this.ensureApiClient().removeAuth(providerId);
   }
 
+  /**
+   * Sends a prompt to a session and streams the response.
+   * Accumulates SSE deltas into callbacks, dispatches tool events to onToolEvent,
+   * and resolves diffs via onDiffs. Returns once the session becomes idle or times out.
+   * @param sessionId - Active session ID from createSession
+   * @param prompt - User message text
+   * @param onContent - Called per text delta during streaming
+   * @param onToolCall - Called on tool_call events with name + args
+   * @param onError - Called on session.error or HTTP failures
+   * @param model - Optional model override in "providerId/modelId" format
+   * @param agent - Optional agent mode name
+   * @param extraParts - Additional message parts (images, files)
+   * @param onToolEvent - Called on tool events (tool_call, tool_result, file_read, etc.)
+   * @param onMessageMeta - Called when message metadata arrives (id, agent, modelId, time)
+   * @param onReasoning - Called with reasoning content delta
+   * @param onDiffs - Called with file diffs when session diff is available
+   * @returns Promise resolving to the message ID when streaming completes
+   */
   async sendPrompt(
     sessionId: string,
     prompt: string,
@@ -353,7 +383,7 @@ export class OpencodeCli {
           try {
             const data: any = await response.json();
             if (data?.info?.id) messageId = data.info.id;
-          } catch {}
+          } catch (err) { console.warn('[opencode] Parse JSON response failed:', err); }
         }
       }).catch((err) => {
         console.error('[opencode:post] Error:', err?.message);
@@ -370,7 +400,7 @@ export class OpencodeCli {
             console.log('[opencode] Session timeout expired for', sessionId);
             try {
               await this.ensureApiClient().abortSession(sessionId);
-            } catch {}
+} catch (err) { console.warn('[opencode] Abort session failed:', err); }
             resolve();
           }
         };
@@ -383,6 +413,11 @@ export class OpencodeCli {
     return messageId;
   }
 
+  /**
+   * Grants a pending permission (allow once or always) for a session.
+   * @param sessionID - Session ID
+   * @param permissionId - Permission ID from the permission event
+   */
   async grantPermission(sessionID: string, permissionId: string): Promise<void> {
     await this.start();
     return this.ensureApiClient().grantPermission(sessionID, permissionId);
@@ -393,11 +428,22 @@ export class OpencodeCli {
     return this.ensureApiClient().summarizeSession(sessionId, providerID, modelID);
   }
 
+  /**
+   * Reverts a message by messageId, undoing file changes via git snapshots.
+   * @param sessionId - Session ID
+   * @param messageId - Message ID to revert
+   * @returns Revert result with messages and reverted status
+   */
   async revertSession(sessionId: string, messageId: string): Promise<any> {
     await this.start();
     return this.ensureApiClient().revertSession(sessionId, messageId);
   }
 
+  /**
+   * Restores a previously reverted message.
+   * @param sessionId - Session ID
+   * @returns Unrevert result
+   */
   async unrevertSession(sessionId: string): Promise<any> {
     await this.start();
     return this.ensureApiClient().unrevertSession(sessionId);
@@ -408,6 +454,10 @@ export class OpencodeCli {
     return this.ensureApiClient().respondPermission(sessionID, permissionId, response, remember);
   }
 
+  /**
+   * Aborts a running prompt in the session and cancels any pending requests.
+   * @param sessionId - Session ID to abort
+   */
   async abortSession(sessionId: string): Promise<void> {
     this.abortController?.abort();
     this.abortController = null;
@@ -419,6 +469,10 @@ export class OpencodeCli {
     return () => this.eventHandlers.delete(handler);
   }
 
+  /**
+   * Stops the opencode server process and clears all state.
+   * Call when the extension deactivates or the sidebar closes.
+   */
   stop(): void {
     this.abortController?.abort();
     if (this.process) {

@@ -1,5 +1,9 @@
 import { isReadDenied } from './readPatterns';
 
+/**
+ * Handles file read permission checks against deny patterns (readPatterns.ts).
+ * Manages pending permission requests and "always allow" caching.
+ */
 export class PermissionService {
   private readonly _readAllowCache = new Map<string, string>();
   private readonly _pendingResolvers = new Map<string, (response: { allowed: boolean; remember?: boolean }) => void>();

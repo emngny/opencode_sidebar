@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { OpencodeCli } from '../services/OpencodeCli';
 import { getNonce } from '../utils';
-import { ExtensionToWebviewMessage, ChatMessage } from '../types';
+import { ExtensionToWebviewMessage, WEBVIEW_TO_EXTENSION_TYPES } from '../types';
 import { getGitInfo } from '../services/GitInfo';
 import { isReadDenied } from '../services/readPatterns';
 import { SessionService } from '../services/SessionService';
@@ -20,6 +21,10 @@ const MODE_TO_AGENT: Record<string, string> = {
   'Review': 'review',
 };
 
+/**
+ * VS Code Sidebar provider for the opencode webview.
+ * Implements WebviewViewProvider to render the chat UI and handle message dispatch.
+ */
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'opencode.sidebar';
   private _view?: vscode.WebviewView;
@@ -39,6 +44,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this._auth = new AuthService(this._opencode, _context);
   }
 
+  /**
+   * Called when the webview view is first resolved.
+   * Sets up webview options, HTML content, and initializes the opencode server.
+   * @param webviewView - The webview view to resolve
+   * @param _context - Resolve context (unused)
+   * @param _token - Cancellation token (unused)
+   */
   resolveWebviewView(
     webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
@@ -65,7 +77,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           type: 'projectInfo',
           payload: { project, path: pathInfo, vcs: vcsInfo },
         });
-      } catch {
+      } catch (err) {
+        console.warn('[opencode] Project info fetch failed, using git info:', err);
         const gitInfo = getGitInfo();
         this.postMessage({ type: 'gitInfo', payload: gitInfo });
       }
@@ -85,8 +98,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
 
     webviewView.webview.onDidReceiveMessage(async (data) => {
-      const validTypes = ['sendMessage','clearChat','abort','listProviders','setApiKey','removeApiKey','getSessions','loadSession','deleteSession','switchAgent','searchFiles','getSavedModel','saveModel','revertMessage','unrevert','respondPermission','respondReadPermission','openDiff','runCommand','loadSkills'];
-      if (!data || typeof data !== 'object' || !validTypes.includes(data.type)) {
+      if (!data || typeof data !== 'object' || !WEBVIEW_TO_EXTENSION_TYPES.includes(data.type as any)) {
         console.warn('[opencode] Ignored message with unknown type:', data?.type);
         return;
       }
@@ -342,16 +354,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
       this.postMessage({ type: 'streamEnd', payload: { content: accumulatedContent } });
 
-      if (eventDiffs.length === 0) {
-        await new Promise<void>((resolve) => {
-          const check = setInterval(() => {
-            if (eventDiffs.length > 0) { clearInterval(check); clearTimeout(timer); resolve(); }
-          }, 300);
-          const timer = setTimeout(() => { clearInterval(check); resolve(); }, 10000);
-        });
-      }
-
-      const diffs = eventDiffs.length > 0 ? eventDiffs : await this._pollDiffs(sessionId);
+      const diffs = eventDiffs.length > 0 ? eventDiffs : await this._opencode.getSessionDiff(sessionId);
       if (Array.isArray(diffs) && diffs.length > 0) {
         for (const diff of diffs) {
           if (diff.path && (diff.added > 0 || diff.deleted > 0)) {
@@ -455,20 +458,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async _pollDiffs(sessionId: string): Promise<any[]> {
-    try {
-      for (let attempt = 0; attempt < 5; attempt++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        const diffs = await this._opencode.getSessionDiff(sessionId);
-        if (Array.isArray(diffs) && diffs.length > 0) return diffs;
-        console.log(`[opencode] Diff poll attempt ${attempt + 1}: no diffs yet`);
-      }
-    } catch (e: any) {
-      console.log('[opencode] Diff poll error:', e.message);
-    }
-    return [];
-  }
-
   dispose() {
     this._opencode.stop();
   }
@@ -481,7 +470,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     try {
       const entries = vscode.workspace.fs.readDirectory(vscode.Uri.file(skillsDir));
       // Can't easily use readDirectory sync, fall back to fs
-      const dirs = require('node:fs').readdirSync(skillsDir, { withFileTypes: true });
+      const dirs = readdirSync(skillsDir, { withFileTypes: true });
       const result: Array<{ name: string; description?: string }> = [];
       for (const entry of dirs) {
         if (!entry.isDirectory()) continue;
@@ -495,7 +484,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
       }
       return result;
-    } catch {
+    } catch (err) {
+      console.warn('[opencode] Load skills failed:', err);
       return [];
     }
   }
@@ -507,7 +497,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (!existsSync(skillMdPath)) return null;
     try {
       return readFileSync(skillMdPath, 'utf-8');
-    } catch {
+    } catch (err) {
+      console.warn('[opencode] Load skill content failed:', err);
       return null;
     }
   }
@@ -542,7 +533,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 - **Configuration:`
 
     try {
-      require('node:fs').writeFileSync(agentsMdPath, content, 'utf-8');
+      writeFileSync(agentsMdPath, content, 'utf-8');
     } catch (err: any) {
       this.postMessage({ type: 'error', payload: { message: `Failed to create AGENTS.md: ${err.message}` } });
     }
@@ -553,7 +544,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (!workspaceFolders) return;
     const root = workspaceFolders[0].uri.fsPath;
     try {
-      const { execFileSync } = require('node:child_process');
       const diff = execFileSync('git', ['diff', '--cached', ...(args ? args.split(' ') : [])], { cwd: root, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
       const prompt = `Review the following uncommitted changes:\n\n${diff.slice(0, 10000)}${diff.length > 10000 ? '\n...(truncated)' : ''}\n\nProvide a concise code review focusing on potential bugs, security issues, and improvements.`;
       // Send as a user message like normal sendMessage

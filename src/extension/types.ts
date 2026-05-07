@@ -1,3 +1,7 @@
+/**
+ * Display-ready chat message with optional streaming and metadata.
+ * Used for both user messages and assistant responses including tool events.
+ */
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'event';
   content: string;
@@ -30,12 +34,18 @@ export interface ChatMessage {
   reasoning?: string;
 }
 
+/**
+ * Git repository metadata for the current workspace.
+ */
 export interface GitInfo {
   branch: string;
   lastCommitTime: string;
   projectPath: string;
 }
 
+/**
+ * Individual model from a provider with capabilities and pricing.
+ */
 export interface ProviderModel {
   id: string;
   name: string;
@@ -51,6 +61,9 @@ export interface ProviderModel {
   status?: string;
 }
 
+/**
+ * LLM provider with environment requirements and available models.
+ */
 export interface ProviderInfo {
   id: string;
   name: string;
@@ -60,18 +73,27 @@ export interface ProviderInfo {
   models?: Record<string, ProviderModel>;
 }
 
+/**
+ * List of all providers plus connection status and defaults.
+ */
 export interface ProviderListResult {
   all: ProviderInfo[];
   connected: string[];
   default: Record<string, string>;
 }
 
+/**
+ * File attachment for context in a message.
+ */
 export interface FileAttachment {
   type: 'file';
   name: string;
   path: string;
 }
 
+/**
+ * Image attachment for context in a message.
+ */
 export interface ImageAttachment {
   type: 'image';
   name: string;
@@ -79,6 +101,9 @@ export interface ImageAttachment {
   mimeType: string;
 }
 
+/**
+ * Context parts that can be attached to a user message.
+ */
 export type ContextPart = FileAttachment | ImageAttachment;
 
 interface SendMessagePayload {
@@ -157,6 +182,10 @@ interface RunCommandPayload {
   isSkill?: boolean;
 }
 
+/**
+ * All messages the webview sends to the extension.
+ * Discriminated by `type` field for type-safe handling.
+ */
 export type WebviewToExtensionMessage =
   | { type: 'sendMessage'; payload: SendMessagePayload }
   | { type: 'acceptReview'; payload: AcceptReviewPayload }
@@ -240,6 +269,9 @@ interface FileSearchResultsPayload {
   files: { name: string; path: string; description?: string }[];
 }
 
+/**
+ * Saved model configuration payload.
+ */
 export interface SavedModelPayload {
   model?: string;
   [key: string]: unknown;
@@ -297,6 +329,10 @@ interface StatusPayload {
   message?: string;
 }
 
+/**
+ * All messages the extension sends to the webview.
+ * Discriminated by `type` field for type-safe handling.
+ */
 export type ExtensionToWebviewMessage =
   | { type: 'receiveMessage'; payload: ReceiveMessagePayload }
   | { type: 'receiveChunk'; payload: ReceiveChunkPayload }
@@ -322,6 +358,9 @@ export type ExtensionToWebviewMessage =
   | { type: 'readFilePrompt'; payload: ReadFilePromptPayload }
   | { type: 'skillList'; payload: SkillListPayload };
 
+/**
+ * Single file changed in a session diff.
+ */
 export interface SessionDiffFile {
   path: string;
   added: number;
@@ -329,11 +368,17 @@ export interface SessionDiffFile {
   content: string;
 }
 
+/**
+ * Session diff containing all files changed in a session.
+ */
 export interface SessionDiff {
   sessionID: string;
   files: SessionDiffFile[];
 }
 
+/**
+ * Current project metadata from the opencode server.
+ */
 export interface ProjectInfo {
   name?: string;
   path?: string;
@@ -343,6 +388,9 @@ export interface ProjectInfo {
   [key: string]: unknown;
 }
 
+/**
+ * Version control state for the current project.
+ */
 export interface VcsInfo {
   branch?: string;
   commit?: string;
@@ -350,7 +398,34 @@ export interface VcsInfo {
   dirty?: boolean;
 }
 
+/**
+ * Path information for file operations.
+ */
 export interface PathInfo {
   path: string;
   project?: string;
 }
+
+/**
+ * Runtime array of valid webview-to-extension message types.
+ * Used for validation in vscode-api.ts and SidebarProvider.ts.
+ */
+export const WEBVIEW_TO_EXTENSION_TYPES = [
+  'sendMessage', 'acceptReview', 'rejectReview', 'clearChat', 'abort',
+  'getSessions', 'loadSession', 'deleteSession', 'switchAgent', 'listProviders',
+  'setApiKey', 'removeApiKey', 'searchFiles', 'getSavedModel', 'saveModel',
+  'revertMessage', 'unrevert', 'respondPermission', 'respondReadPermission',
+  'openDiff', 'runCommand', 'loadSkills',
+] as const;
+
+/**
+ * Runtime array of valid extension-to-webview message types.
+ * Used for validation in vscode-api.ts and SidebarProvider.ts.
+ */
+export const EXTENSION_TO_WEBVIEW_TYPES = [
+  'receiveMessage', 'receiveChunk', 'streamEnd', 'reviewReady', 'reviewResolved',
+  'status', 'gitInfo', 'projectInfo', 'sessionList', 'sessionLoaded', 'sessionDeleted',
+  'agentList', 'error', 'providerList', 'providerUpdated', 'fileSearchResults',
+  'savedModel', 'toolEvent', 'revertResult', 'messageMeta', 'reasoningContent',
+  'readFilePrompt', 'skillList',
+] as const;

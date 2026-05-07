@@ -16,6 +16,10 @@ export interface MessageMeta {
   time?: { created?: number; completed?: number };
 }
 
+/**
+ * Callback interface for handling SSE events from the opencode server.
+ * All callbacks are optional and called at appropriate points during streaming.
+ */
 export interface EventCallbacks {
   onContent?: (text: string) => void;
   onToolCall?: (name: string, args: any) => void;
@@ -26,6 +30,9 @@ export interface EventCallbacks {
   onDiffs?: (diffs: NormalizedDiff[]) => void;
 }
 
+/**
+ * Normalized file diff with parsed line counts and content.
+ */
 export interface NormalizedDiff {
   path: string;
   added: number;

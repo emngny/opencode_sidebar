@@ -36,7 +36,7 @@ export function ProviderPopup({ onClose, onModelSelect, availableModels, hiddenM
         case 'providerUpdated': {
           const { providerId, success, error } = msg.payload;
           setSaving((prev) => ({ ...prev, [providerId]: false }));
-          setMessages((prev) => ({ ...prev, [providerId]: success ? '✓ Kaydedildi' : `✗ ${error || 'Hata'}` }));
+          setMessages((prev) => ({ ...prev, [providerId]: success ? '✓ Saved' : `✗ ${error || 'Error'}` }));
           if (success) setTimeout(() => setMessages((prev) => ({ ...prev, [providerId]: '' })), 2000);
           break;
         }
@@ -59,7 +59,7 @@ export function ProviderPopup({ onClose, onModelSelect, availableModels, hiddenM
     const key = apiKeyInputs.current[providerId];
     if (!key) return;
     setSaving((prev) => ({ ...prev, [providerId]: true }));
-    setMessages((prev) => ({ ...prev, [providerId]: 'Kaydediliyor...' }));
+    setMessages((prev) => ({ ...prev, [providerId]: 'Saving...' }));
     postMessage({ type: 'setApiKey', payload: { providerId, key } });
     apiKeyInputs.current[providerId] = '';
   };
@@ -155,7 +155,7 @@ export function ProviderPopup({ onClose, onModelSelect, availableModels, hiddenM
               borderBottom: activeTab === 'models' ? '2px solid #7c3aed' : '2px solid transparent',
             }}
           >
-            Modeller
+            Models
           </button>
           <button
             onClick={() => setActiveTab('providers')}
@@ -181,7 +181,7 @@ export function ProviderPopup({ onClose, onModelSelect, availableModels, hiddenM
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Model ara..."
+            placeholder="Search models..."
             style={{
               width: '100%',
               padding: '8px 12px',

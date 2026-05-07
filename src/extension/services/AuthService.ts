@@ -1,6 +1,10 @@
 import * as vscode from 'vscode';
 import { OpencodeCli } from './OpencodeCli';
 
+/**
+ * Manages API key persistence via VS Code SecretStorage.
+ * Restores keys on startup and stores new keys after successful auth.
+ */
 export class AuthService {
   constructor(
     private readonly _opencode: OpencodeCli,

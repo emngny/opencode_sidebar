@@ -1,3 +1,6 @@
+/**
+ * Server-Sent Events message from the opencode server.
+ */
 export interface SSEMessage {
   id: string;
   type: string;
@@ -6,6 +9,10 @@ export interface SSEMessage {
 
 export type EventCallback = (event: SSEMessage) => void;
 
+/**
+ * Handles Server-Sent Events (SSE) streaming from the opencode server.
+ * Used for both long-lived /event endpoint and POST response streams.
+ */
 export class SseStream {
   async connect(
     url: string,

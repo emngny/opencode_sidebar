@@ -95,7 +95,7 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Model ara..."
+              placeholder="Search models..."
               style={{
                 width: '100%',
                 padding: '8px 12px',

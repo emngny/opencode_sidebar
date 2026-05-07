@@ -12,7 +12,7 @@ async function build() {
     target: ['es2020'],
     jsx: 'automatic',
     sourcemap: true,
-    minify: false,
+    minify: true,
     external: ['vscode']
   });
 

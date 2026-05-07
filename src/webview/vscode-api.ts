@@ -1,12 +1,6 @@
-import { WebviewToExtensionMessage, ExtensionToWebviewMessage } from '../extension/types';
+import { WebviewToExtensionMessage, ExtensionToWebviewMessage, EXTENSION_TO_WEBVIEW_TYPES } from '../extension/types';
 
-const VALID_EXTENSION_TYPES: readonly string[] = [
-  'receiveMessage', 'receiveChunk', 'streamEnd', 'reviewReady', 'reviewResolved',
-  'status', 'gitInfo', 'projectInfo', 'sessionList', 'sessionLoaded', 'sessionDeleted',
-  'agentList', 'error', 'providerList', 'providerUpdated', 'fileSearchResults',
-  'savedModel', 'toolEvent', 'revertResult', 'messageMeta', 'reasoningContent',
-  'readFilePrompt', 'skillList',
-];
+const VALID_EXTENSION_TYPES = EXTENSION_TO_WEBVIEW_TYPES;
 
 declare function acquireVsCodeApi(): any;
 const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : (globalThis as any).vscode;

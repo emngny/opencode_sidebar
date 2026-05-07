@@ -12,6 +12,10 @@ export interface ApiClientOptions {
   authHeader: Record<string, string>;
 }
 
+/**
+ * HTTP client for the opencode server REST API.
+ * Wraps fetch with auth headers and error handling.
+ */
 export class ApiClient {
   private baseUrl: string;
   private authHeader: Record<string, string>;

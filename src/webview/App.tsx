@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { ChatContainer } from './components/ChatContainer';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { BottomInput } from './components/BottomInput';
@@ -6,291 +6,58 @@ import { ModelSelector } from './components/ModelSelector';
 import { ModeSelector } from './components/ModeSelector';
 import { ProviderPopup } from './components/ProviderPopup';
 import { SessionListPopup } from './components/SessionListPopup';
-import { ChatMessage, ExtensionToWebviewMessage, GitInfo, ProviderListResult, ContextPart, SavedModelPayload } from '../extension/types';
+import { ContextPart } from '../extension/types';
 import { ConfirmDialog } from './components/ConfirmDialog';
-import { postMessage, onMessage } from './vscode-api';
+import { postMessage } from './vscode-api';
 import { CommandItem } from './slashCommands';
+import { useChatState } from './hooks/useChatState';
+import { useModelManager } from './hooks/useModelManager';
+import { useMessageHandler } from './hooks/useMessageHandler';
 
 export default function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [model, setModel] = useState('');
-  const [mode, setMode] = useState('Build');
-  const [busy, setBusy] = useState(false);
-  const [showProviders, setShowProviders] = useState(false);
-  const [showSessions, setShowSessions] = useState(false);
+  const {
+    messages, setMessages, busy, setBusy, contextEvents, setContextEvents,
+    pendingChunkRef, chunkFlushTimerRef, streamingMsgIdRef, DEBOUNCE_MS,
+    flushPendingChunk, cleanupStreaming,
+  } = useChatState();
 
-  const [providersLoaded, setProvidersLoaded] = useState(false);
-  const [gitInfo, setGitInfo] = useState<GitInfo>({ branch: 'main', lastCommitTime: 'a minute ago', projectPath: 'C:/Projects/opencode_sidebar' });
-  const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string; providerId: string }>>([]);
-  const [hiddenModels, setHiddenModels] = useState<Record<string, boolean>>({});
-  const [fileSearchResults, setFileSearchResults] = useState<Array<{ name: string; path: string }>>([]);
-  const [fileSearchQuery, setFileSearchQuery] = useState('');
-  const [revertActive, setRevertActive] = useState(false);
-  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
-  const [readPermissionPrompt, setReadPermissionPrompt] = useState<{ filePath: string; reason: string; requestId: string } | null>(null);
-  const [contextEvents, setContextEvents] = useState<Array<{ id: string; name: string; status: string; content: string; meta?: any }>>([]);
-  const [skills, setSkills] = useState<Array<{ name: string; description?: string }>>([]);
-  const pendingRevertRef = useRef<string | null>(null);
+  const {
+    model, setModel, mode, setMode,
+    gitInfo, setGitInfo,
+    availableModels, setAvailableModels,
+    hiddenModels, setHiddenModels,
+    providersLoaded, setProvidersLoaded,
+    skills, setSkills,
+    fileSearchResults, setFileSearchResults,
+    fileSearchQuery, setFileSearchQuery,
+    revertActive, setRevertActive,
+    confirmDialog, setConfirmDialog,
+    readPermissionPrompt, setReadPermissionPrompt,
+    showProviders, setShowProviders,
+    showSessions, setShowSessions,
+    pendingRevertRef,
+    toggleModelVisibility, handleToggleAllModels,
+    processProviderList, tryAutoSelectModel,
+  } = useModelManager();
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const unsubscribe = onMessage((msg: ExtensionToWebviewMessage) => {
-      switch (msg.type) {
-        case 'receiveMessage': {
-          const newMsg: ChatMessage = { role: msg.payload.role, content: msg.payload.content, timestamp: Date.now(), id: Math.random().toString(36).slice(2) };
-          if (msg.payload.role === 'assistant') newMsg.isStreaming = true;
-          setMessages((prev) => {
-            const updated = [...prev, newMsg];
-            console.log('[webview] Messages updated, new count:', updated.length);
-            return updated;
-          });
-          break;
-        }
-        case 'receiveChunk': {
-          setMessages((prev) => {
-            let lastAssistantIdx = -1;
-            for (let i = prev.length - 1; i >= 0; i--) {
-              if (prev[i].role === 'assistant') {
-                lastAssistantIdx = i;
-                break;
-              }
-            }
-            const updated = [...prev];
-            if (lastAssistantIdx < 0) {
-              // No assistant message yet - create one (race condition fix)
-              updated.push({
-                role: 'assistant',
-                content: msg.payload.fullContent || msg.payload.content || '',
-                timestamp: Date.now(),
-                id: Math.random().toString(36).slice(2),
-                isStreaming: true,
-              });
-            } else {
-              updated[lastAssistantIdx] = {
-                ...updated[lastAssistantIdx],
-                content: msg.payload.fullContent || updated[lastAssistantIdx].content + (msg.payload.content || ''),
-                isStreaming: true,
-              };
-            }
-            return updated;
-          });
-          break;
-        }
-        case 'streamEnd': {
-          setMessages((prev) => {
-            // Find the last assistant message to mark as not streaming
-            let lastAssistantIdx = -1;
-            for (let i = prev.length - 1; i >= 0; i--) {
-              if (prev[i].role === 'assistant') {
-                lastAssistantIdx = i;
-                break;
-              }
-            }
-            if (lastAssistantIdx < 0) return prev;
-            const updated = [...prev];
-            updated[lastAssistantIdx] = { ...updated[lastAssistantIdx], isStreaming: false };
-            return updated;
-          });
-          setBusy(false);
-          break;
-        }
-        case 'status': setBusy(msg.payload.status === 'running'); break;
-        case 'sessionLoaded': {
-          setMessages([]);
-          const { messages: sessionMessages } = msg.payload;
-          if (Array.isArray(sessionMessages)) {
-            const converted: ChatMessage[] = sessionMessages.map((m: any) => ({
-              role: m.info?.role === 'user' ? 'user' : 'assistant',
-              content: m.parts?.map((p: any) => p.text || p.content || '').join('\n') || m.info?.content || '',
-              timestamp: m.info?.time?.created || Date.now(),
-              id: m.info?.id || Math.random().toString(36).slice(2),
-            }));
-            setMessages(converted);
-          }
-          break;
-        }
-        case 'gitInfo': setGitInfo(msg.payload); break;
-        case 'projectInfo': {
-          const payload = msg.payload as { project?: any; path?: any; vcs?: any };
-          const pathInfo = payload?.path;
-          const project = payload?.project;
-          const vcs = payload?.vcs;
-          setGitInfo({
-            projectPath: pathInfo?.path || project?.path || gitInfo.projectPath,
-            branch: vcs?.branch || gitInfo.branch,
-            lastCommitTime: vcs?.message || gitInfo.lastCommitTime,
-          });
-          break;
-        }
-        case 'error': {
-          setMessages((prev) => [...prev, { role: 'assistant', content: `❌ ${msg.payload.message}`, timestamp: Date.now(), id: Math.random().toString(36).slice(2) }]);
-          setBusy(false);
-          break;
-        }
-        case 'savedModel': {
-          if (msg.payload) {
-            const payload = msg.payload;
-            const modelStr = typeof payload === 'string' ? payload : (payload as SavedModelPayload).model;
-            if (modelStr) setModel(modelStr);
-          }
-          break;
-        }
-        case 'fileSearchResults': {
-          setFileSearchResults(msg.payload.files || []);
-          setFileSearchQuery(msg.payload.query || '');
-          break;
-        }
-        case 'toolEvent': {
-          const event = msg.payload;
-          const eventId = event.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-          const isContextTool = ['read', 'glob', 'grep', 'list', 'webfetch', 'websearch', 'search'].includes(event.name);
-          if (isContextTool) {
-            setContextEvents((prev) => {
-              const idx = prev.findIndex((e) => e.id === eventId);
-              if (idx >= 0) {
-                const updated = [...prev];
-                updated[idx] = { ...updated[idx], status: event.status, content: event.content || '', meta: event.meta };
-                return updated;
-              }
-              return [...prev, { id: eventId, name: event.name, status: event.status, content: event.content || '', meta: event.meta }];
-            });
-          } else {
-            setContextEvents([]); // clear context group when non-context event arrives
-            const baseId = event.id || '';
-            setMessages((prev) => {
-              // Find exact match first, then fall back to startsWith for legacy/compat
-              const idx = prev.findIndex((m) => 
-                m.role === 'event' && 
-                baseId.length > 0 && 
-                (m.id === baseId || m.id === `${baseId}_fixed` || (m.id && m.id.startsWith(baseId + '_')))
-              );
-              
-              if (idx >= 0) {
-                const updated = [...prev];
-                updated[idx] = { ...updated[idx], content: event.content || '', eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta, timestamp: Date.now() };
-                return updated;
-              }
-              // Use baseId as the primary ID if provided, to ensure updates find it
-              const msgId = baseId ? `${baseId}_${Date.now()}` : `event_${Date.now()}`;
-              return [...prev, { role: 'event', content: event.content || '', timestamp: Date.now(), id: msgId, eventType: event.type as ChatMessage['eventType'], eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta }];
-            });
-          }
-          break;
-        }
-        case 'revertResult': {
-          const { messages: sessionMessages, reverted } = msg.payload;
-          setMessages([]);
-          if (Array.isArray(sessionMessages)) {
-            const converted: ChatMessage[] = sessionMessages.map((m: any) => ({
-              role: m.info?.role === 'user' ? 'user' : 'assistant',
-              content: m.parts?.map((p: any) => p.text || p.content || '').join('\n') || m.info?.content || '',
-              timestamp: m.info?.time?.created || Date.now(),
-              id: m.info?.id || Math.random().toString(36).slice(2),
-            }));
-            setMessages(converted);
-          }
-          setRevertActive(reverted);
-          break;
-        }
-        case 'messageMeta': {
-          const meta = msg.payload;
-          // Apply metadata to the last assistant message that doesn't have it yet
-          setMessages((prev) => {
-            const updated = [...prev];
-            for (let i = updated.length - 1; i >= 0; i--) {
-              if (updated[i].role === 'assistant' && !updated[i].agent) {
-                const duration = meta.time?.completed && meta.time?.created
-                  ? Math.round((meta.time.completed - meta.time.created) / 1000)
-                  : undefined;
-                updated[i] = { ...updated[i], agent: meta.agent, modelId: meta.modelId, duration };
-                break;
-              }
-            }
-            return updated;
-          });
-          break;
-        }
-        case 'reasoningContent': {
-          const text = msg.payload;
-          setMessages((prev) => {
-            const updated = [...prev];
-            for (let i = updated.length - 1; i >= 0; i--) {
-              if (updated[i].role === 'assistant') {
-                updated[i] = { ...updated[i], reasoning: (updated[i].reasoning || '') + text };
-                break;
-              }
-            }
-            return updated;
-          });
-          break;
-        }
-        case 'skillList': {
-          setSkills(msg.payload.skills || []);
-          break;
-        }
-        case 'providerList': {
-          const result: ProviderListResult = msg.payload;
-          const all = result.all || [];
-          const conn = result.connected || [];
-          const models: Array<{ id: string; name: string; providerId: string }> = [];
-          for (const provider of all) {
-            if (conn.includes(provider.id)) {
-              for (const [modelId, modelInfo] of Object.entries(provider.models || {})) {
-                models.push({
-                  id: `${provider.id}/${modelId}`,
-                  name: modelInfo.name || modelId,
-                  providerId: provider.id,
-                });
-              }
-            }
-          }
-          models.sort((a, b) => {
-            // Pinned providers first
-            const aIsPinned = a.providerId === 'opencode' || a.providerId === 'opencode-go' ? 0 : 1;
-            const bIsPinned = b.providerId === 'opencode' || b.providerId === 'opencode-go' ? 0 : 1;
-            if (aIsPinned !== bIsPinned) return aIsPinned - bIsPinned;
-            // Same provider: sort by name alphabetically
-            if (a.providerId !== b.providerId) return a.providerId.localeCompare(b.providerId);
-            return a.name.localeCompare(b.name);
-          });
-
-          // Auto-select first model if none is selected
-          if (!model) {
-            const visibleModels = models.filter((m) => !hiddenModels[m.id]);
-            if (visibleModels.length > 0) {
-              setModel(visibleModels[0].id);
-            }
-          }
-
-          setAvailableModels(models);
-          setProvidersLoaded(true);
-          break;
-        }
-        case 'readFilePrompt': {
-          setReadPermissionPrompt({ filePath: msg.payload.filePath, reason: msg.payload.reason || '', requestId: msg.payload.requestId || '' });
-          break;
-        }
-      }
-    });
-    return unsubscribe;
-  }, []);
+  useMessageHandler({
+    setMessages, setBusy, setContextEvents,
+    pendingChunkRef, chunkFlushTimerRef, streamingMsgIdRef, DEBOUNCE_MS,
+    flushPendingChunk, cleanupStreaming,
+    setModel, setMode, setGitInfo, setAvailableModels, setHiddenModels,
+    setProvidersLoaded, setSkills, setFileSearchResults, setFileSearchQuery,
+    setRevertActive, setConfirmDialog, setReadPermissionPrompt,
+    processProviderList, tryAutoSelectModel,
+  });
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  useEffect(() => { postMessage({ type: 'listProviders' }); postMessage({ type: 'getSavedModel' }); postMessage({ type: 'loadSkills' }); }, []);
-
-  // Save model when it changes
-  useEffect(() => {
-    if (model) {
-      postMessage({ type: 'saveModel', payload: { model } });
-    }
-  }, [model]);
-
-  const handleSend = (prompt: string, context?: ContextPart[]) => {
+  const handleSend = useCallback((prompt: string, context?: ContextPart[]) => {
     console.log('[webview] Sending prompt:', prompt, 'context:', context?.length || 0, 'items');
     setBusy(true);
     setContextEvents([]);
-    // Check for slash command in prompt
     const firstWord = prompt.split(' ')[0];
     if (firstWord.startsWith('/')) {
       const cmdName = firstWord.slice(1);
@@ -304,7 +71,6 @@ export default function App() {
         postMessage({ type: 'runCommand', payload: { command: cmdName, args: rest } });
         return;
       }
-      // Agent commands (plan, build, etc.) - switch mode and send remaining text
       const modeMap: Record<string, string> = {
         build: 'Build', plan: 'Plan', ask: 'Ask',
         debug: 'Debug', docs: 'Docs', code: 'Code',
@@ -320,25 +86,18 @@ export default function App() {
       }
     }
     postMessage({ type: 'sendMessage', payload: { prompt, model, mode, context } });
-  };
-  const handleOpenDiff = (filePath: string) => {
+  }, [model, mode, skills, setBusy, setContextEvents, setMode]);
+
+  const handleOpenDiff = useCallback((filePath: string) => {
     postMessage({ type: 'openDiff', payload: { filePath } });
-  };
-  const toggleModelVisibility = (modelId: string) => { setHiddenModels((prev) => ({ ...prev, [modelId]: !prev[modelId] })); };
-  const handleToggleAllModels = (providerId: string, show: boolean) => {
-    setHiddenModels((prev) => {
-      const next = { ...prev };
-      for (const model of availableModels) {
-        if (model.providerId === providerId) {
-          if (show) delete next[model.id];
-          else next[model.id] = true;
-        }
-      }
-      return next;
-    });
-  };
-  const handleAbort = () => { postMessage({ type: 'abort' }); setBusy(false); };
-  const handleRevert = (messageId: string) => {
+  }, []);
+
+  const handleAbort = useCallback(() => {
+    postMessage({ type: 'abort' });
+    setBusy(false);
+  }, [setBusy]);
+
+  const handleRevert = useCallback((messageId: string) => {
     pendingRevertRef.current = messageId;
     setConfirmDialog({
       message: 'Revert to this message? This will undo all file changes made after it.',
@@ -348,11 +107,13 @@ export default function App() {
         if (id) postMessage({ type: 'revertMessage', payload: { messageId: id } });
       },
     });
-  };
-  const handleUnrevert = () => {
+  }, [setConfirmDialog]);
+
+  const handleUnrevert = useCallback(() => {
     postMessage({ type: 'unrevert' });
-  };
-  const handleSlashCommand = (cmd: CommandItem) => {
+  }, []);
+
+  const handleSlashCommand = useCallback((cmd: CommandItem) => {
     if (cmd.command === 'init' || cmd.command === 'review') {
       postMessage({ type: 'runCommand', payload: { command: cmd.command, args: '' } });
     } else if (cmd.agent) {
@@ -364,26 +125,30 @@ export default function App() {
         setMode(modeMap[cmd.agent]);
       }
     }
-  };
+  }, [setMode]);
 
-  const handleRespondPermission = (permId: string, permSessionId: string, response: 'allow' | 'deny', remember?: boolean) => {
-    postMessage({ type: 'respondPermission', payload: { permId, permSessionId, response, remember } });
-  };
-  const handleRespondReadPermission = (response: 'allow' | 'deny', remember?: boolean) => {
-    if (!readPermissionPrompt) return;
-    postMessage({ type: 'respondReadPermission', payload: { filePath: readPermissionPrompt.filePath, response, remember } });
-    setReadPermissionPrompt(null);
-  };
-  const handleLoadSession = (sessionId: string) => {
+  const handleRespondPermission = useCallback(
+    (permId: string, permSessionId: string, response: 'allow' | 'deny', remember?: boolean) => {
+      postMessage({ type: 'respondPermission', payload: { permId, permSessionId, response, remember } });
+    }, []);
+
+  const handleRespondReadPermission = useCallback(
+    (response: 'allow' | 'deny', remember?: boolean) => {
+      if (!readPermissionPrompt) return;
+      postMessage({ type: 'respondReadPermission', payload: { filePath: readPermissionPrompt.filePath, response, remember } });
+      setReadPermissionPrompt(null);
+    }, [readPermissionPrompt, setReadPermissionPrompt]);
+
+  const handleLoadSession = useCallback((sessionId: string) => {
     setMessages([]);
     setShowSessions(false);
     postMessage({ type: 'loadSession', payload: { sessionId } });
-  };
+  }, [setMessages, setShowSessions]);
+
   const showWelcome = messages.length === 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#1e1e2e', position: 'relative' }}>
-      {/* Main Content */}
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         {showWelcome ? (
           <WelcomeScreen projectPath={gitInfo.projectPath} branch={gitInfo.branch} lastCommitTime={gitInfo.lastCommitTime} />
@@ -395,7 +160,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Busy Indicator */}
       {busy && (
         <div style={{ padding: '8px 16px', fontSize: 12, color: '#89b4fa', backgroundColor: '#181825', textAlign: 'center', borderTop: '1px solid #313244' }}>
           <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: '#89b4fa', marginRight: 8, animation: 'pulse 1s infinite', verticalAlign: 'middle' }} />
@@ -404,7 +168,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Bottom Bar: Input + Bottom Row */}
       <div>
         <BottomInput
           onSend={handleSend}
@@ -417,19 +180,13 @@ export default function App() {
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px 12px', backgroundColor: '#181825', borderTop: '1px solid #313244' }}>
           <ModeSelector mode={mode} onChange={setMode} />
-           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
               onClick={() => setShowSessions(true)}
               style={{
-                backgroundColor: 'transparent',
-                border: 'none',
-                color: '#585b70',
-                cursor: 'pointer',
-                padding: 4,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                backgroundColor: 'transparent', border: 'none', color: '#585b70',
+                cursor: 'pointer', padding: 4, borderRadius: 4,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.color = '#cdd6f4')}
               onMouseLeave={(e) => (e.currentTarget.style.color = '#585b70')}
@@ -448,15 +205,10 @@ export default function App() {
             <button
               onClick={() => setShowProviders(true)}
               style={{
-                backgroundColor: 'transparent',
-                border: 'none',
+                backgroundColor: 'transparent', border: 'none',
                 color: showProviders ? '#89b4fa' : '#585b70',
-                cursor: 'pointer',
-                padding: 4,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                cursor: 'pointer', padding: 4, borderRadius: 4,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
                 transition: 'color 0.15s',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.color = '#cdd6f4')}
@@ -472,7 +224,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Provider Popup */}
       {showProviders && (
         <ProviderPopup
           onClose={() => { setShowProviders(false); postMessage({ type: 'listProviders' }); }}
@@ -484,7 +235,6 @@ export default function App() {
         />
       )}
 
-      {/* Session List Popup */}
       {showSessions && (
         <SessionListPopup
           onClose={() => setShowSessions(false)}
@@ -492,7 +242,6 @@ export default function App() {
         />
       )}
 
-      {/* Confirm Dialog */}
       {confirmDialog && (
         <ConfirmDialog
           message={confirmDialog.message}
@@ -501,7 +250,6 @@ export default function App() {
         />
       )}
 
-      {/* Read Permission Prompt */}
       {readPermissionPrompt && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,

@@ -56,7 +56,8 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
   const formatDate = (ts?: number) => {
     if (!ts) return '';
     const d = new Date(ts);
-    return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const locale = (window as any).vscode?.env?.language || navigator.language || 'en-US';
+    return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   };
 
   const oldCount = sessions.filter(s => s.time?.created && s.time.created < Date.now() - 7 * 24 * 60 * 60 * 1000).length;

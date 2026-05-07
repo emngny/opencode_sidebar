@@ -11,6 +11,9 @@ interface SessionListItem {
   [key: string]: unknown;
 }
 
+/**
+ * Manages chat session lifecycle: creation, loading, deletion, and current session state.
+ */
 export class SessionService {
   private _currentSessionId: string | null = null;
 
