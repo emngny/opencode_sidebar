@@ -48,8 +48,8 @@ Two independent compilation targets under `src/`:
 - **Session reused** with same `currentSessionId`; `clearChat`/`abort` resets it to null, forcing a new session on next message
 - **Event stream**: `message.part.delta` for streaming text (field=`"text"`), `message.part.updated` for tool/compaction/reasoning, `message.updated`/`session.diff` for file diffs
 - **Reasoning** arrives as `message.part.delta` with `partType === 'reasoning'`, accumulated in `ChatMessage.reasoning`, toggleable in UI
-- **Context tools** (read/glob/grep/list/webfetch) grouped into `ContextGroup` component; non-context tools render as `EventCard`
-- **Tool event types** in webview: `tool_call`, `tool_result`, `thinking`, `permission`, `compacting`, `file_edit`, `file_read`
+- **Context tools** (read/glob/grep/list/webfetch/websearch/search) grouped into `ContextGroup` component; non-context tools render as `EventCard`
+- **Tool event types** in webview: `tool_call`, `tool_result`, `thinking`, `discovery`, `permission`, `compacting`, `file_edit`, `file_read`
 - **Revert API**: `POST /session/:id/revert` with `{ messageID }` undoes file changes via git snapshots; `POST /session/:id/unrevert` restores
 - **Markdown** uses `marked` + `DOMPurify` sanitization; code blocks get copy buttons
 - **Agent colors** (`agentColors.ts`): build=blue, plan=pink, ask=green, debug=yellow, docs=teal, code=purple, review=orange
@@ -61,7 +61,7 @@ Two independent compilation targets under `src/`:
 
 Built-in (handled in `App.tsx` + `slashCommands.ts`):
 - `/init` — Creates a template `AGENTS.md` in workspace root
-- `/review` — Runs `git diff --cached`, sends output for AI review
+- `/review` — Without text: runs `git diff --cached`, sends output for AI review. With text: switches to review mode and sends the remaining text as a prompt
 - `/plan`, `/build`, `/ask`, `/debug`, `/docs`, `/code` — Switch agent mode; any remaining text after the command is sent as a prompt in that mode
 
 ## Activation
@@ -69,3 +69,12 @@ Built-in (handled in `App.tsx` + `slashCommands.ts`):
 - Activates on `onView:opencode.sidebar` (sidebar opens) and `onCommand:opencode.run`
 - View container in both `activitybar` (left) and `secondarySidebar` (right) — appears on the right on supported VS Code versions
 - The extension only registers a `WebviewViewProvider` — no other commands, tree views, or toolbar items are wired despite the declared activation events
+
+## Communication Style
+
+Terse like caveman. Technical substance exact. Only fluff die.
+Drop: articles, filler (just/really/basically), pleasantries, hedging.
+Fragments OK. Short synonyms. Code unchanged.
+Pattern: [thing] [action] [reason]. [next step].
+ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift.
+Code/commits/PRs: normal. Off: "stop caveman" / "normal mode".

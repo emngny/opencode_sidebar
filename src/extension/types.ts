@@ -208,7 +208,8 @@ export type WebviewToExtensionMessage =
   | { type: 'respondReadPermission'; payload: RespondReadPermissionPayload }
   | { type: 'openDiff'; payload: OpenDiffPayload }
   | { type: 'runCommand'; payload: RunCommandPayload }
-  | { type: 'loadSkills'; payload?: undefined };
+  | { type: 'loadSkills'; payload?: undefined }
+  | { type: 'webviewReady'; payload?: undefined };
 
 interface ReceiveMessagePayload {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'event';
@@ -415,7 +416,7 @@ export const WEBVIEW_TO_EXTENSION_TYPES = [
   'getSessions', 'loadSession', 'deleteSession', 'switchAgent', 'listProviders',
   'setApiKey', 'removeApiKey', 'searchFiles', 'getSavedModel', 'saveModel',
   'revertMessage', 'unrevert', 'respondPermission', 'respondReadPermission',
-  'openDiff', 'runCommand', 'loadSkills',
+  'openDiff', 'runCommand', 'loadSkills', 'webviewReady',
 ] as const;
 
 /**

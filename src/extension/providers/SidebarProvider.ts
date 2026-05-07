@@ -65,38 +65,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-    setTimeout(async () => {
-      try {
-        await this._opencode.start();
-        const [project, pathInfo, vcsInfo] = await Promise.all([
-          this._opencode.getCurrentProject(),
-          this._opencode.getPath(),
-          this._opencode.getVcsInfo(),
-        ]);
-        this.postMessage({
-          type: 'projectInfo',
-          payload: { project, path: pathInfo, vcs: vcsInfo },
-        });
-      } catch (err) {
-        console.warn('[opencode] Project info fetch failed, using git info:', err);
-        const gitInfo = getGitInfo();
-        this.postMessage({ type: 'gitInfo', payload: gitInfo });
-      }
-    }, 500);
-
-    this._opencode.start().then(() => {
-      this._auth.restoreApiKeys();
-    }).catch((err) => {
-      console.error('Opencode server start failed:', err);
-      this.postMessage({
-        type: 'receiveMessage',
-        payload: {
-          role: 'system',
-          content: `⚠️ Opencode CLI not available: ${err.message}. You can still use the mock mode.`,
-        },
-      });
-    });
-
     webviewView.webview.onDidReceiveMessage(async (data) => {
       if (!data || typeof data !== 'object' || !WEBVIEW_TO_EXTENSION_TYPES.includes(data.type as any)) {
         console.warn('[opencode] Ignored message with unknown type:', data?.type);
@@ -129,6 +97,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         case 'runCommand':
           await this._handleRunCommand(data.payload);
+          break;
+        case 'webviewReady':
+          await this._handleWebviewReady();
           break;
         case 'sendMessage':
           await this._handleSendMessage(data.payload);
@@ -167,6 +138,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   public postMessage(message: ExtensionToWebviewMessage) {
     if (this._view) {
       this._view.webview.postMessage(message);
+    }
+  }
+
+  private async _handleWebviewReady(): Promise<void> {
+    try {
+      await this._opencode.start();
+      this._auth.restoreApiKeys();
+      const [project, pathInfo, vcsInfo] = await Promise.all([
+        this._opencode.getCurrentProject(),
+        this._opencode.getPath(),
+        this._opencode.getVcsInfo(),
+      ]);
+      this.postMessage({
+        type: 'projectInfo',
+        payload: { project, path: pathInfo, vcs: vcsInfo },
+      });
+    } catch (err: any) {
+      console.warn('[opencode] Project info fetch failed, using git info:', err);
+      const gitInfo = getGitInfo();
+      this.postMessage({ type: 'gitInfo', payload: gitInfo });
     }
   }
 
@@ -609,6 +600,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
             40% { opacity: 1; transform: scale(1); }
           }
+          @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+          }
+          :focus-visible { outline: 2px solid #89b4fa; outline-offset: 2px; }
+          button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 2px solid #89b4fa; outline-offset: 2px; }
           .opencode-markdown h1,.opencode-markdown h2,.opencode-markdown h3,
           .opencode-markdown h4,.opencode-markdown h5,.opencode-markdown h6 {
             margin: 12px 0 6px; font-weight: 600; color: #cdd6f4;

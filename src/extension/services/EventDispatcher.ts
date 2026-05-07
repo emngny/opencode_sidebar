@@ -91,6 +91,11 @@ export class EventDispatcher {
     this.sessionPartTypes.set(sessionId, new Map());
   }
 
+  clearSession(sessionId: string): void {
+    this.sessionPartDeltas.delete(sessionId);
+    this.sessionPartTypes.delete(sessionId);
+  }
+
   dispatch(event: SSEMessage, sessionId: string): void {
     const cb = this.callbacks;
 

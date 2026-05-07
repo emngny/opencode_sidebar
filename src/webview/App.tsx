@@ -54,6 +54,10 @@ export default function App() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
+  useEffect(() => {
+    postMessage({ type: 'webviewReady' });
+  }, []);
+
   const handleSend = useCallback((prompt: string, context?: ContextPart[]) => {
     console.log('[webview] Sending prompt:', prompt, 'context:', context?.length || 0, 'items');
     setBusy(true);
@@ -67,13 +71,22 @@ export default function App() {
         postMessage({ type: 'runCommand', payload: { command: cmdName, args: rest, isSkill: true } });
         return;
       }
-      if (cmdName === 'init' || cmdName === 'review') {
+      if (cmdName === 'init') {
         postMessage({ type: 'runCommand', payload: { command: cmdName, args: rest } });
+        return;
+      }
+      if (cmdName === 'review') {
+        if (rest) {
+          setMode('Review');
+          postMessage({ type: 'sendMessage', payload: { prompt: rest, model, mode: 'Review', context } });
+          return;
+        }
+        postMessage({ type: 'runCommand', payload: { command: cmdName, args: '' } });
         return;
       }
       const modeMap: Record<string, string> = {
         build: 'Build', plan: 'Plan', ask: 'Ask',
-        debug: 'Debug', docs: 'Docs', code: 'Code',
+        debug: 'Debug', docs: 'Docs', code: 'Code', review: 'Review',
       };
       if (modeMap[cmdName]) {
         setMode(modeMap[cmdName]);

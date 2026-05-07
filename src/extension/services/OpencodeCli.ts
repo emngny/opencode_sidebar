@@ -66,18 +66,23 @@ export class OpencodeCli {
       candidates.push('C:\\opencode\\opencode.exe');
       candidates.push('C:\\Program Files\\opencode\\opencode.exe');
     } else if (platform === 'darwin') {
-      // macOS npm global
+      // macOS npm global + common package managers
       if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
       if (home) candidates.push(`${home}/.npm-global/bin/opencode`);
+      if (home) candidates.push(`${home}/.local/bin/opencode`);
       candidates.push('/usr/local/bin/opencode');
       candidates.push('/opt/homebrew/bin/opencode');
+      candidates.push('/opt/local/bin/opencode');
       candidates.push('/usr/bin/opencode');
     } else {
       // Linux and other Unix
       if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
       if (home) candidates.push(`${home}/.local/bin/opencode`);
+      if (home) candidates.push(`${home}/.local/share/opencode/bin/opencode`);
       candidates.push('/usr/local/bin/opencode');
+      candidates.push('/snap/bin/opencode');
       candidates.push('/usr/bin/opencode');
+      candidates.push('/bin/opencode');
     }
 
     for (const candidate of candidates) {
@@ -340,17 +345,24 @@ export class OpencodeCli {
     this.eventDispatcher.resetSession(sessionId);
 
     let messageId = '';
-    let idle = false;
 
     const idlePromise = new Promise<void>((resolve) => {
+      let settled = false;
+      const guard = () => {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+
       const eventUrl = `${this.server!.url}/event`;
       this.sseStream.connect(eventUrl, this.authHeader, (event: SSEMessage) => {
         console.log('[opencode] /event:', event.type, JSON.stringify(event.properties).slice(0, 200));
         this.eventDispatcher!.dispatch(event, sessionId);
         if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
         if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
-          idle = true;
-          resolve();
+          this.eventDispatcher!.clearSession(sessionId);
+          guard();
         }
       }, this.abortController!.signal);
 
@@ -360,53 +372,13 @@ export class OpencodeCli {
         headers: { 'Content-Type': 'application/json', ...this.authHeader },
         body: JSON.stringify(body),
         signal: this.abortController!.signal,
-      }).then(async (response) => {
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
-        }
-
-        const contentType = response.headers.get('content-type') || '';
-        console.log('[opencode] POST /message content-type:', contentType);
-
-        if (contentType.includes('event-stream')) {
-          await this.sseStream.parse(response, (event: SSEMessage) => {
-            console.log('[opencode] POST event:', event.type, JSON.stringify(event.properties).slice(0, 200));
-            resetTimeout();
-            this.eventDispatcher!.dispatch(event, sessionId);
-            if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
-            if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
-              idle = true;
-            }
-          });
-        } else {
-          try {
-            const data: any = await response.json();
-            if (data?.info?.id) messageId = data.info.id;
-          } catch (err) { console.warn('[opencode] Parse JSON response failed:', err); }
-        }
       }).catch((err) => {
         console.error('[opencode:post] Error:', err?.message);
         onError?.(err.message || 'POST error');
-        if (!idle) { idle = true; resolve(); }
+        guard();
       });
 
-      let timeout: NodeJS.Timeout;
-      const resetTimeout = () => {
-        clearTimeout(timeout);
-        const abortSession = async () => {
-          if (!idle) {
-            idle = true;
-            console.log('[opencode] Session timeout expired for', sessionId);
-            try {
-              await this.ensureApiClient().abortSession(sessionId);
-} catch (err) { console.warn('[opencode] Abort session failed:', err); }
-            resolve();
-          }
-        };
-        timeout = setTimeout(abortSession, 300000);
-      };
-      resetTimeout();
+      setTimeout(() => guard(), 300000);
     });
 
     await idlePromise;
@@ -476,7 +448,12 @@ export class OpencodeCli {
   stop(): void {
     this.abortController?.abort();
     if (this.process) {
-      this.process.kill('SIGTERM');
+      const platform = process.platform;
+      if (platform === 'win32') {
+        this.process.kill();
+      } else {
+        this.process.kill('SIGTERM');
+      }
       this.process = null;
     }
     this.server = null;
