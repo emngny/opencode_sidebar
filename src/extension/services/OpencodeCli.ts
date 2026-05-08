@@ -126,13 +126,13 @@ export class OpencodeCli {
 
   private ensureApiClient(): ApiClient {
     if (!this.server) throw new Error('Opencode server not running');
-    if (!this.apiClient) {
+    if (this.apiClient) {
+      this.apiClient.updateAuth(this.server.url, this.authHeader);
+    } else {
       this.apiClient = new ApiClient({
         baseUrl: this.server.url,
         authHeader: this.authHeader,
       });
-    } else {
-      this.apiClient.updateAuth(this.server.url, this.authHeader);
     }
     return this.apiClient;
   }
