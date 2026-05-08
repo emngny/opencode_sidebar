@@ -75,7 +75,7 @@ describe('Extension-Webview Message Protocol', () => {
       const validPayload: WebviewToExtensionMessage['payload'] = {
         prompt: 'Hello world',
         model: 'openai/gpt-4',
-        mode: 'Build',
+        mode: 'build',
         context: [
           { type: 'file', path: 'src/index.ts' },
         ],

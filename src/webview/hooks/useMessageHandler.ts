@@ -29,6 +29,7 @@ interface MessageHandlerState {
   setRevertActive: React.Dispatch<React.SetStateAction<boolean>>;
   setConfirmDialog: React.Dispatch<React.SetStateAction<{ message: string; onConfirm: () => void } | null>>;
   setReadPermissionPrompt: React.Dispatch<React.SetStateAction<{ filePath: string; reason: string; requestId: string } | null>>;
+  setAgents: React.Dispatch<React.SetStateAction<string[]>>;
   processProviderList: (result: ProviderListResult) => void;
   tryAutoSelectModel: (models: ModelItem[], currentModel: string, hidden: Record<string, boolean>) => void;
 }
@@ -40,7 +41,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     flushPendingChunk, cleanupStreaming,
     setModel, setMode, setGitInfo, setAvailableModels, setHiddenModels,
     setProvidersLoaded, setSkills, setFileSearchResults, setFileSearchQuery,
-    setRevertActive, setConfirmDialog, setReadPermissionPrompt,
+    setRevertActive, setConfirmDialog, setReadPermissionPrompt, setAgents,
     processProviderList, tryAutoSelectModel,
   } = state;
 
@@ -299,6 +300,13 @@ export function useMessageHandler(state: MessageHandlerState): void {
           });
           break;
         }
+        case 'agentList': {
+          const agentArray = msg.payload.agents;
+          if (Array.isArray(agentArray) && agentArray.length > 0) {
+            setAgents(agentArray);
+          }
+          break;
+        }
       }
     });
 
@@ -313,7 +321,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     flushPendingChunk, cleanupStreaming,
     setModel, setMode, setGitInfo, setAvailableModels, setHiddenModels,
     setProvidersLoaded, setSkills, setFileSearchResults, setFileSearchQuery,
-    setRevertActive, setConfirmDialog, setReadPermissionPrompt,
+    setRevertActive, setConfirmDialog, setReadPermissionPrompt, setAgents,
     processProviderList, tryAutoSelectModel,
   ]);
 }

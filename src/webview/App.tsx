@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { ChatContainer } from './components/ChatContainer';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { BottomInput } from './components/BottomInput';
@@ -13,7 +13,7 @@ import { CommandItem } from './slashCommands';
 import { useChatState } from './hooks/useChatState';
 import { useModelManager } from './hooks/useModelManager';
 import { useMessageHandler } from './hooks/useMessageHandler';
-import { COLORS, flexRow, flexCenter, flexBetween, overlay, card, btnIcon, transitionColor, textSmall, textHeader, gap } from './styles';
+import { COLORS, flexRow, overlay, card, btnIcon, textSmall, textHeader } from './styles';
 
 export default function App() {
   const {
@@ -43,6 +43,10 @@ export default function App() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const [agents, setAgents] = useState<string[]>([
+    'build', 'plan', 'ask', 'debug', 'docs', 'code', 'review'
+  ]);
+
   useMessageHandler({
     setMessages, setBusy, setContextEvents,
     pendingChunkRef, chunkFlushTimerRef, streamingMsgIdRef, DEBOUNCE_MS,
@@ -50,6 +54,7 @@ export default function App() {
     setModel, setMode, setGitInfo, setAvailableModels, setHiddenModels,
     setProvidersLoaded, setSkills, setFileSearchResults, setFileSearchQuery,
     setRevertActive, setConfirmDialog, setReadPermissionPrompt,
+    setAgents,
     processProviderList, tryAutoSelectModel,
   });
 
@@ -77,21 +82,17 @@ export default function App() {
       }
       if (cmdName === 'review') {
         if (rest) {
-          setMode('Review');
-          postMessage({ type: 'sendMessage', payload: { prompt: rest, model, mode: 'Review', context } });
+          setMode('review');
+          postMessage({ type: 'sendMessage', payload: { prompt: rest, model, mode: 'review', context } });
           return;
         }
         postMessage({ type: 'runCommand', payload: { command: cmdName, args: '' } });
         return;
       }
-      const modeMap: Record<string, string> = {
-        build: 'Build', plan: 'Plan', ask: 'Ask',
-        debug: 'Debug', docs: 'Docs', code: 'Code', review: 'Review',
-      };
-      if (modeMap[cmdName]) {
-        setMode(modeMap[cmdName]);
+      if (agents.includes(cmdName)) {
+        setMode(cmdName);
         if (rest) {
-          postMessage({ type: 'sendMessage', payload: { prompt: rest, model, mode: modeMap[cmdName], context } });
+          postMessage({ type: 'sendMessage', payload: { prompt: rest, model, mode: cmdName, context } });
           return;
         }
         setBusy(false);
@@ -99,7 +100,7 @@ export default function App() {
       }
     }
     postMessage({ type: 'sendMessage', payload: { prompt, model, mode, context } });
-  }, [model, mode, skills, setBusy, setContextEvents, setMode]);
+  }, [model, mode, skills, agents, setBusy, setContextEvents, setMode]);
 
   const handleOpenDiff = useCallback((filePath: string) => {
     postMessage({ type: 'openDiff', payload: { filePath } });
@@ -129,16 +130,10 @@ export default function App() {
   const handleSlashCommand = useCallback((cmd: CommandItem) => {
     if (cmd.command === 'init' || cmd.command === 'review') {
       postMessage({ type: 'runCommand', payload: { command: cmd.command, args: '' } });
-    } else if (cmd.agent) {
-      const modeMap: Record<string, string> = {
-        build: 'Build', plan: 'Plan', ask: 'Ask',
-        debug: 'Debug', docs: 'Docs', code: 'Code', review: 'Review',
-      };
-      if (modeMap[cmd.agent]) {
-        setMode(modeMap[cmd.agent]);
-      }
+    } else if (cmd.agent && agents.includes(cmd.agent)) {
+      setMode(cmd.agent);
     }
-  }, [setMode]);
+  }, [agents, setMode]);
 
   const handleRespondPermission = useCallback(
     (permId: string, permSessionId: string, response: 'allow' | 'deny', remember?: boolean) => {
@@ -192,7 +187,7 @@ export default function App() {
           skills={skills}
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px 12px', backgroundColor: '#181825', borderTop: '1px solid #313244' }}>
-          <ModeSelector mode={mode} onChange={setMode} />
+          <ModeSelector mode={mode} onChange={setMode} agents={agents} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
                 onClick={() => setShowSessions(true)}

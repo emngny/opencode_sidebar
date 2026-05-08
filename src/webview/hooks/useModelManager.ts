@@ -11,7 +11,7 @@ export interface ModelItem {
 
 export function useModelManager() {
   const [model, setModel] = useState('');
-  const [mode, setMode] = useState('Build');
+  const [mode, setMode] = useState('build');
   const [gitInfo, setGitInfo] = useState<GitInfo>({
     branch: 'main',
     lastCommitTime: 'a minute ago',

@@ -10,16 +10,6 @@ import { SessionService } from '../services/SessionService';
 import { PermissionService } from '../services/PermissionService';
 import { AuthService } from '../services/AuthService';
 
-const MODE_TO_AGENT: Record<string, string> = {
-  'Build': 'build',
-  'Plan': 'plan',
-  'Ask': 'ask',
-  'Debug': 'debug',
-  'Docs': 'docs',
-  'Code': 'code',
-  'Review': 'review',
-};
-
 /**
  * VS Code Sidebar provider for the opencode webview.
  * Implements WebviewViewProvider to render the chat UI and handle message dispatch.
@@ -165,6 +155,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       });
       await this._handleListProviders();
       this._handleLoadSkills();
+      // Load agents from server
+      this._opencode.getAgents().then(agents => {
+        if (Array.isArray(agents) && agents.length > 0) {
+          const normalized = agents
+            .map((a: any) => {
+              if (typeof a === 'string') return a.toLowerCase();
+              const id = a.id || a.name || a.slug || a.key || '';
+              return String(id).toLowerCase();
+            })
+            .filter(Boolean);
+          this._view?.webview.postMessage({ type: 'agentList', payload: { agents: normalized } });
+        }
+      }).catch(() => {
+        // Silently fail — webview has hardcoded fallback
+      });
     } catch (err: any) {
       console.warn('[opencode] Project info fetch failed, using git info:', err);
       const gitInfo = getGitInfo();
@@ -275,7 +280,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   private async _handleSendMessage(payload: any): Promise<void> {
     const { prompt, model, mode, context } = payload;
-    const agent = MODE_TO_AGENT[mode] || 'build';
+    const agent = mode;
 
     const { userContent, extraParts } = await this._processContext(prompt, context);
 
@@ -642,7 +647,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
     this.postMessage({ type: 'receiveMessage', payload: { role: 'assistant', content: '' } });
 
-    const agent = MODE_TO_AGENT[mode] || 'build';
+    const agent = mode;
     let accumulatedContent = '';
 
     await this._opencode.sendPrompt(sessionId, prompt, {

@@ -4,11 +4,10 @@ import { getAgentColor } from './agentColors';
 interface Props {
   mode: string;
   onChange: (mode: string) => void;
+  agents: string[];
 }
 
-const MODES = ['Build', 'Plan', 'Ask', 'Debug', 'Docs', 'Code'];
-
-export function ModeSelector({ mode, onChange }: Props) {
+export function ModeSelector({ mode, onChange, agents }: Props) {
   const color = getAgentColor(mode);
   return (
     <div
@@ -40,11 +39,16 @@ export function ModeSelector({ mode, onChange }: Props) {
           fontWeight: 600
         }}
       >
-        {MODES.map((m) => (
-          <option key={m} value={m} style={{ backgroundColor: '#181825', color: '#cdd6f4' }}>
-            {m}
-          </option>
-        ))}
+        {agents.map((a) => {
+          const display = typeof a === 'string'
+            ? a.charAt(0).toUpperCase() + a.slice(1)
+            : String(a);
+          return (
+            <option key={a} value={a} style={{ backgroundColor: '#181825', color: '#cdd6f4' }}>
+              {display}
+            </option>
+          );
+        })}
       </select>
     </div>
   );

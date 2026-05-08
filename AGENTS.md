@@ -7,7 +7,6 @@
 - **Webview only:** `node esbuild.config.js`
 - **Watch:** `npm run watch:extension` (tsc) and `npm run watch:webview` (esbuild) in parallel
 - **Package:** `npx vsce package`
-- **No CI, no tests** — these won't block the build. `lint` script exists but has no eslint dep; don't rely on it.
 - **Dependencies:** `marked` + `dompurify` (markdown), `opencode-ai` (server), `react` 18, `esbuild`
 
 ## Architecture

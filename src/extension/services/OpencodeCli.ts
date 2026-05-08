@@ -1,7 +1,7 @@
-import { spawn, ChildProcess } from 'child_process';
-import { existsSync } from 'fs';
-import { resolve } from 'path';
-import { randomBytes } from 'crypto';
+import { spawn, ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { ProviderListResult } from '../types';
 import { ApiClient } from './ApiClient';
 import { SseStream, SSEMessage } from './SseStream';
@@ -60,7 +60,7 @@ export class OpencodeCli {
             '/bin',
             '/usr/lib',
           ].filter(Boolean);
-          const resolvedPath = resolve(envPath).replace(/\\/g, '/').toLowerCase();
+          const resolvedPath = resolve(envPath).replaceAll('\\', '/').toLowerCase();
           const isAllowed = allowedRoots.some(root => resolvedPath.startsWith(root.replaceAll('\\', '/').toLowerCase()));
           if (isAllowed) return envPath;
           console.warn('[opencode] OPENCODE_BIN_PATH not in allowed directories:', envPath);
@@ -77,26 +77,30 @@ export class OpencodeCli {
     if (platform === 'win32') {
       const appData = process.env.APPDATA;
       // npm global installations only
-      if (appData) candidates.push(`${appData}\\npm\\node_modules\\opencode-ai\\node_modules\\opencode-windows-x64\\bin\\opencode.exe`);
-      if (appData) candidates.push(`${appData}\\npm\\node_modules\\opencode-ai\\node_modules\\opencode-windows-x64-baseline\\bin\\opencode.exe`);
+      if (appData) candidates.push(String.raw`${appData}\npm\node_modules\opencode-ai\node_modules\opencode-windows-x64\bin\opencode.exe`);
+      if (appData) candidates.push(String.raw`${appData}\npm\node_modules\opencode-ai\node_modules\opencode-windows-x64-baseline\bin\opencode.exe`);
     } else if (platform === 'darwin') {
       // macOS npm global + common package managers
       if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
       if (home) candidates.push(`${home}/.npm-global/bin/opencode`);
       if (home) candidates.push(`${home}/.local/bin/opencode`);
-      candidates.push('/usr/local/bin/opencode');
-      candidates.push('/opt/homebrew/bin/opencode');
-      candidates.push('/opt/local/bin/opencode');
-      candidates.push('/usr/bin/opencode');
+      candidates.push(
+        '/usr/local/bin/opencode',
+        '/opt/homebrew/bin/opencode',
+        '/opt/local/bin/opencode',
+        '/usr/bin/opencode',
+      );
     } else {
       // Linux and other Unix
       if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
       if (home) candidates.push(`${home}/.local/bin/opencode`);
       if (home) candidates.push(`${home}/.local/share/opencode/bin/opencode`);
-      candidates.push('/usr/local/bin/opencode');
-      candidates.push('/snap/bin/opencode');
-      candidates.push('/usr/bin/opencode');
-      candidates.push('/bin/opencode');
+      candidates.push(
+        '/usr/local/bin/opencode',
+        '/snap/bin/opencode',
+        '/usr/bin/opencode',
+        '/bin/opencode',
+      );
     }
 
     for (const candidate of candidates) {
@@ -105,7 +109,9 @@ export class OpencodeCli {
         if (existsSync(candidate)) {
           return candidate;
         }
-      } catch (err) { /* ignore candidate */ }
+      } catch (err) {
+        console.warn('[opencode] Binary candidate check failed:', candidate, err);
+      }
     }
 
     // Priority 3: let Node.js resolve from PATH
@@ -255,7 +261,7 @@ proc.on('exit', (code: any) => {
     return this.ensureApiClient().deleteSession(sessionId);
   }
 
-  async getAgents(): Promise<any[]> {
+  async getAgents(): Promise<string[]> {
     await this.start();
     return this.ensureApiClient().getAgents();
   }

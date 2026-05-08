@@ -95,9 +95,22 @@ export class ApiClient {
     }
   }
 
-  async getAgents(): Promise<any[]> {
+  async getAgents(): Promise<string[]> {
     try {
-      return await this.fetch('/agent');
+      const result = await this.fetch<any>('/agent');
+      if (Array.isArray(result)) {
+        return result.map((a: any) => {
+          if (typeof a === 'string') return a;
+          return a.id || a.name || a.slug || a.key || '';
+        }).filter(Boolean);
+      }
+      if (result && Array.isArray(result.agents)) {
+        return result.agents.map((a: any) => {
+          if (typeof a === 'string') return a;
+          return a.id || a.name || a.slug || a.key || '';
+        }).filter(Boolean);
+      }
+      return [];
     } catch {
       return [];
     }
