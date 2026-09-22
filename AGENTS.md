@@ -78,41 +78,89 @@ Pattern: [thing] [action] [reason]. [next step].
 ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift.
 Code/commits/PRs: normal. Off: "stop caveman" / "normal mode".
 
-<!-- code-review-graph MCP tools -->
-## MCP Tools: code-review-graph
 
-**IMPORTANT: This project has a knowledge graph. ALWAYS use the
-code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
-the codebase.** The graph is faster, cheaper (fewer tokens), and gives
-you structural context (callers, dependents, test coverage) that file
-scanning cannot.
+<!-- caveman-begin -->
+Respond terse like smart caveman. All technical substance stay. Only fluff die.
 
-### When to use graph tools FIRST
+Rules:
+- Drop: articles (a/an/the), filler (just/really/basically), pleasantries, hedging
+- Fragments OK. Short synonyms. Technical terms exact. Code unchanged.
+- Pattern: [thing] [action] [reason]. [next step].
+- Not: "Sure! I'd be happy to help you with that."
+- Yes: "Bug in auth middleware. Fix:"
 
-- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
-- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
-- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
-- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
-- **Architecture questions**: `get_architecture_overview` + `list_communities`
+Switch level: /caveman lite|full|ultra|wenyan
+Stop: "stop caveman" or "normal mode"
 
-Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+Auto-Clarity: drop caveman for security warnings, irreversible actions, user confused. Resume after.
 
-### Key Tools
+Boundaries: code/commits/PRs written normal.
+<!-- caveman-end -->
 
-| Tool | Use when |
-|------|----------|
-| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
-| `get_review_context` | Need source snippets for review — token-efficient |
-| `get_impact_radius` | Understanding blast radius of a change |
-| `get_affected_flows` | Finding which execution paths are impacted |
-| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
-| `semantic_search_nodes` | Finding functions/classes by name or keyword |
-| `get_architecture_overview` | Understanding high-level codebase structure |
-| `refactor_tool` | Planning renames, finding dead code |
 
-### Workflow
+<!-- CODEGRAPH_START -->
+# CodeGraph
 
-1. The graph auto-updates on file changes (via hooks).
-2. Use `detect_changes` for code review.
-3. Use `get_affected_flows` to understand impact.
-4. Use `query_graph` pattern="tests_for" to check coverage.
+In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo root), reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool** (when available): `codegraph_explore` answers most code questions in one call — the relevant symbols' verbatim source plus the call paths between them, including dynamic-dispatch hops grep can't follow. Name a file or symbol in the query to read its current line-numbered source. If it's listed but deferred, load it by name via tool search.
+- **Shell** (always works): `codegraph explore "<symbol names or question>"` prints the same output.
+
+If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
+<!-- CODEGRAPH_END -->
+
+
+<!-- CONTEXT_MODE_START -->
+# context-mode — MANDATORY routing rules
+
+`context-mode` tools are available. Rules protect context window from flooding.
+
+## Think in Code — MANDATORY
+
+Analyze/count/filter/compare/search/parse/transform data: write code via `context-mode_ctx_execute(language, code)`, and `console.log()` only the answer. Do not read raw data into context. Use JavaScript with Node.js built-ins (`fs`, `path`, `child_process`) and handle `null`/`undefined`.
+
+## BLOCKED — do not attempt
+
+### curl / wget
+
+Shell `curl`/`wget` is blocked. Use `context-mode_ctx_fetch_and_index(url, source)` or `context-mode_ctx_execute(language: "javascript", code: "const r = await fetch(...)" )`.
+
+### Inline HTTP
+
+`fetch('http`, `requests.get(`, `requests.post(`, `http.get(`, and `http.request(` are blocked. Use `context-mode_ctx_execute(language, code)`; only stdout enters context.
+
+### Direct web fetching
+
+Use `context-mode_ctx_fetch_and_index(url, source)` then `context-mode_ctx_search(queries)`.
+
+## REDIRECTED — use sandbox
+
+- Shell with more than 20 lines output: use `context-mode_ctx_batch_execute` or `context-mode_ctx_execute`. Shell is reserved for `git`, `mkdir`, `rm`, `mv`, `cd`, `ls`, `npm install`, and `pip install`.
+- File reading for analysis: use `context-mode_ctx_execute_file(path, language, code)`. Reading to edit remains correct.
+- Large grep/search: use `context-mode_ctx_execute(language: "javascript", code: "...")` for filtering/counting.
+
+## Tool selection
+
+1. `context-mode_ctx_batch_execute(commands, queries)` for gathering multiple command outputs.
+2. `context-mode_ctx_search(queries: ["q1", "q2"])` for indexed content.
+3. `context-mode_ctx_execute` / `context-mode_ctx_execute_file` for sandbox processing.
+4. `context-mode_ctx_fetch_and_index` then `context-mode_ctx_search` for web content.
+5. `context-mode_ctx_index(content, source)` for reusable documents.
+
+For multi-URL/API I/O, set `concurrency` to 4–8. Keep `concurrency: 1` for CPU-bound commands and shared-state operations.
+
+## Output and continuity
+
+Write artifacts to files, not inline. Return file path plus one-line description. Session history is searchable; on resume, search context-mode memory before asking what work was in progress.
+
+## ctx commands
+
+| Command | Action |
+|---|---|
+| `ctx stats` | Call stats tool and display output verbatim |
+| `ctx doctor` | Call doctor tool, run returned command, display checklist |
+| `ctx upgrade` | Call upgrade tool, run returned command, display checklist |
+| `ctx purge` | Warn, then call purge with `confirm: true` |
+
+After `/clear` or `/compact`, context-mode knowledge base and session stats persist. Use `ctx purge` to start fresh.
+<!-- CONTEXT_MODE_END -->

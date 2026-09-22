@@ -30,7 +30,7 @@ export class OpencodeCli {
   private server: OpencodeServerInfo | null = null;
   private readonly eventHandlers: Set<EventHandler> = new Set();
   private abortController: AbortController | null = null;
-  private readonly binaryPath: string = 'opencode';
+  private binaryCandidates: string[] = [];
   private readonly cwd: string | undefined;
   private apiClient: ApiClient | null = null;
   private readonly sseStream: SseStream;
@@ -38,12 +38,20 @@ export class OpencodeCli {
   private readonly idleResolveRefs = new Map<string, () => void>();
 
   constructor(cwd?: string) {
-    this.binaryPath = this.resolveBinary();
+    this.binaryCandidates = this.resolveBinaryCandidates();
     this.cwd = cwd;
     this.sseStream = new SseStream();
   }
 
-  private resolveBinary(): string {
+  /**
+   * Ordered list of candidate binaries instead of a single one.
+   * The env-var override comes first, but a stale OPENCODE_BIN_PATH
+   * (e.g. left behind by an old npm install) must not hard-fail startup:
+   * if it fails at serve time we fall through to the next candidate.
+   */
+  private resolveBinaryCandidates(): string[] {
+    const existing: string[] = [];
+
     // Priority 1: explicit env var override (restricted to allowed directories)
     const envPath = process.env.OPENCODE_BIN_PATH;
     if (envPath) {
@@ -62,8 +70,8 @@ export class OpencodeCli {
           ].filter(Boolean);
           const resolvedPath = resolve(envPath).replaceAll('\\', '/').toLowerCase();
           const isAllowed = allowedRoots.some(root => resolvedPath.startsWith(root.replaceAll('\\', '/').toLowerCase()));
-          if (isAllowed) return envPath;
-          console.warn('[opencode] OPENCODE_BIN_PATH not in allowed directories:', envPath);
+          if (isAllowed) existing.push(envPath);
+          else console.warn('[opencode] OPENCODE_BIN_PATH not in allowed directories:', envPath);
         }
       } catch (err) { console.warn('[opencode] Binary path check failed:', err); }
     }
@@ -107,7 +115,7 @@ export class OpencodeCli {
       if (!candidate) continue;
       try {
         if (existsSync(candidate)) {
-          return candidate;
+          existing.push(candidate);
         }
       } catch (err) {
         console.warn('[opencode] Binary candidate check failed:', candidate, err);
@@ -115,7 +123,10 @@ export class OpencodeCli {
     }
 
     // Priority 3: let Node.js resolve from PATH
-    return 'opencode';
+    existing.push('opencode');
+
+    // De-duplicate while preserving priority order
+    return [...new Set(existing)];
   }
 
   get authHeader(): Record<string, string> {
@@ -139,14 +150,44 @@ export class OpencodeCli {
 
   /**
    * Starts the opencode server process if not already running.
-   * Spawns `opencode serve --port 0` with a generated password for Basic Auth.
-   * @throws Error if server fails to start within 30s timeout
+   * Tries each resolved binary candidate in priority order (`OPENCODE_BIN_PATH`
+   * first, then platform-specific installs, then PATH) so one stale install
+   * cannot break startup for everyone. Spawns `opencode serve --port 0` with
+   * a generated password for Basic Auth.
+   * @throws Error (including captured stderr) if every candidate fails or the
+   *         server does not start within the 30s total timeout
    */
   async start(): Promise<void> {
     if (this.server) return;
 
     const password = randomBytes(16).toString('hex');
+    const deadline = Date.now() + 30000;
+    const failures: string[] = [];
 
+    for (const binary of this.binaryCandidates) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      try {
+        await this.tryStart(binary, password, remaining);
+        return;
+      } catch (err: any) {
+        failures.push(`${binary}: ${err?.message || err}`);
+        console.warn('[opencode] serve failed with candidate', binary, '-', err?.message || err);
+      }
+    }
+
+    const detail = failures.length > 1 ? ` (${failures.join(' | ')})` : '';
+    throw new Error(`opencode serve failed${detail || ': no binary candidates'}`);
+  }
+
+  /**
+   * Single start attempt against one binary candidate.
+   * Resolves once the server prints its listening URL; rejects on spawn error,
+   * early exit, or timeout — with the captured stderr appended so the real
+   * cause (e.g. an invalid opencode.json) reaches the UI instead of a bare
+   * "exited with code 1".
+   */
+  private tryStart(binary: string, password: string, timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
       const minimalEnv: Record<string, string | undefined> = {
         OPENCODE_SERVER_PASSWORD: password,
@@ -168,14 +209,27 @@ export class OpencodeCli {
         if (minimalEnv[key] === undefined) delete minimalEnv[key];
       }
 
-      const proc = spawn(this.binaryPath, ['serve', '--port', '0'], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        cwd: this.cwd,
-        env: minimalEnv,
-      });
+      let proc: ChildProcess;
+      try {
+        proc = spawn(binary, ['serve', '--port', '0'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          cwd: this.cwd,
+          env: minimalEnv,
+        });
+      } catch (err: any) {
+        reject(err);
+        return;
+      }
 
       let started = false;
       let outputBuffer = '';
+      let stderrTail = '';
+
+      const fail = (msg: string) => {
+        if (started) return;
+        const stderr = stderrTail.trim().replace(/\s+/g, ' ').slice(-500);
+        reject(new Error(stderr ? `${msg} — ${stderr}` : msg));
+      };
 
       proc.stdout?.on('data', (data: Buffer) => {
         const text = data.toString();
@@ -193,15 +247,21 @@ export class OpencodeCli {
 
       proc.stderr?.on('data', (data: Buffer) => {
         const text = data.toString().trim();
-        if (text) console.error('[opencode:err]', text);
+        if (text) {
+          console.error('[opencode:err]', text);
+          stderrTail = (stderrTail + '\n' + text).slice(-2000);
+        }
       });
 
       proc.on('error', (err: Error) => {
-        if (!started) reject(err);
+        fail(err.message);
       });
 
-proc.on('exit', (code: any) => {
-        if (!started) reject(new Error(`opencode serve exited with code ${code}`));
+      proc.on('exit', (code: any) => {
+        if (!started) {
+          fail(`opencode serve exited with code ${code}`);
+          return;
+        }
         this.server = null;
         for (const resolve of this.idleResolveRefs.values()) {
           resolve();
@@ -212,9 +272,9 @@ proc.on('exit', (code: any) => {
       setTimeout(() => {
         if (!started) {
           proc.kill();
-          reject(new Error('opencode serve timeout'));
+          fail('opencode serve timeout');
         }
-      }, 30000);
+      }, timeoutMs);
     });
   }
 
