@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.7] - 2026-09-22
+
+### Added
+- CHANGELOG.md back up to date (0.1.5 and 0.1.6 entries were missing from the Marketplace release)
+
+## [0.1.6] - 2026-09-22
+
+### Added
+- Binary candidate fallback: `OpencodeCli` now resolves an ordered list of binaries (`OPENCODE_BIN_PATH` → platform-specific installs → `PATH`) and tries each on startup instead of trusting a single one
+- Captured `opencode serve` stderr is included in error messages, so real causes (e.g. an invalid `opencode.json`) reach the UI instead of a bare "exited with code 1"
+
+### Fixed
+- Stale `OPENCODE_BIN_PATH` (e.g. left behind by an old npm install) no longer breaks server startup for the whole extension
+- "Failed to list providers: opencode serve exited with code 1" now surfaces the underlying configuration error
+
+### Changed
+- `start()` split into candidate loop + per-candidate `tryStart()` with a shared 30s deadline
+
+## [0.1.5] - 2026-05-08
+
+### Added
+- `OpencodeCli` service owning server lifecycle, HTTP API client, SSE streaming, and event dispatch
+- Agent-based mode selection and command routing in the sidebar UI (`/plan`, `/build`, `/ask`, `/debug`, `/docs`, `/code`, `/review`, `/init`)
+
+### Changed
+- `sendPrompt` and related call sites migrated to the new service layout
+
 ## [0.1.4] - 2026-05-07
 
 ### Added
