@@ -11,7 +11,8 @@ async function build() {
     format: 'iife',
     target: ['es2020'],
     jsx: 'automatic',
-    sourcemap: true,
+    // Keep production bundle lean; watch builds still get useful source maps.
+    sourcemap: watch,
     minify: true,
     external: ['vscode']
   });

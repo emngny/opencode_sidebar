@@ -113,66 +113,74 @@ export class SseStream {
     return null;
   }
 
+  private processSseLine(
+    line: string,
+    state: { lastEventId?: string; currentEvent: Partial<SseEvent> },
+    onEvent: EventCallback,
+  ): void {
+    if (line === '' && state.currentEvent.data) {
+      try {
+        onEvent(JSON.parse(state.currentEvent.data) as SSEMessage);
+      } catch {
+        // skip parse error
+      }
+      state.currentEvent = {};
+      return;
+    }
+
+    const event = this.parseEventLine(line);
+    if (!event) return;
+
+    if (event.event !== undefined) {
+      state.currentEvent.event = event.event;
+    }
+    if (event.id !== undefined) {
+      state.lastEventId = event.id;
+      state.currentEvent.id = event.id;
+    }
+    if (event.data !== undefined) {
+      // Each `data:` line is a complete JSON event in opencode's SSE.
+      // If we already have buffered data, emit it first so
+      // `data: {...}\ndata: {...}\n\n` yields two events (test expects this).
+      if (state.currentEvent.data) {
+        try {
+          onEvent(JSON.parse(state.currentEvent.data) as SSEMessage);
+        } catch {
+          // skip parse error
+        }
+        state.currentEvent = {};
+        if (state.lastEventId) state.currentEvent.id = state.lastEventId;
+        if (event.event !== undefined) state.currentEvent.event = event.event;
+      }
+      state.currentEvent.data = (state.currentEvent.data || '') + event.data;
+    }
+  }
+
   async parse(response: Response, onEvent: EventCallback, signal: AbortSignal): Promise<void> {
     try {
       if (!response.body) throw new Error('SSE response has no body');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let lastEventId: string | undefined;
-      let currentEvent: Partial<SseEvent> = {};
+      const state: { lastEventId?: string; currentEvent: Partial<SseEvent> } = { currentEvent: {} };
 
       while (!signal.aborted) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line === '' && currentEvent.data) {
-            try {
-              onEvent(JSON.parse(currentEvent.data) as SSEMessage);
-            } catch {
-              // skip parse error
-            }
-            currentEvent = {};
-            continue;
-          }
-
-          const event = this.parseEventLine(line);
-          if (!event) continue;
-
-          if (event.event !== undefined) {
-            currentEvent.event = event.event;
-          }
-          if (event.id !== undefined) {
-            lastEventId = event.id;
-            currentEvent.id = event.id;
-          }
-          if (event.data !== undefined) {
-            // Each `data:` line is a complete JSON event in opencode's SSE.
-            // If we already have buffered data, emit it first so
-            // `data: {...}\ndata: {...}\n\n` yields two events (test expects this).
-            if (currentEvent.data) {
-              try {
-                onEvent(JSON.parse(currentEvent.data) as SSEMessage);
-              } catch {
-                // skip parse error
-              }
-              currentEvent = {};
-              if (lastEventId) currentEvent.id = lastEventId;
-              if (event.event !== undefined) currentEvent.event = event.event;
-            }
-            currentEvent.data = (currentEvent.data || '') + event.data;
-          }
+        let lineEnd = buffer.indexOf('\n');
+        while (lineEnd >= 0) {
+          this.processSseLine(buffer.slice(0, lineEnd), state, onEvent);
+          buffer = buffer.slice(lineEnd + 1);
+          lineEnd = buffer.indexOf('\n');
         }
       }
 
-      if (currentEvent.data) {
+      if (buffer) this.processSseLine(buffer, state, onEvent);
+      if (state.currentEvent.data) {
         try {
-          onEvent(JSON.parse(currentEvent.data) as SSEMessage);
+          onEvent(JSON.parse(state.currentEvent.data) as SSEMessage);
         } catch {
           // skip parse error
         }

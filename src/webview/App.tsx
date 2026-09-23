@@ -94,7 +94,8 @@ function AppContent() {
     processProviderList, tryAutoSelectModel,
   } = useModelManager();
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const nearBottomRef = useRef(true);
 
   const [agents, setAgents] = useState<string[]>([
     'build', 'plan', 'ask', 'debug', 'docs', 'code', 'review'
@@ -111,13 +112,19 @@ function AppContent() {
     processProviderList, tryAutoSelectModel,
   });
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, contextEvents]);
+  useEffect(() => {
+    if (!nearBottomRef.current) return;
+    const container = chatScrollRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: busy ? 'auto' : 'smooth' });
+  }, [messages, contextEvents, busy]);
 
   useEffect(() => {
     postMessage({ type: 'webviewReady' });
   }, []);
 
   const handleSend = useCallback((prompt: string, context?: ContextPart[]) => {
+    nearBottomRef.current = true;
     setBusy(true);
     setContextEvents([]);
     const firstWord = prompt.split(' ')[0];
@@ -210,13 +217,19 @@ function AppContent() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#1e1e2e', position: 'relative' }}>
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <div
+        ref={chatScrollRef}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          nearBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+        }}
+        style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}
+      >
         {showWelcome ? (
           <WelcomeScreen projectPath={gitInfo.projectPath} branch={gitInfo.branch} lastCommitTime={gitInfo.lastCommitTime} />
         ) : (
           <div style={{ flex: 1, padding: '16px 12px' }}>
             <ChatContainer messages={messages} onRevert={handleRevert} revertActive={revertActive} onUnrevert={handleUnrevert} contextEvents={contextEvents} onLoadSession={handleLoadSession} onRespondPermission={handleRespondPermission} onOpenDiff={handleOpenDiff} />
-            <div ref={messagesEndRef} />
           </div>
         )}
       </div>

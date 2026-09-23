@@ -36,15 +36,15 @@ export function useChatState() {
     }
 
     setMessages((prev) => {
-      let lastAssistantIdx = -1;
-      for (let i = prev.length - 1; i >= 0; i--) {
-        if (prev[i].role === 'assistant') {
-          lastAssistantIdx = i;
-          break;
-        }
-      }
+      const lastMessage = prev[prev.length - 1];
       const updated = [...prev];
-      if (lastAssistantIdx < 0) {
+      if (lastMessage?.role === 'assistant') {
+        updated[updated.length - 1] = {
+          ...lastMessage,
+          content: lastMessage.content + chunkContent,
+          isStreaming: true,
+        };
+      } else {
         const newId = genId();
         streamingMsgIdRef.current = newId;
         updated.push({
@@ -54,12 +54,6 @@ export function useChatState() {
           id: newId,
           isStreaming: true,
         });
-      } else {
-        updated[lastAssistantIdx] = {
-          ...updated[lastAssistantIdx],
-          content: updated[lastAssistantIdx].content + chunkContent,
-          isStreaming: true,
-        };
       }
       return updated;
     });

@@ -81,11 +81,11 @@ export function useMessageHandler(state: MessageHandlerState): void {
             cleanupStreaming();
             flushPendingChunk();
             setMessages((prev) => {
+              const lastMessage = prev[prev.length - 1];
               const updated = [...prev];
-              const lastIdx = prev.findIndex((m, i) => i === prev.length - 1 && m.role === 'assistant');
-              if (lastIdx >= 0) {
-                updated[lastIdx] = {
-                  ...updated[lastIdx],
+              if (lastMessage?.role === 'assistant') {
+                updated[updated.length - 1] = {
+                  ...lastMessage,
                   content: msg.payload.fullContent || '',
                   isStreaming: true,
                 };

@@ -4,7 +4,7 @@ interface Props {
   content: string;
 }
 
-export function ToolMessage({ content }: Readonly<Props>) {
+function ToolMessageComponent({ content }: Readonly<Props>) {
   const isRunning = content.includes('running');
   const isCompleted = content.includes('completed') || content.includes('result');
   const isFailed = content.includes('failed') || content.includes('error');
@@ -35,3 +35,5 @@ export function ToolMessage({ content }: Readonly<Props>) {
     </div>
   );
 }
+
+export const ToolMessage = React.memo(ToolMessageComponent);

@@ -6,7 +6,6 @@ import { getErrorMessage } from '../../shared/types';
 
 export interface OpencodeServerInfo {
   port: number;
-  password: string;
   url: string;
 }
 
@@ -16,6 +15,8 @@ export class ServerProcessManager {
   private server: OpencodeServerInfo | null = null;
   private binaryCandidates: string[] = [];
   private readonly idleResolveHandlers: Set<() => void> = new Set();
+  private passwordBuffer: Buffer | null = null;
+  private cachedAuthHeader: Record<string, string> = {};
 
   constructor(private readonly cwd?: string) {}
 
@@ -29,8 +30,15 @@ export class ServerProcessManager {
 
   get authHeader(): Record<string, string> {
     if (!this.server) return {};
-    const encoded = Buffer.from(`opencode:${this.server.password}`).toString('base64');
-    return { Authorization: `Basic ${encoded}` };
+    return { ...this.cachedAuthHeader };
+  }
+
+  private wipeSecret(): void {
+    if (this.passwordBuffer) {
+      this.passwordBuffer.fill(0);
+      this.passwordBuffer = null;
+    }
+    this.cachedAuthHeader = {};
   }
 
   onServerExit(handler: () => void): () => void {
@@ -42,7 +50,8 @@ export class ServerProcessManager {
     if (this.server) return;
     if (this.binaryCandidates.length === 0) this.binaryCandidates = await this.resolveBinaryCandidates();
 
-    const password = randomBytes(16).toString('hex');
+    this.passwordBuffer = randomBytes(16);
+    const password = this.passwordBuffer.toString('hex');
     const deadline = Date.now() + 30000;
     const failures: string[] = [];
     for (const binary of this.binaryCandidates) {
@@ -56,6 +65,7 @@ export class ServerProcessManager {
         console.warn('[opencode] serve failed with candidate', binary, '-', getErrorMessage(err));
       }
     }
+    this.wipeSecret();
     const detail = failures.length > 1 ? ` (${failures.join(' | ')})` : '';
     throw new Error(`opencode serve failed${detail || ': no binary candidates'}`);
   }
@@ -66,6 +76,7 @@ export class ServerProcessManager {
       this.process = null;
     }
     this.server = null;
+    this.wipeSecret();
   }
 
   private async resolveBinaryCandidates(): Promise<string[]> {
@@ -116,7 +127,6 @@ export class ServerProcessManager {
         OPENCODE_CLIENT: process.env.OPENCODE_CLIENT, OPENCODE_DISABLE_EMBEDDED_WEB_UI: process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI,
         OPENCODE_EXPERIMENTAL_FILEWATCHER: process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER,
         OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY,
-        OPENCODE_BIN_PATH: process.env.OPENCODE_BIN_PATH,
       };
       for (const key of Object.keys(minimalEnv)) if (minimalEnv[key] === undefined) delete minimalEnv[key];
       let proc: ChildProcess;
@@ -136,7 +146,9 @@ export class ServerProcessManager {
         if (match && !started) {
           started = true;
           const port = Number.parseInt(match[1], 10);
-          this.server = { port, password, url: `http://127.0.0.1:${port}` };
+          this.server = { port, url: `http://127.0.0.1:${port}` };
+          const encoded = Buffer.from(`opencode:${password}`).toString('base64');
+          this.cachedAuthHeader = { Authorization: `Basic ${encoded}` };
           this.process = proc;
           resolveStart();
         }
@@ -149,6 +161,7 @@ export class ServerProcessManager {
       proc.on('exit', (code: number | null) => {
         if (!started) { fail(`opencode serve exited with code ${code}`); return; }
         this.server = null;
+        this.wipeSecret();
         for (const handler of this.idleResolveHandlers) handler();
       });
       setTimeout(() => { if (!started) { proc.kill(); fail('opencode serve timeout'); } }, timeoutMs);

@@ -1,7 +1,3 @@
-import { spawn, ChildProcess } from 'node:child_process';
-import { access } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
-import { randomBytes } from 'node:crypto';
 import {
   ProviderListResult,
   ProjectInfo,
@@ -21,12 +17,6 @@ import { EventDispatcher, EventCallbacks } from './EventDispatcher';
 import { NormalizedDiff } from '../utils/diffUtils';
 import { ServerProcessManager } from './ServerProcessManager';
 
-interface OpencodeServerInfo {
-  port: number;
-  password: string;
-  url: string;
-}
-
 interface SessionInfo {
   id: string;
   title?: string;
@@ -39,11 +29,8 @@ type EventHandler = (event: SSEMessage) => void;
  * SSE streaming, and event dispatching for the VS Code extension.
  */
 export class OpencodeCli {
-  private process: ChildProcess | null = null;
-  private server: OpencodeServerInfo | null = null;
   private readonly eventHandlers: Set<EventHandler> = new Set();
   private abortController: AbortController | null = null;
-  private binaryCandidates: string[] = [];
   private readonly cwd: string | undefined;
   private readonly serverManager: ServerProcessManager;
   private apiClient: ApiClient | null = null;
@@ -63,88 +50,6 @@ export class OpencodeCli {
    * (e.g. left behind by an old npm install) must not hard-fail startup:
    * if it fails at serve time we fall through to the next candidate.
    */
-  private async resolveBinaryCandidates(): Promise<string[]> {
-    const existing: string[] = [];
-
-    // Priority 1: explicit env var override (restricted to user npm directories)
-    const envPath = process.env.OPENCODE_BIN_PATH;
-    if (envPath) {
-      try {
-        await access(envPath);
-        {
-          const home = process.env.HOME || process.env.USERPROFILE;
-          const npmPrefix = process.env.npm_config_prefix;
-          const appData = process.env.APPDATA;
-          const npmExecutableDir = process.platform === 'win32' ? 'npm' : 'bin';
-          const allowedRoots = [
-            appData ? resolve(appData, 'npm') : '',
-            npmPrefix ? resolve(npmPrefix, npmExecutableDir) : '',
-            home ? resolve(home, '.npm-global', 'bin') : '',
-            '/usr/local/bin',
-          ].filter(Boolean);
-          const resolvedPath = resolve(envPath);
-          const isAllowed = allowedRoots.some(root => {
-            const pathFromRoot = relative(resolve(root), resolvedPath);
-            return pathFromRoot === '' || (!pathFromRoot.startsWith('..') && !isAbsolute(pathFromRoot));
-          });
-          if (isAllowed) existing.push(envPath);
-          else console.warn('[opencode] OPENCODE_BIN_PATH not in allowed directories:', envPath);
-        }
-      } catch (err) { console.warn('[opencode] Binary path check failed:', err); }
-    }
-
-    // Priority 2: platform-specific candidates
-    const candidates: string[] = [];
-    const platform = process.platform;
-    const home = process.env.HOME || process.env.USERPROFILE;
-    const npmPrefix = process.env.npm_config_prefix;
-
-    if (platform === 'win32') {
-      const appData = process.env.APPDATA;
-      // npm global installations only
-      if (appData) candidates.push(String.raw`${appData}\npm\node_modules\opencode-ai\node_modules\opencode-windows-x64\bin\opencode.exe`);
-      if (appData) candidates.push(String.raw`${appData}\npm\node_modules\opencode-ai\node_modules\opencode-windows-x64-baseline\bin\opencode.exe`);
-    } else if (platform === 'darwin') {
-      // macOS npm global + common package managers
-      if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
-      if (home) candidates.push(`${home}/.npm-global/bin/opencode`);
-      if (home) candidates.push(`${home}/.local/bin/opencode`);
-      candidates.push(
-        '/usr/local/bin/opencode',
-        '/opt/homebrew/bin/opencode',
-        '/opt/local/bin/opencode',
-        '/usr/bin/opencode',
-      );
-    } else {
-      // Linux and other Unix
-      if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
-      if (home) candidates.push(`${home}/.local/bin/opencode`);
-      if (home) candidates.push(`${home}/.local/share/opencode/bin/opencode`);
-      candidates.push(
-        '/usr/local/bin/opencode',
-        '/snap/bin/opencode',
-        '/usr/bin/opencode',
-        '/bin/opencode',
-      );
-    }
-
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      try {
-        await access(candidate);
-        existing.push(candidate);
-      } catch {
-        // Candidate does not exist or is not accessible.
-      }
-    }
-
-    // Priority 3: let Node.js resolve from PATH
-    existing.push('opencode');
-
-    // De-duplicate while preserving priority order
-    return [...new Set(existing)];
-  }
-
   get authHeader(): Record<string, string> {
     return this.serverManager.authHeader;
   }
@@ -177,130 +82,6 @@ export class OpencodeCli {
 
   private ensureApiClient(): ApiClient {
     return this.getApiClient();
-  }
-
-  private async legacyStart(): Promise<void> {
-    if (this.server) return;
-
-    if (this.binaryCandidates.length === 0) {
-      this.binaryCandidates = await this.resolveBinaryCandidates();
-    }
-
-    const password = randomBytes(16).toString('hex');
-    const deadline = Date.now() + 30000;
-    const failures: string[] = [];
-
-    for (const binary of this.binaryCandidates) {
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
-      try {
-        await this.tryStart(binary, password, remaining);
-        return;
-      } catch (err: unknown) {
-        failures.push(`${binary}: ${getErrorMessage(err)}`);
-        console.warn('[opencode] serve failed with candidate', binary, '-', getErrorMessage(err));
-      }
-    }
-
-    const detail = failures.length > 1 ? ` (${failures.join(' | ')})` : '';
-    throw new Error(`opencode serve failed${detail || ': no binary candidates'}`);
-  }
-
-  /**
-   * Single start attempt against one binary candidate.
-   * Resolves once the server prints its listening URL; rejects on spawn error,
-   * early exit, or timeout — with the captured stderr appended so the real
-   * cause (e.g. an invalid opencode.json) reaches the UI instead of a bare
-   * "exited with code 1".
-   */
-  private tryStart(binary: string, password: string, timeoutMs: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const minimalEnv: Record<string, string | undefined> = {
-        OPENCODE_SERVER_PASSWORD: password,
-        PATH: process.env.PATH,
-        USERPROFILE: process.env.USERPROFILE,
-        APPDATA: process.env.APPDATA,
-        LOCALAPPDATA: process.env.LOCALAPPDATA,
-        SYSTEMROOT: process.env.SYSTEMROOT,
-        TEMP: process.env.TEMP,
-        TMP: process.env.TMP,
-        OPENCODE_SERVER_USERNAME: process.env.OPENCODE_SERVER_USERNAME || 'opencode',
-        OPENCODE_CLIENT: process.env.OPENCODE_CLIENT,
-        OPENCODE_DISABLE_EMBEDDED_WEB_UI: process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI,
-        OPENCODE_EXPERIMENTAL_FILEWATCHER: process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER,
-        OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY,
-      };
-      for (const key of Object.keys(minimalEnv)) {
-        if (minimalEnv[key] === undefined) delete minimalEnv[key];
-      }
-
-      let proc: ChildProcess;
-      try {
-        proc = spawn(binary, ['serve', '--port', '0'], {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          cwd: this.cwd,
-          env: minimalEnv,
-        });
-      } catch (err: unknown) {
-        reject(err instanceof Error ? err : new Error(getErrorMessage(err)));
-        return;
-      }
-
-      let started = false;
-      let outputBuffer = '';
-      let stderrTail = '';
-
-      const fail = (msg: string) => {
-        if (started) return;
-        const stderr = stderrTail.trim().replace(/\s+/g, ' ').slice(-500);
-        reject(new Error(stderr ? `${msg} — ${stderr}` : msg));
-      };
-
-      proc.stdout?.on('data', (data: Buffer) => {
-        const text = data.toString();
-        outputBuffer += text;
-
-        const match = new RegExp(/http:\/\/127\.0\.0\.1:(\d+)/).exec(outputBuffer);
-        if (match && !started) {
-          started = true;
-          const port = Number.parseInt(match[1], 10);
-          this.server = { port, password, url: `http://127.0.0.1:${port}` };
-          this.process = proc;
-          resolve();
-        }
-      });
-
-      proc.stderr?.on('data', (data: Buffer) => {
-        const text = data.toString().trim();
-        if (text) {
-          console.error('[opencode:err]', text);
-          stderrTail = (stderrTail + '\n' + text).slice(-2000);
-        }
-      });
-
-      proc.on('error', (err: Error) => {
-        fail(err.message);
-      });
-
-      proc.on('exit', (code: number | null) => {
-        if (!started) {
-          fail(`opencode serve exited with code ${code}`);
-          return;
-        }
-        this.server = null;
-        for (const resolve of this.idleResolveRefs.values()) {
-          resolve();
-        }
-        this.idleResolveRefs.clear();
-      });
-
-      setTimeout(() => {
-        if (!started) {
-          proc.kill();
-          fail('opencode serve timeout');
-        }
-      }, timeoutMs);
-    });
   }
 
   async start(): Promise<void> {
@@ -480,12 +261,7 @@ export class OpencodeCli {
         if (event.type === 'session.status' && statusType === 'idle') finish();
       };
 
-      void this.sseStream.connect(`${this.server!.url}/event`, this.authHeader, dispatchEvent, controller.signal).catch((error: unknown) => {
-        if (!controller.signal.aborted) onError?.(`Event stream failed: ${getErrorMessage(error)}`);
-        finish();
-      });
-
-      const postUrl = `${this.server!.url}/session/${sessionId}/message`;
+      const postUrl = `${this.url!}/session/${sessionId}/message`;
       void fetch(postUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...this.authHeader },

@@ -30,13 +30,25 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileSearchRef = useRef<HTMLDivElement>(null);
   const slashPopupRef = useRef<HTMLDivElement>(null);
+  const resizeFrameRef = useRef<number | null>(null);
 
-  // Auto-resize textarea
+  // Auto-resize once per animation frame to avoid layout work on every keystroke.
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
-    }
+    if (resizeFrameRef.current !== null) cancelAnimationFrame(resizeFrameRef.current);
+    resizeFrameRef.current = requestAnimationFrame(() => {
+      resizeFrameRef.current = null;
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+    });
+
+    return () => {
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+    };
   }, [text]);
 
   // Close file search on outside click

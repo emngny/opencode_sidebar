@@ -36,6 +36,28 @@ describe('SseStream', () => {
     expect(events[0].type).toBe('test');
   });
 
+  it('parses events split across many small chunks', async () => {
+    const encoder = new TextEncoder();
+    const event = 'data: {"type":"test","properties":{"value":"' + 'x'.repeat(1000) + '"}}\n\n';
+    const chunks = Array.from({ length: Math.ceil(event.length / 10) }, (_, index) => encoder.encode(event.slice(index * 10, (index + 1) * 10)));
+    const mockReader = {
+      read: vi.fn()
+        .mockImplementation(async () => chunks.length > 0
+          ? { done: false, value: chunks.shift() }
+          : { done: true }),
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: { getReader: () => mockReader },
+    });
+
+    const events: any[] = [];
+    await new SseStream().connect('http://localhost/event', {}, (e) => events.push(e), { aborted: false } as any);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].properties.value).toHaveLength(1000);
+  });
+
   it('should handle multi-line data', async () => {
     const encoder = new TextEncoder();
     const mockReader = {

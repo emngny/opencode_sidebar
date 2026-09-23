@@ -4,7 +4,7 @@ interface Props {
   status?: string;
 }
 
-export function CompactionDivider({ status }: Readonly<Props>) {
+function CompactionDividerComponent({ status }: Readonly<Props>) {
   const completed = status === 'completed';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0' }}>
@@ -16,3 +16,5 @@ export function CompactionDivider({ status }: Readonly<Props>) {
     </div>
   );
 }
+
+export const CompactionDivider = React.memo(CompactionDividerComponent);

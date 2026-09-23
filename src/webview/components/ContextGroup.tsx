@@ -13,7 +13,7 @@ interface Props {
   allDone: boolean;
 }
 
-export function ContextGroup({ events, allDone }: Readonly<Props>) {
+function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
   const [expanded, setExpanded] = React.useState(false);
   const counts: Record<string, number> = {};
   for (const e of events) {
@@ -76,3 +76,5 @@ export function ContextGroup({ events, allDone }: Readonly<Props>) {
     </div>
   );
 }
+
+export const ContextGroup = React.memo(ContextGroupComponent);

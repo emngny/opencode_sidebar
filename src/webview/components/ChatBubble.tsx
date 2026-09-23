@@ -35,7 +35,7 @@ function collapseWhitespace(text: string): string {
   return text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-export function ChatBubble({ message, onRevert }: Readonly<Props>) {
+function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = React.useState(false);
   const [showReasoning, setShowReasoning] = React.useState(false);
@@ -185,3 +185,5 @@ export function ChatBubble({ message, onRevert }: Readonly<Props>) {
     </div>
   );
 }
+
+export const ChatBubble = React.memo(ChatBubbleComponent);

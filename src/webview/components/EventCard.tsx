@@ -38,7 +38,7 @@ function formatArgs(args: unknown): React.ReactNode {
   );
 }
 
-export function EventCard({ message, onLoadSession, onRespondPermission, onOpenDiff }: Readonly<Props>) {
+function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpenDiff }: Readonly<Props>) {
   const eventType = message.eventType;
   const status = message.eventStatus;
   const meta = message.eventMeta;
@@ -265,3 +265,5 @@ export function EventCard({ message, onLoadSession, onRespondPermission, onOpenD
     </div>
   );
 }
+
+export const EventCard = React.memo(EventCardComponent);
