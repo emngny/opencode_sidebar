@@ -110,6 +110,7 @@ export class EventDispatcher {
     }
   }
 
+  /** Extracts agent, model, and timing metadata from message events. */
   private handleMessageMeta(event: SSEMessage): void {
     const cb = this.callbacks;
     const infoRaw = (event.properties as Record<string, unknown>)['info'];
@@ -131,6 +132,7 @@ export class EventDispatcher {
     }
   }
 
+  /** Emits tool lifecycle transitions and normalizes tool result payloads. */
   private handleMessagePartUpdated(event: SSEMessage, sessionId: string): void {
     const cb = this.callbacks;
     const partRaw = (event.properties as Record<string, unknown>)['part'];
@@ -159,10 +161,13 @@ export class EventDispatcher {
     if (partType === 'tool' && part) {
       this.handleToolStateEvent(cb, part as unknown as ToolPart);
     }
-    if (partType === 'tool_result' && part && part['result'] !== undefined) {
+    if (partType === 'tool_result' && part?.['result'] !== undefined) {
       const name = typeof part['name'] === 'string' ? (part['name'] as string) : 'unknown';
+      const partId = typeof part['id'] === 'string' ? (part['id'] as string) : undefined;
+      const partName = typeof part['name'] === 'string' ? (part['name'] as string) : undefined;
+      const id = partId ?? partName ?? 'tool';
       cb.onToolEvent?.({
-        id: typeof part['id'] === 'string' ? (part['id'] as string) : typeof part['name'] === 'string' ? (part['name'] as string) : 'tool',
+        id,
         type: 'tool_result',
         name,
         status: 'completed',
@@ -280,6 +285,7 @@ export class EventDispatcher {
     }
   }
 
+  /** Routes streaming deltas to reasoning or assistant content callbacks. */
   private handleMessagePartDelta(event: SSEMessage, sessionId: string): void {
     const cb = this.callbacks;
     const props = event.properties as Record<string, unknown>;
@@ -296,12 +302,14 @@ export class EventDispatcher {
     }
   }
 
+  /** Forwards server-reported session errors to the error callback. */
   private handleSessionError(event: SSEMessage): void {
     const errRaw = (event.properties as Record<string, unknown>)['error'];
     const msg = isRecord(errRaw) && typeof errRaw['message'] === 'string' ? (errRaw['message'] as string) : 'Unknown error';
     this.callbacks.onError?.(msg);
   }
 
+  /** Releases per-session stream state when server reports idle status. */
   private handleSessionStatus(event: SSEMessage, sessionId: string): void {
     const statusRaw = (event.properties as Record<string, unknown>)['status'];
     const type = isRecord(statusRaw) ? (statusRaw['type'] as string | undefined) : undefined;
@@ -310,6 +318,7 @@ export class EventDispatcher {
     }
   }
 
+  /** Emits normalized diffs embedded in updated message summaries. */
   private handleMessageUpdated(event: SSEMessage): void {
     const cb = this.callbacks;
     const infoRaw = (event.properties as Record<string, unknown>)['info'];
@@ -321,6 +330,7 @@ export class EventDispatcher {
     }
   }
 
+  /** Emits normalized session-level file changes. */
   private handleSessionDiff(event: SSEMessage): void {
     const cb = this.callbacks;
     const rawDiff = (event.properties as Record<string, unknown>)['diff'];
@@ -330,6 +340,7 @@ export class EventDispatcher {
     }
   }
 
+  /** Converts permission requests into UI tool events with decision metadata. */
   private handlePermissionAsked(event: SSEMessage, sessionId: string): void {
     const cb = this.callbacks;
     const props = event.properties as Record<string, unknown>;

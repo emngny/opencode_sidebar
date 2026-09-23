@@ -104,9 +104,6 @@ export interface ProviderAuthEntry {
 
 export type ProviderAuthMap = Record<string, ProviderAuthEntry[]>;
 
-export type RevertResult = unknown;
-export type UnrevertResult = unknown;
-
 export interface SendPromptPart {
   type: string;
   text?: string;
@@ -171,12 +168,19 @@ export type ToolPart = ToolCallPart | ToolStatePart | { id?: string; type: strin
 
 /** Convert RawSessionMessage[] to ChatMessage[] — shared mapper */
 export function mapRawMessagesToChatMessages(raw: RawSessionMessage[], genId: () => string): ChatMessage[] {
-  return raw.map((m) => ({
-    role: m.info?.role === 'user' ? 'user' : 'assistant',
-    content: m.parts?.map((p) => (typeof p.text === 'string' ? p.text : typeof p.content === 'string' ? p.content : '')).join('\n') || m.info?.content || '',
-    timestamp: m.info?.time?.created || Date.now(),
-    id: m.info?.id || genId(),
-  }));
+  return raw.map((m) => {
+    const content = m.parts?.map((p) => {
+      if (typeof p.text === 'string') return p.text;
+      if (typeof p.content === 'string') return p.content;
+      return '';
+    }).join('\n') || m.info?.content || '';
+    return {
+      role: m.info?.role === 'user' ? 'user' : 'assistant',
+      content,
+      timestamp: m.info?.time?.created || Date.now(),
+      id: m.info?.id || genId(),
+    };
+  });
 }
 
 /**

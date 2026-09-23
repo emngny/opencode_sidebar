@@ -25,5 +25,14 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Coverage
+        run: npm run test:coverage
+
       - name: Build extension
         run: npm run compile

@@ -81,7 +81,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
             cleanupStreaming();
             flushPendingChunk();
             setMessages((prev) => {
-              const lastMessage = prev[prev.length - 1];
+              const lastMessage = prev.at(-1);
               const updated = [...prev];
               if (lastMessage?.role === 'assistant') {
                 updated[updated.length - 1] = {
@@ -258,7 +258,8 @@ export function useMessageHandler(state: MessageHandlerState): void {
           break;
         }
         case 'reasoningContent': {
-          const text = msg.payload;
+          const text = typeof msg.payload === 'string' ? msg.payload : msg.payload.content;
+          if (typeof text !== 'string') break;
           setMessages((prev) => {
             const updated = [...prev];
             for (let i = updated.length - 1; i >= 0; i--) {

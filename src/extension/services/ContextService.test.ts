@@ -19,7 +19,7 @@ describe('ContextService', () => {
     const permissions = { isReadAllowed: vi.fn().mockReturnValue({ allowed: true }), waitForReadPermission: vi.fn() } as unknown as PermissionService;
     const readFile = vi.mocked(vscode.workspace.fs.readFile).mockResolvedValue(new Uint8Array(1024 * 1024 + 1));
 
-    const result = await new ContextService(permissions, vi.fn()).process('hello', [{ type: 'file', path: 'large.txt' }]);
+    const result = await new ContextService(permissions, vi.fn()).process('hello', [{ type: 'file', name: 'large.txt', path: 'large.txt' }]);
 
     expect(readFile).toHaveBeenCalledOnce();
     expect(result.userContent).toContain('exceeds 1 MB context limit');
@@ -30,7 +30,7 @@ describe('ContextService', () => {
     const permissions = { isReadAllowed: vi.fn().mockReturnValue({ allowed: true }), waitForReadPermission: vi.fn() } as unknown as PermissionService;
     vi.mocked(vscode.workspace.fs.readFile).mockResolvedValue(Uint8Array.from([0x41, 0x00, 0x42]));
 
-    const result = await new ContextService(permissions, vi.fn()).process('hello', [{ type: 'file', path: 'binary.bin' }]);
+    const result = await new ContextService(permissions, vi.fn()).process('hello', [{ type: 'file', name: 'binary.bin', path: 'binary.bin' }]);
 
     expect(result.userContent).toContain('binary file');
     expect(result.extraParts).toHaveLength(0);
@@ -39,7 +39,7 @@ describe('ContextService', () => {
   it('caps extra context parts at 100', async () => {
     const permissions = { isReadAllowed: vi.fn().mockReturnValue({ allowed: true }), waitForReadPermission: vi.fn() } as unknown as PermissionService;
     vi.mocked(vscode.workspace.fs.readFile).mockResolvedValue(new TextEncoder().encode('content'));
-    const context = Array.from({ length: 101 }, (_, index) => ({ type: 'file' as const, path: `file-${index}.txt` }));
+    const context = Array.from({ length: 101 }, (_, index) => ({ type: 'file' as const, name: `file-${index}.txt`, path: `file-${index}.txt` }));
 
     const result = await new ContextService(permissions, vi.fn()).process('hello', context);
 

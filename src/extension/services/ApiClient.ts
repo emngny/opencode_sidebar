@@ -4,8 +4,6 @@ import {
   normalizeAgentId,
   ProviderAuthMap,
   RawSessionMessage,
-  RevertResult,
-  UnrevertResult,
   SendPromptBody,
   isRecord,
   getErrorMessage,
@@ -188,9 +186,9 @@ export class ApiClient {
     }
   }
 
-  async revertSession(sessionId: string, messageId: string): Promise<RevertResult | null> {
+  async revertSession(sessionId: string, messageId: string): Promise<unknown> {
     try {
-      return await this.fetch<RevertResult>(`/session/${sessionId}/revert`, {
+      return await this.fetch<unknown>(`/session/${sessionId}/revert`, {
         method: 'POST',
         body: JSON.stringify({ messageID: messageId }),
       });
@@ -199,9 +197,9 @@ export class ApiClient {
     }
   }
 
-  async unrevertSession(sessionId: string): Promise<UnrevertResult | null> {
+  async unrevertSession(sessionId: string): Promise<unknown> {
     try {
-      return await this.fetch<UnrevertResult>(`/session/${sessionId}/unrevert`, {
+      return await this.fetch<unknown>(`/session/${sessionId}/unrevert`, {
         method: 'POST',
       });
     } catch {
@@ -239,8 +237,7 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json', ...this.authHeader },
         body: JSON.stringify({ response: 'always', remember: true }),
       });
-      if (response.ok) {
-      } else {
+      if (!response.ok) {
         const text = await response.text();
         console.error('[opencode] Permission grant failed:', response.status, text.slice(0, 200));
       }

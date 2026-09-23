@@ -1,0 +1,598 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for extension/services/SidebarMessageHandler.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../prettify.css" />
+    <link rel="stylesheet" href="../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">extension/services</a> SidebarMessageHandler.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">9.92% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>13/131</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">1.44% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>1/69</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">12% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>3/25</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">12.62% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>13/103</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import * as vscode from 'vscode';
+import { getErrorMessage, normalizeAgentId, AgentRaw, type ContextPart, type ExtensionToWebviewMessage, type WebviewToExtensionMessage } from '../../shared/types';
+import type { AuthService } from './AuthService';
+import type { ChatCoordinator } from './ChatCoordinator';
+import type { GitService } from './GitService';
+import type { OpencodeCli } from './OpencodeCli';
+import type { PermissionService } from './PermissionService';
+import type { SessionService } from './SessionService';
+import type { SkillService } from './SkillService';
+import { getGitInfo } from './GitInfo';
+&nbsp;
+export class SidebarMessageHandler {
+  constructor(
+    private readonly _opencode: OpencodeCli,
+    private readonly _sessions: SessionService,
+    private readonly _permissions: PermissionService,
+    private readonly _auth: AuthService,
+    private readonly _skills: SkillService,
+    private readonly _chat: ChatCoordinator,
+    private readonly _workspaceState: vscode.Memento,
+    private readonly _post: (message: ExtensionToWebviewMessage) =&gt; void,
+    private readonly _git: GitService,
+  ) {}
+&nbsp;
+  async dispatch(message: WebviewToExtensionMessage): Promise&lt;void&gt; {
+    switch (message.type) {
+<span class="branch-0 cbranch-no" title="branch not covered" >      case 'searchFiles': <span class="cstat-no" title="statement not covered" >return this.searchFiles(message.payload.query);</span></span>
+<span class="branch-1 cbranch-no" title="branch not covered" >      case 'getSavedModel': <span class="cstat-no" title="statement not covered" >return this.getSavedModel();</span></span>
+<span class="branch-2 cbranch-no" title="branch not covered" >      case 'saveModel': <span class="cstat-no" title="statement not covered" >return this.saveModel(message.payload.model);</span></span>
+<span class="branch-3 cbranch-no" title="branch not covered" >      case 'revertMessage': <span class="cstat-no" title="statement not covered" >return this.revertMessage(message.payload.messageId);</span></span>
+<span class="branch-4 cbranch-no" title="branch not covered" >      case 'unrevert': <span class="cstat-no" title="statement not covered" >return this.unrevert();</span></span>
+<span class="branch-5 cbranch-no" title="branch not covered" >      case 'respondPermission': <span class="cstat-no" title="statement not covered" >return this.respondPermission(message.payload);</span></span>
+<span class="branch-6 cbranch-no" title="branch not covered" >      case 'respondReadPermission': <span class="cstat-no" title="statement not covered" >this._permissions.grantReadPermission(message.payload.filePath, message.payload.response === 'allow' ? 'allow' : 'deny', message.payload.remember); <span class="cstat-no" title="statement not covered" >r</span>eturn;</span></span>
+<span class="branch-7 cbranch-no" title="branch not covered" >      case 'loadSkills': <span class="cstat-no" title="statement not covered" >this.loadSkills(); <span class="cstat-no" title="statement not covered" >r</span>eturn;</span></span>
+<span class="branch-8 cbranch-no" title="branch not covered" >      case 'runCommand': <span class="cstat-no" title="statement not covered" >return this.runCommand(message.payload);</span></span>
+<span class="branch-9 cbranch-no" title="branch not covered" >      case 'webviewReady': <span class="cstat-no" title="statement not covered" >return this.webviewReady();</span></span>
+<span class="branch-10 cbranch-no" title="branch not covered" >      case 'sendMessage': <span class="cstat-no" title="statement not covered" >return this.sendMessage(message.payload);</span></span>
+<span class="branch-11 cbranch-no" title="branch not covered" >      case 'openDiff': <span class="cstat-no" title="statement not covered" >return this.openDiff(message.payload.filePath);</span></span>
+<span class="branch-12 cbranch-no" title="branch not covered" >      case 'listProviders': <span class="cstat-no" title="statement not covered" >return this.listProviders();</span></span>
+<span class="branch-13 cbranch-no" title="branch not covered" >      case 'setApiKey': <span class="cstat-no" title="statement not covered" >return this.setApiKey(message.payload);</span></span>
+<span class="branch-14 cbranch-no" title="branch not covered" >      case 'removeApiKey': <span class="cstat-no" title="statement not covered" >return this.removeApiKey(message.payload.providerId);</span></span>
+<span class="branch-15 cbranch-no" title="branch not covered" >      case 'getSessions': <span class="cstat-no" title="statement not covered" >return this.listSessions();</span></span>
+<span class="branch-16 cbranch-no" title="branch not covered" >      case 'loadSession': <span class="cstat-no" title="statement not covered" >return this.loadSession(message.payload.sessionId);</span></span>
+<span class="branch-17 cbranch-no" title="branch not covered" >      case 'deleteSession': <span class="cstat-no" title="statement not covered" >return this.deleteSession(message.payload.sessionId);</span></span>
+<span class="branch-18 cbranch-no" title="branch not covered" >      case 'clearChat':</span>
+      case 'abort': return this.abortSession();
+<span class="branch-20 cbranch-no" title="branch not covered" >      default: <span class="cstat-no" title="statement not covered" >return;</span></span>
+    }
+  }
+&nbsp;
+  private async abortSession(): Promise&lt;void&gt; {
+    try {
+      await this._sessions.abort();
+    } catch (error) {
+<span class="cstat-no" title="statement not covered" >      this._post({ type: 'error', payload: { message: `Abort failed: ${getErrorMessage(error)}` } });</span>
+    }
+  }
+&nbsp;
+  private async <span class="fstat-no" title="function not covered" >webviewReady(): Promise&lt;void&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    try {</span>
+<span class="cstat-no" title="statement not covered" >      await this._opencode.start();</span>
+<span class="cstat-no" title="statement not covered" >      this._auth.restoreApiKeys();</span>
+      const [project, path, vcs] = <span class="cstat-no" title="statement not covered" >await Promise.all([this._opencode.getCurrentProject(), this._opencode.getPath(), this._opencode.getVcsInfo()]);</span>
+<span class="cstat-no" title="statement not covered" >      this._post({ type: 'projectInfo', payload: { project, path, vcs } });</span>
+    } catch {
+<span class="cstat-no" title="statement not covered" >      this._post({ type: 'gitInfo', payload: getGitInfo() });</span>
+    }
+<span class="cstat-no" title="statement not covered" >    await this.listProviders();</span>
+<span class="cstat-no" title="statement not covered" >    this.loadSkills();</span>
+<span class="cstat-no" title="statement not covered" >    void this._opencode.getAgents().<span class="fstat-no" title="function not covered" >then((a</span>gents) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >      if (Array.isArray(agents) &amp;&amp; agents.length) <span class="cstat-no" title="statement not covered" >this._post({ type: 'agentList', payload: { agents: agents.<span class="fstat-no" title="function not covered" >map((a</span>gent) =&gt; <span class="cstat-no" title="statement not covered" >normalizeAgentId(agent as AgentRaw).toLowerCase())</span>.filter(Boolean) } });</span></span>
+    }).<span class="fstat-no" title="function not covered" >catch(() =&gt; <span class="cstat-no" title="statement not covered" >u</span>ndefined)</span>;
+  }
+&nbsp;
+  private async <span class="fstat-no" title="function not covered" >searchFiles(q</span>uery: string): Promise&lt;void&gt; {
+    const folder = <span class="cstat-no" title="statement not covered" >vscode.workspace.workspaceFolders?.[0];</span>
+<span class="cstat-no" title="statement not covered" >    if (!folder) <span class="cstat-no" title="statement not covered" >return this._post({ type: 'fileSearchResults', payload: { query, files: [] } });</span></span>
+<span class="cstat-no" title="statement not covered" >    try {</span>
+      const results = <span class="cstat-no" title="statement not covered" >await vscode.workspace.findFiles(query ? `**/*${query}*` : '**/*', '**/node_modules/**', 30);</span>
+      const files = <span class="cstat-no" title="statement not covered" >results.<span class="fstat-no" title="function not covered" >map((u</span>ri) =&gt; {</span>
+        const path = <span class="cstat-no" title="statement not covered" >uri.fsPath.slice(folder.uri.fsPath.length + 1).replaceAll('\\', '/');</span>
+<span class="cstat-no" title="statement not covered" >        return { name: path.split('/').pop() || '', path };</span>
+      }).<span class="fstat-no" title="function not covered" >filter((f</span>ile) =&gt; <span class="cstat-no" title="statement not covered" >!query || file.path.toLowerCase().includes(query.toLowerCase()))</span>.slice(0, 20);
+<span class="cstat-no" title="statement not covered" >      this._post({ type: 'fileSearchResults', payload: { query, files } });</span>
+    } catch (error) {
+<span class="cstat-no" title="statement not covered" >      console.error('[opencode] File search error:', getErrorMessage(error));</span>
+<span class="cstat-no" title="statement not covered" >      this._post({ type: 'fileSearchResults', payload: { query, files: [] } });</span>
+    }
+  }
+&nbsp;
+  private async <span class="fstat-no" title="function not covered" >getSavedModel(): Promise&lt;void&gt; {</span>
+    const model = <span class="cstat-no" title="statement not covered" >this._workspaceState.get&lt;string&gt;('selectedModel');</span>
+<span class="cstat-no" title="statement not covered" >    if (model) <span class="cstat-no" title="statement not covered" >this._post({ type: 'savedModel', payload: model });</span></span>
+  }
+  private async <span class="fstat-no" title="function not covered" >saveModel(m</span>odel: string): Promise&lt;void&gt; { <span class="cstat-no" title="statement not covered" >await this._workspaceState.update('selectedModel', model); }</span>
+  private async <span class="fstat-no" title="function not covered" >revertMessage(m</span>essageId: string): Promise&lt;void&gt; {
+<span class="cstat-no" title="statement not covered" >    try { const result = <span class="cstat-no" title="statement not covered" >await this._sessions.revert(messageId); <span class="cstat-no" title="statement not covered" >t</span>his._post({ type: 'revertResult', payload: { ...result, reverted: true } }); }</span></span>
+    catch (error) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'error', payload: { message: `Revert failed: ${getErrorMessage(error)}` } }); }</span>
+  }
+  private async <span class="fstat-no" title="function not covered" >unrevert(): Promise&lt;void&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    try { const result = <span class="cstat-no" title="statement not covered" >await this._sessions.unrevert(); <span class="cstat-no" title="statement not covered" >t</span>his._post({ type: 'revertResult', payload: { ...result, reverted: false } }); }</span></span>
+    catch (error) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'error', payload: { message: `Unrevert failed: ${getErrorMessage(error)}` } }); }</span>
+  }
+  private async <span class="fstat-no" title="function not covered" >respondPermission(p</span>ayload: { permId: string; permSessionId: string; response: string; remember?: boolean }): Promise&lt;void&gt; {
+<span class="cstat-no" title="statement not covered" >    try {</span>
+      const success = <span class="cstat-no" title="statement not covered" >await this._opencode.respondPermission(payload.permSessionId, payload.permId, payload.response, payload.remember);</span>
+<span class="cstat-no" title="statement not covered" >      if (success) {</span>
+<span class="cstat-no" title="statement not covered" >        this._post({ type: 'toolEvent', payload: { id: payload.permId, type: 'permission', name: 'permission', status: 'completed', content: `Permission ${payload.response}`, meta: payload } });</span>
+      } else {
+        const suffix = <span class="cstat-no" title="statement not covered" >payload.permId ? ` (${payload.permId})` : '';</span>
+<span class="cstat-no" title="statement not covered" >        this._post({ type: 'error', payload: { message: `Failed to respond to permission request${suffix}` } });</span>
+      }
+    } catch (error) {
+<span class="cstat-no" title="statement not covered" >      this._post({ type: 'error', payload: { message: `Permission response failed: ${getErrorMessage(error)}` } });</span>
+    }
+  }
+&nbsp;
+<span class="fstat-no" title="function not covered" >  private l</span>oadSkills(): void { <span class="cstat-no" title="statement not covered" >this._post({ type: 'skillList', payload: { skills: this._skills.list() } }); }</span>
+  private async <span class="fstat-no" title="function not covered" >runCommand(p</span>ayload: { command: string; args?: string; isSkill?: boolean }): Promise&lt;void&gt; {
+<span class="cstat-no" title="statement not covered" >    if (payload.command === 'init') {</span>
+      const result = <span class="cstat-no" title="statement not covered" >this._skills.createAgentsFile();</span>
+<span class="cstat-no" title="statement not covered" >      if (result.status === 'error') <span class="cstat-no" title="statement not covered" >this._post({ type: 'error', payload: { message: `Failed to create AGENTS.md: ${result.message}` } });</span></span>
+      else <span class="cstat-no" title="statement not covered" >this._post({ type: 'receiveMessage', payload: { role: 'system', content: result.status === 'exists' ? '⚠️ AGENTS.md already exists. Skipping creation.' : '✅ AGENTS.md created in workspace root. You can now customize it for your project.' } });</span>
+    } else <span class="cstat-no" title="statement not covered" >if (payload.command === 'review') {</span>
+<span class="cstat-no" title="statement not covered" >      try { <span class="cstat-no" title="statement not covered" >await this._git.review(payload.args || ''); }</span></span>
+      catch (error) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'error', payload: { message: `Review failed: ${getErrorMessage(error)}` } }); }</span>
+    } else <span class="cstat-no" title="statement not covered" >if (payload.isSkill) {</span>
+      const content = <span class="cstat-no" title="statement not covered" >this._skills.load(payload.command);</span>
+<span class="cstat-no" title="statement not covered" >      if (content) <span class="cstat-no" title="statement not covered" >await this._chat.processPrompt(payload.args ? `${content}\n\n${payload.args}` : content, 'build');</span></span>
+      else <span class="cstat-no" title="statement not covered" >this._post({ type: 'error', payload: { message: `Skill "${payload.command}" not found` } });</span>
+    }
+  }
+  private async <span class="fstat-no" title="function not covered" >sendMessage(p</span>ayload: { prompt: string; model?: string; mode?: string; context?: ContextPart[] }): Promise&lt;void&gt; {
+<span class="cstat-no" title="statement not covered" >    if (!this._opencode.isRunning) <span class="cstat-no" title="statement not covered" >await this._opencode.start();</span></span>
+<span class="cstat-no" title="statement not covered" >    if (!this._sessions.currentSessionId) <span class="cstat-no" title="statement not covered" >await this._sessions.ensureSession(payload.prompt);</span></span>
+<span class="cstat-no" title="statement not covered" >    await this._chat.processPrompt(payload.prompt, payload.mode ?? '', payload.context, payload.model);</span>
+  }
+  private async <span class="fstat-no" title="function not covered" >openDiff(f</span>ilePath: string): Promise&lt;void&gt; {
+    const folder = <span class="cstat-no" title="statement not covered" >vscode.workspace.workspaceFolders?.[0];</span>
+<span class="cstat-no" title="statement not covered" >    if (!folder || !filePath) <span class="cstat-no" title="statement not covered" >return;</span></span>
+<span class="cstat-no" title="statement not covered" >    try { const document = <span class="cstat-no" title="statement not covered" >await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, filePath)); <span class="cstat-no" title="statement not covered" >a</span>wait vscode.window.showTextDocument(document); }</span></span>
+    catch (error) { <span class="cstat-no" title="statement not covered" >console.error('[opencode] Open diff error:', getErrorMessage(error)); }</span>
+  }
+  private async <span class="fstat-no" title="function not covered" >listProviders(): Promise&lt;void&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    try { <span class="cstat-no" title="statement not covered" >this._post({ type: 'providerList', payload: await this._opencode.listProviders() }); }</span></span>
+    catch (error) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'error', payload: { message: `Failed to list providers: ${getErrorMessage(error)}` } }); }</span>
+  }
+  private async <span class="fstat-no" title="function not covered" >setApiKey(p</span>ayload: { providerId: string; key: string }): Promise&lt;void&gt; {
+<span class="cstat-no" title="statement not covered" >    try {</span>
+      const success = <span class="cstat-no" title="statement not covered" >await this._auth.setApiKey(payload.providerId, payload.key);</span>
+<span class="cstat-no" title="statement not covered" >      if (success) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'providerUpdated', payload: { providerId: payload.providerId, success: true } }); <span class="cstat-no" title="statement not covered" >a</span>wait this.listProviders(); }</span></span>
+      else <span class="cstat-no" title="statement not covered" >this._post({ type: 'providerUpdated', payload: { providerId: payload.providerId, success: false, error: 'Failed to save API key' } });</span>
+    } catch (error) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'providerUpdated', payload: { providerId: payload.providerId, success: false, error: getErrorMessage(error) } }); }</span>
+  }
+  private async <span class="fstat-no" title="function not covered" >removeApiKey(p</span>roviderId: string): Promise&lt;void&gt; {
+<span class="cstat-no" title="statement not covered" >    try { <span class="cstat-no" title="statement not covered" >await this._auth.removeApiKey(providerId); <span class="cstat-no" title="statement not covered" >t</span>his._post({ type: 'providerUpdated', payload: { providerId, success: true, removed: true } }); <span class="cstat-no" title="statement not covered" >a</span>wait this.listProviders(); }</span></span>
+    catch (error) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'providerUpdated', payload: { providerId, success: false, error: getErrorMessage(error) } }); }</span>
+  }
+  private async <span class="fstat-no" title="function not covered" >listSessions(): Promise&lt;void&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    try { <span class="cstat-no" title="statement not covered" >this._post({ type: 'sessionList', payload: await this._sessions.listSessions() }); }</span></span>
+    catch (error) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'error', payload: { message: `Failed to list sessions: ${getErrorMessage(error)}` } }); }</span>
+  }
+  private async <span class="fstat-no" title="function not covered" >loadSession(s</span>essionId: string): Promise&lt;void&gt; {
+<span class="cstat-no" title="statement not covered" >    try { <span class="cstat-no" title="statement not covered" >this._post({ type: 'sessionLoaded', payload: { sessionId, messages: await this._sessions.loadSession(sessionId) } }); }</span></span>
+    catch (error) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'error', payload: { message: `Failed to load session: ${getErrorMessage(error)}` } }); }</span>
+  }
+  private async <span class="fstat-no" title="function not covered" >deleteSession(s</span>essionId: string): Promise&lt;void&gt; {
+<span class="cstat-no" title="statement not covered" >    try { <span class="cstat-no" title="statement not covered" >await this._sessions.deleteSession(sessionId); <span class="cstat-no" title="statement not covered" >t</span>his._post({ type: 'sessionDeleted', payload: { sessionId } }); }</span></span>
+    catch (error) { <span class="cstat-no" title="statement not covered" >this._post({ type: 'error', payload: { message: `Failed to delete session: ${getErrorMessage(error)}` } }); }</span>
+  }
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-09-23T21:36:38.524Z
+            </div>
+        <script src="../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../sorter.js"></script>
+        <script src="../../block-navigation.js"></script>
+    </body>
+</html>
+    

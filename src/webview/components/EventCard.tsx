@@ -50,7 +50,6 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
   let bgColor = '#181825';
 
   if (eventType === 'thinking') {
-    icon = '💭';
     borderColor = '#585b70';
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', backgroundColor: bgColor, border: `1px solid ${borderColor}`, borderRadius: 10, fontSize: 12, color: '#a6adc8' }}>
@@ -134,7 +133,15 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
     if (typeof a !== 'string' && isRecord(a) && 'command' in a) {
       cmd = (a as Record<string, unknown>)['command'];
     }
-    const cmdText = Array.isArray(cmd) ? (cmd as unknown[]).join(' ') : typeof cmd === 'string' ? cmd : isRecord(a) && 'description' in a ? String((a as Record<string, unknown>)['description']) : '';
+    let commandText = '';
+    if (Array.isArray(cmd)) {
+      commandText = (cmd as unknown[]).join(' ');
+    } else if (typeof cmd === 'string') {
+      commandText = cmd;
+    } else if (isRecord(a) && 'description' in a) {
+      commandText = String((a as Record<string, unknown>)['description']);
+    }
+    const cmdText = commandText;
     if (cmdText) {
       const short = cmdText.length > 70 ? cmdText.slice(0, 70) + '...' : cmdText;
       title = status === 'running' ? `${toolName}: ${short}` : `${toolName} ✓ ${short}`;
@@ -232,11 +239,15 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
         gap: 6,
         maxWidth: '90%',
         alignSelf: 'flex-start',
-        cursor: hasDetail ? 'pointer' : 'default',
+        cursor: 'default',
       }}
-      onClick={() => hasDetail && setExpanded(!expanded)}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <button
+        type="button"
+        disabled={!hasDetail}
+        onClick={() => hasDetail && setExpanded((current) => !current)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: 0, border: 'none', background: 'none', color: 'inherit', textAlign: 'left', cursor: hasDetail ? 'pointer' : 'default' }}
+      >
         <span style={{ fontSize: 14 }}>{icon}</span>
         <span style={{ fontSize: 12, color: titleColor, fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
@@ -247,7 +258,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
             ▶
           </span>
         )}
-      </div>
+      </button>
 
       {expanded && hasDetail && (
         <div style={{ paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 6 }}>

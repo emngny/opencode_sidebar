@@ -22,9 +22,9 @@ interface SseEvent {
  * Used for both long-lived /event endpoint and POST response streams.
  */
 export class SseStream {
-  private maxRetries = 3;
+  private readonly maxRetries = 3;
   private baseRetryDelay = 1000;
-  private maxRetryDelay = 30_000;
+  private readonly maxRetryDelay = 30_000;
 
   async connect(
     url: string,
@@ -103,8 +103,8 @@ export class SseStream {
     }
 
     if (trimmed.startsWith('retry:')) {
-      const ms = parseInt(trimmed.slice(6).trim(), 10);
-      if (!isNaN(ms)) this.baseRetryDelay = Math.max(1000, ms);
+      const ms = Number.parseInt(trimmed.slice(6).trim(), 10);
+      if (!Number.isNaN(ms)) this.baseRetryDelay = Math.max(1000, ms);
       return null;
     }
 

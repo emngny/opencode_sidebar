@@ -2,12 +2,18 @@
   "extends": "./tsconfig.extension.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node", "vitest/globals"]
+    "rootDir": ".",
+    "strict": false,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
   },
   "include": [
-    "src/extension/services/SkillService.test.ts",
-    "src/extension/services/OpencodeCli.test.ts",
-    "src/extension/services/SessionService.test.ts"
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "vitest.setup.ts"
   ],
   "exclude": []
 }

@@ -36,7 +36,7 @@ export function useChatState() {
     }
 
     setMessages((prev) => {
-      const lastMessage = prev[prev.length - 1];
+      const lastMessage = prev.at(-1);
       const updated = [...prev];
       if (lastMessage?.role === 'assistant') {
         updated[updated.length - 1] = {

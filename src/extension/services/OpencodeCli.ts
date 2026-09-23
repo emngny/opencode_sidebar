@@ -5,8 +5,6 @@ import {
   VcsInfo,
   ProviderAuthMap,
   RawSessionMessage,
-  RevertResult,
-  UnrevertResult,
   SendPromptBody,
   SendPromptPart,
   getErrorMessage,
@@ -244,9 +242,9 @@ export class OpencodeCli {
           seenEventIds.add(event.id);
         }
         const props = event.properties;
-        const eventSessionId = typeof props['sessionID'] === 'string'
-          ? props['sessionID']
-          : typeof props['sessionId'] === 'string' ? props['sessionId'] : undefined;
+        const sessionIdFromSessionID = typeof props['sessionID'] === 'string' ? props['sessionID'] : undefined;
+        const sessionIdFromSessionId = typeof props['sessionId'] === 'string' ? props['sessionId'] : undefined;
+        const eventSessionId = sessionIdFromSessionID ?? sessionIdFromSessionId;
         if (eventSessionId && eventSessionId !== sessionId) return;
 
         dispatcher.dispatch(event, sessionId);
@@ -307,7 +305,7 @@ export class OpencodeCli {
    * @param messageId - Message ID to revert
    * @returns Revert result with messages and reverted status
    */
-  async revertSession(sessionId: string, messageId: string): Promise<RevertResult | null> {
+  async revertSession(sessionId: string, messageId: string): Promise<unknown> {
     await this.start();
     return this.ensureApiClient().revertSession(sessionId, messageId);
   }
@@ -317,7 +315,7 @@ export class OpencodeCli {
    * @param sessionId - Session ID
    * @returns Unrevert result
    */
-  async unrevertSession(sessionId: string): Promise<UnrevertResult | null> {
+  async unrevertSession(sessionId: string): Promise<unknown> {
     await this.start();
     return this.ensureApiClient().unrevertSession(sessionId);
   }

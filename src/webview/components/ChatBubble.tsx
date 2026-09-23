@@ -3,7 +3,7 @@ import { ChatMessage } from '../../shared/types';
 import { Markdown } from './Markdown';
 import { getAgentColor } from './agentColors';
 import { ThinkingDots } from './ThinkingDots';
-import { COLORS, textNormal, textSmall, flexRow, gap } from '../styles';
+import { COLORS, flexRow } from '../styles';
 
 interface Props {
   message: ChatMessage;
@@ -12,19 +12,19 @@ interface Props {
 
 function highlightMentions(text: string): React.ReactNode {
   const parts = text.split(/(@\w+)/g);
-  return parts.map((part, i) => {
+  return parts.map((part) => {
     if (!part.startsWith('@')) return part;
     const name = part.slice(1).toLowerCase();
     const agentColor = getAgentColor(name);
     if (agentColor) {
       return (
-        <span key={i} style={{ color: agentColor.text, fontWeight: 500 }}>
+        <span key={part} style={{ color: agentColor.text, fontWeight: 500 }}>
           {part}
         </span>
       );
     }
     return (
-      <span key={i} style={{ color: '#89b4fa' }}>
+      <span key={part} style={{ color: '#89b4fa' }}>
         {part}
       </span>
     );
@@ -84,13 +84,14 @@ function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
       )}
       {message.reasoning && (
         <div style={{ marginBottom: 4 }}>
-          <div
-            onClick={() => setShowReasoning(!showReasoning)}
-            style={{ ...flexRow, gap: 6, cursor: 'pointer', fontSize: 11, color: COLORS.textDim, userSelect: 'none' }}
+          <button
+            type="button"
+            onClick={() => setShowReasoning((visible) => !visible)}
+            style={{ ...flexRow, gap: 6, cursor: 'pointer', fontSize: 11, color: COLORS.textDim, userSelect: 'none', background: 'none', border: 'none', padding: 0, textAlign: 'left' }}
           >
             <span>{showReasoning ? '▾' : '▸'}</span>
             <span>Reasoning ({message.reasoning.length} chars)</span>
-          </div>
+          </button>
           {showReasoning && (
             <div style={{
               marginTop: 4, padding: '8px 10px',

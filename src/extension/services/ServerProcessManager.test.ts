@@ -1,18 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
+import { access } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { ServerProcessManager } from './ServerProcessManager';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }));
+vi.mock('node:fs/promises', () => ({
+  access: vi.fn(),
+}));
 
-interface TestableManager extends ServerProcessManager {
+interface TestableManager extends Omit<ServerProcessManager, 'process'> {
   passwordBuffer: Buffer | null;
   cachedAuthHeader: Record<string, string>;
   server: { port: number; url: string } | null;
   process: { kill: (s?: string) => void } | null;
   tryStart(binary: string, password: string, timeoutMs: number): Promise<void>;
+  resolveBinaryCandidates(): Promise<string[]>;
 }
 
 afterEach(() => {
@@ -27,6 +32,31 @@ function fakeProc() {
   proc.kill = vi.fn();
   return proc;
 }
+
+describe('ServerProcessManager.resolveBinaryCandidates', () => {
+  it('accepts an existing OPENCODE_BIN_PATH under an allowed root and deduplicates candidates', async () => {
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+    const binaryPath = `${systemRoot}\\opencode-test.exe`;
+    vi.stubEnv('OPENCODE_BIN_PATH', binaryPath);
+    vi.mocked(access).mockResolvedValue(undefined);
+    const mgr = new ServerProcessManager() as unknown as TestableManager;
+
+    const candidates = await mgr.resolveBinaryCandidates();
+
+    expect(candidates[0]).toBe(binaryPath);
+    expect(candidates.at(-1)).toBe('opencode');
+    expect(new Set(candidates).size).toBe(candidates.length);
+  });
+
+  it('always includes PATH fallback when candidate files are unavailable', async () => {
+    vi.mocked(access).mockRejectedValue(new Error('missing'));
+    const mgr = new ServerProcessManager() as unknown as TestableManager;
+
+    const candidates = await mgr.resolveBinaryCandidates();
+
+    expect(candidates).toContain('opencode');
+  });
+});
 
 describe('ServerProcessManager.tryStart', () => {
   it('does not pass OPENCODE_BIN_PATH to the child process', async () => {

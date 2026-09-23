@@ -120,10 +120,13 @@ export class ServerProcessManager {
 
   private tryStart(binary: string, password: string, timeoutMs: number): Promise<void> {
     return new Promise((resolveStart, reject) => {
+      const systemPath = process.platform === 'win32'
+        ? [process.env.SystemRoot || String.raw`C:\Windows`, process.env.SystemRoot || String.raw`C:\Windows`, 'System32', 'Windows', String.raw`System32\Wbem`].join(';')
+        : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':');
       const minimalEnv: Record<string, string | undefined> = {
-        OPENCODE_SERVER_PASSWORD: password, PATH: process.env.PATH, USERPROFILE: process.env.USERPROFILE,
+        OPENCODE_SERVER_PASSWORD: password, PATH: systemPath, USERPROFILE: process.env.USERPROFILE,
         APPDATA: process.env.APPDATA, LOCALAPPDATA: process.env.LOCALAPPDATA, SYSTEMROOT: process.env.SYSTEMROOT,
-        TEMP: process.env.TEMP, TMP: process.env.TMP, OPENCODE_SERVER_USERNAME: process.env.OPENCODE_SERVER_USERNAME || 'opencode',
+        OPENCODE_SERVER_USERNAME: process.env.OPENCODE_SERVER_USERNAME || 'opencode',
         OPENCODE_CLIENT: process.env.OPENCODE_CLIENT, OPENCODE_DISABLE_EMBEDDED_WEB_UI: process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI,
         OPENCODE_EXPERIMENTAL_FILEWATCHER: process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER,
         OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY,

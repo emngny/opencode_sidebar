@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { OpencodeCli } from './OpencodeCli';
 import { ChatMessage, SessionListItem, RawSessionMessage, mapRawMessagesToChatMessages } from '../../shared/types';
 
@@ -35,8 +36,8 @@ export class SessionService {
     this._currentSessionId = sessionId;
     const raw: RawSessionMessage[] = await this._opencode.getSessionMessages(sessionId);
     // Opencode returns RawSessionMessage[]; map to ChatMessage for webview
-    // Use a simple id fallback — SessionService doesn't have genId, use info.id or index
-    return mapRawMessagesToChatMessages(raw, () => `${sessionId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+    // Use a cryptographically unique fallback when upstream messages lack IDs.
+    return mapRawMessagesToChatMessages(raw, () => `${sessionId}_${Date.now()}_${randomUUID()}`);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -47,7 +48,7 @@ export class SessionService {
     if (!this._currentSessionId) throw new Error('No active session');
     const result = await this._opencode.revertSession(this._currentSessionId, messageId);
     const raw = await this._opencode.getSessionMessages(this._currentSessionId);
-    const messages = mapRawMessagesToChatMessages(raw, () => `${this._currentSessionId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+    const messages = mapRawMessagesToChatMessages(raw, () => `${this._currentSessionId}_${Date.now()}_${randomUUID()}`);
     return { result, messages };
   }
 
@@ -55,7 +56,7 @@ export class SessionService {
     if (!this._currentSessionId) throw new Error('No active session');
     const result = await this._opencode.unrevertSession(this._currentSessionId);
     const raw = await this._opencode.getSessionMessages(this._currentSessionId);
-    const messages = mapRawMessagesToChatMessages(raw, () => `${this._currentSessionId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+    const messages = mapRawMessagesToChatMessages(raw, () => `${this._currentSessionId}_${Date.now()}_${randomUUID()}`);
     return { result, messages };
   }
 

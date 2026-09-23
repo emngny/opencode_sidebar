@@ -1,86 +1,48 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from '../../shared/types';
+import { describe, it, expect } from 'vitest';
+import {
+  EXTENSION_TO_WEBVIEW_TYPES,
+  ExtensionToWebviewMessage,
+  WEBVIEW_TO_EXTENSION_TYPES,
+  WebviewToExtensionMessage,
+} from '../../shared/types';
 
 describe('Extension-Webview Message Protocol', () => {
   describe('Message Type Definitions', () => {
-    it('should have all required webview-to-extension message types', () => {
+    it('keeps webview allow-list aligned with declared message types', () => {
       const requiredTypes = [
-        'sendMessage',
-        'acceptReview',
-        'rejectReview',
-        'clearChat',
-        'abort',
-        'getSessions',
-        'loadSession',
-        'deleteSession',
-        'switchAgent',
-        'listProviders',
-        'setApiKey',
-        'removeApiKey',
-        'searchFiles',
-        'getSavedModel',
-        'saveModel',
-        'revertMessage',
-        'unrevert',
-        'respondPermission',
-        'respondReadPermission',
-        'openDiff',
-        'runCommand',
-        'loadSkills',
-        'webviewReady',
-      ];
+        'sendMessage', 'acceptReview', 'rejectReview', 'clearChat', 'abort',
+        'getSessions', 'loadSession', 'deleteSession', 'switchAgent', 'listProviders',
+        'setApiKey', 'removeApiKey', 'searchFiles', 'getSavedModel', 'saveModel',
+        'revertMessage', 'unrevert', 'respondPermission', 'respondReadPermission',
+        'openDiff', 'runCommand', 'loadSkills', 'webviewReady',
+      ] satisfies Array<WebviewToExtensionMessage['type']>;
 
-      const typeMap: Record<string, boolean> = {};
-      for (const t of requiredTypes) {
-        typeMap[t] = true;
-      }
-
-      expect(typeMap['sendMessage']).toBe(true);
-      expect(typeMap['webviewReady']).toBe(true);
+      expect(new Set(WEBVIEW_TO_EXTENSION_TYPES)).toEqual(new Set(requiredTypes));
     });
 
-    it('should have all required extension-to-webview message types', () => {
+    it('keeps extension allow-list aligned with declared message types', () => {
       const requiredTypes = [
-        'receiveMessage',
-        'receiveChunk',
-        'streamEnd',
-        'reviewReady',
-        'reviewResolved',
-        'status',
-        'gitInfo',
-        'projectInfo',
-        'sessionList',
-        'sessionLoaded',
-        'sessionDeleted',
-        'agentList',
-        'error',
-        'providerList',
-        'providerUpdated',
-        'fileSearchResults',
-        'savedModel',
-        'toolEvent',
-        'revertResult',
-        'messageMeta',
-        'reasoningContent',
-        'readFilePrompt',
-        'skillList',
-      ];
+        'receiveMessage', 'receiveChunk', 'streamEnd', 'reviewReady', 'reviewResolved',
+        'status', 'gitInfo', 'projectInfo', 'sessionList', 'sessionLoaded', 'sessionDeleted',
+        'agentList', 'error', 'providerList', 'providerUpdated', 'fileSearchResults',
+        'savedModel', 'toolEvent', 'revertResult', 'messageMeta', 'reasoningContent',
+        'readFilePrompt', 'skillList',
+      ] satisfies Array<ExtensionToWebviewMessage['type']>;
 
-      expect(requiredTypes.length).toBeGreaterThan(20);
+      expect(new Set(EXTENSION_TO_WEBVIEW_TYPES)).toEqual(new Set(requiredTypes));
     });
   });
 
   describe('Message Payload Validation', () => {
     it('should validate sendMessage payload structure', () => {
-      const validPayload: WebviewToExtensionMessage['payload'] = {
+      const validPayload: Extract<WebviewToExtensionMessage, { type: 'sendMessage' }>['payload'] = {
         prompt: 'Hello world',
         model: 'openai/gpt-4',
         mode: 'build',
         context: [
-          { type: 'file', path: 'src/index.ts' },
+          { type: 'file', name: 'src/index.ts', path: 'src/index.ts' },
         ],
       };
-
       expect(validPayload.prompt).toBeDefined();
       expect(validPayload.mode).toBeDefined();
     });

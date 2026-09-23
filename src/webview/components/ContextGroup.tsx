@@ -21,9 +21,14 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
   }
   const label = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ');
   const anyRunning = events.some((e) => e.status === 'running');
+  let headerIcon = '🔍';
+  if (!anyRunning && allDone) {
+    headerIcon = '✅';
+  }
 
   return (
-    <div
+    <button
+      type="button"
       style={{
         border: `1px solid ${allDone ? 'rgba(166,227,161,0.3)' : '#45475a'}`,
         borderRadius: 10,
@@ -33,13 +38,17 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
         transition: 'background-color 0.3s',
         alignSelf: 'flex-start',
         maxWidth: '90%',
+        textAlign: 'left',
+        padding: 0,
+        color: 'inherit',
+        font: 'inherit',
       }}
-      onClick={() => setExpanded(!expanded)}
+      onClick={() => setExpanded((current) => !current)}
     >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', fontSize: 12, color: allDone ? '#a6e3a1' : '#a6adc8' }}>
         <span style={{ fontSize: 14 }}>
-          {anyRunning ? '🔍' : allDone ? '✅' : '🔍'}
+          {headerIcon}
         </span>
         <span style={{ flex: 1 }}>
           {anyRunning ? 'Gathering context...' : 'Gathered context'}
@@ -53,9 +62,13 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
       {/* Expanded items */}
       {expanded && (
         <div style={{ padding: '0 12px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {events.map((e) => (
+          {events.map((e) => {
+            let statusIcon = '❌';
+            if (e.status === 'running') statusIcon = '⏳';
+            if (e.status === 'completed') statusIcon = '✅';
+            return (
             <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 11, color: '#6c7086' }}>
-              <span>{e.status === 'running' ? '⏳' : e.status === 'completed' ? '✅' : '❌'}</span>
+              <span>{statusIcon}</span>
               <span style={{ color: '#a6adc8', fontWeight: 500 }}>{e.name}</span>
               {e.meta?.args && (
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150, color: '#585b70' }}>
@@ -70,10 +83,11 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
                 </span>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
-    </div>
+    </button>
   );
 }
 

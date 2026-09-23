@@ -1,4 +1,18 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+
+function getGitExecutable(): string {
+  const programFiles = process.env.ProgramFiles || String.raw`C:\Program Files`;
+  const programFilesX86 = process.env['ProgramFiles(x86)'] || String.raw`C:\Program Files (x86)`;
+  const candidates = process.platform === 'win32'
+    ? [
+        String.raw`${programFiles}\Git\cmd\git.exe`,
+        String.raw`${programFilesX86}\Git\cmd\git.exe`,
+        String.raw`${process.env.LOCALAPPDATA || ''}\Programs\Git\cmd\git.exe`,
+      ]
+    : ['/opt/homebrew/bin/git', '/usr/local/bin/git', '/usr/bin/git'];
+  return candidates.find((candidate) => existsSync(candidate)) || candidates.at(-1) || '/usr/bin/git';
+}
 
 export class GitService {
   private static readonly ALLOWED_FLAGS = new Set([
@@ -29,8 +43,11 @@ export class GitService {
   }
 
   async review(args: string): Promise<void> {
-    const diff = execFileSync('git', ['diff', '--cached', ...this.sanitizeReviewArgs(args)], {
-      cwd: this._root, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024,
+    const diff = execFileSync(getGitExecutable(), ['diff', '--cached', ...this.sanitizeReviewArgs(args)], {
+      cwd: this._root,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+      shell: false,
     });
     await this._processPrompt(this.createReviewPrompt(diff), 'review');
   }

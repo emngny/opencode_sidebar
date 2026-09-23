@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ContextPart } from '../../shared/types';
 import { CommandItem } from '../slashCommands';
 import { SlashCommandPopup } from './SlashCommandPopup';
-import { COLORS, flexRow, flexCenter, btnIcon, textSmall, inputBase } from '../styles';
+import { COLORS } from '../styles';
 
 interface FileResult {
   name: string;
@@ -119,11 +119,11 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
         setFileSearchInput(afterAt);
         setShowFileSearch(true);
         onSearchFiles(afterAt);
-      } else {
-        if (mentionEnabled) setMentionEnabled(false);
+      } else if (mentionEnabled) {
+        setMentionEnabled(false);
       }
-    } else {
-      if (mentionEnabled) setMentionEnabled(false);
+    } else if (mentionEnabled) {
+      setMentionEnabled(false);
     }
 
     // Detect / slash command at start
@@ -142,10 +142,10 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith('image/')) {
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
         e.preventDefault();
-        const file = items[i].getAsFile();
+        const file = item.getAsFile();
         if (!file) continue;
 
         const reader = new FileReader();
@@ -232,7 +232,6 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
         >
           <div style={{ padding: '8px 12px', borderBottom: `1px solid ${COLORS.bgHover}` }}>
             <input
-              autoFocus
               value={fileSearchInput}
               onChange={(e) => {
                 setFileSearchInput(e.target.value);
@@ -259,8 +258,9 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
             </div>
           ) : (
             fileSearchResults.map((file) => (
-              <div
+              <button
                 key={file.path}
+                type="button"
                 onClick={() => handleFileSelect(file)}
                 style={{
                   padding: '8px 12px',
@@ -269,6 +269,9 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
                   alignItems: 'center',
                   gap: 8,
                   transition: 'background-color 0.1s',
+                  background: 'none',
+                  border: 'none',
+                  textAlign: 'left',
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#313244')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
@@ -283,7 +286,7 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
                   </div>
                   <div style={{ fontSize: 11, color: '#6c7086' }}>{file.path}</div>
                 </div>
-              </div>
+              </button>
             ))
           )}
         </div>
@@ -292,9 +295,9 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
       {/* Attachments */}
       {attachments.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-          {attachments.map((att, i) => (
+          {attachments.map((att) => (
             <div
-              key={i}
+              key={`${att.type}:${att.name}:${JSON.stringify(att).slice(0, 64)}`}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -330,7 +333,7 @@ export function BottomInput({ onSend, disabled, onSearchFiles, fileSearchResults
                 </>
               )}
               <button
-                onClick={() => removeAttachment(i)}
+                onClick={() => removeAttachment(attachments.indexOf(att))}
                 style={{
                   backgroundColor: 'transparent',
                   border: 'none',

@@ -79,19 +79,23 @@ export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, co
         </div>
       )}
       {hasContext && <ContextGroup events={contextEvents!} allDone={!!allDone} />}
-      {visibleMessages.map((msg, index) => (
-        <div data-testid="chat-message" key={getMessageKey(msg, messages.length - visibleMessages.length + index)}>
-          {msg.eventType === 'compacting' ? (
-            <CompactionDivider status={msg.eventStatus} />
-          ) : msg.role === 'event' ? (
-            <EventCard message={msg} onLoadSession={onLoadSession} onRespondPermission={onRespondPermission} onOpenDiff={onOpenDiff} />
-          ) : msg.role === 'tool' ? (
-            <ToolMessage content={msg.content} />
-          ) : (
-            <ChatBubble message={msg} onRevert={onRevert} />
-          )}
-        </div>
-      ))}
+      {visibleMessages.map((msg, index) => {
+        let content: React.ReactNode;
+        if (msg.eventType === 'compacting') {
+          content = <CompactionDivider status={msg.eventStatus} />;
+        } else if (msg.role === 'event') {
+          content = <EventCard message={msg} onLoadSession={onLoadSession} onRespondPermission={onRespondPermission} onOpenDiff={onOpenDiff} />;
+        } else if (msg.role === 'tool') {
+          content = <ToolMessage content={msg.content} />;
+        } else {
+          content = <ChatBubble message={msg} onRevert={onRevert} />;
+        }
+        return (
+          <div data-testid="chat-message" key={getMessageKey(msg, messages.length - visibleMessages.length + index)}>
+            {content}
+          </div>
+        );
+      })}
       {revertActive && onUnrevert && (
         <div
           style={{

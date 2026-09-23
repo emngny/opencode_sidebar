@@ -60,6 +60,8 @@ class AppErrorBoundary extends React.Component<
   }
 }
 
+export { AppErrorBoundary };
+
 export default function App() {
   return (
     <AppErrorBoundary>
@@ -131,7 +133,7 @@ function AppContent() {
     if (firstWord.startsWith('/')) {
       const cmdName = firstWord.slice(1);
       const rest = prompt.slice(firstWord.length).trim();
-      const skill = skills.find((s) => s.name === cmdName);
+      const skill = skills.some((s) => s.name === cmdName);
       if (skill) {
         postMessage({ type: 'runCommand', payload: { command: cmdName, args: rest, isSkill: true } });
         return;
@@ -237,7 +239,7 @@ function AppContent() {
       {busy && (
         <div style={{ padding: '8px 16px', fontSize: 12, color: '#89b4fa', backgroundColor: '#181825', textAlign: 'center', borderTop: '1px solid #313244' }}>
           <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: '#89b4fa', marginRight: 8, animation: 'pulse 1s infinite', verticalAlign: 'middle' }} />
-          Processing...
+          {' '}Processing...
           <button onClick={handleAbort} style={{ marginLeft: 12, padding: '2px 8px', borderRadius: 4, border: '1px solid #45475a', backgroundColor: 'transparent', color: '#f38ba8', cursor: 'pointer', fontSize: 11 }}>Abort</button>
         </div>
       )}

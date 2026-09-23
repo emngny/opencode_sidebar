@@ -1,13 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { GitInfo, ProviderListResult, ProviderModel, ContextPart } from '../../shared/types';
+import { GitInfo, ProviderListResult } from '../../shared/types';
 import { postMessage } from '../vscode-api';
-import { CommandItem } from '../slashCommands';
+import { buildModelItems, ModelItem, pickAutoSelectModel } from './modelUtils';
 
-export interface ModelItem {
-  id: string;
-  name: string;
-  providerId: string;
-}
+export type { ModelItem } from './modelUtils';
 
 export function useModelManager() {
   const [model, setModel] = useState('');
@@ -55,40 +51,13 @@ export function useModelManager() {
   }, [availableModels]);
 
   const processProviderList = useCallback((result: ProviderListResult) => {
-    const all = result.all || [];
-    const conn = result.connected || [];
-    const models: ModelItem[] = [];
-    for (const provider of all) {
-      if (conn.includes(provider.id)) {
-        for (const [modelId, modelInfo] of Object.entries(provider.models || {})) {
-          const info = modelInfo as ProviderModel;
-          models.push({
-            id: `${provider.id}/${modelId}`,
-            name: info.name || modelId,
-            providerId: provider.id,
-          });
-        }
-      }
-    }
-    models.sort((a, b) => {
-      const aIsPinned = a.providerId === 'opencode' || a.providerId === 'opencode-go' ? 0 : 1;
-      const bIsPinned = b.providerId === 'opencode' || b.providerId === 'opencode-go' ? 0 : 1;
-      if (aIsPinned !== bIsPinned) return aIsPinned - bIsPinned;
-      if (a.providerId !== b.providerId) return a.providerId.localeCompare(b.providerId);
-      return a.name.localeCompare(b.name);
-    });
-
-    setAvailableModels(models);
+    setAvailableModels(buildModelItems(result));
     setProvidersLoaded(true);
   }, []);
 
   const tryAutoSelectModel = useCallback((models: ModelItem[], currentModel: string, hidden: Record<string, boolean>) => {
-    if (!currentModel) {
-      const visible = models.filter((m) => !hidden[m.id]);
-      if (visible.length > 0) {
-        setModel(visible[0].id);
-      }
-    }
+    const next = pickAutoSelectModel(models, currentModel, hidden);
+    if (next) setModel(next);
   }, []);
 
   return {

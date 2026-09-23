@@ -32,6 +32,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this._handler = new SidebarMessageHandler(this._opencode, this._sessions, permissions, auth, skills, chat, context.workspaceState, post, git);
   }
 
+  /** Configures webview options, HTML, and validated message dispatch. */
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this._view = webviewView;
     webviewView.webview.options = { enableScripts: true, localResourceRoots: [this._extensionUri] };
@@ -43,15 +44,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  /** Sends an extension event to the webview when a view is attached. */
   postMessage(message: ExtensionToWebviewMessage): void {
     void this._view?.webview.postMessage(message);
   }
 
+  /** Narrows untrusted webview data to a supported message envelope. */
   private validateMessage(data: unknown): data is WebviewToExtensionMessage {
     if (!isRecord(data) || typeof data['type'] !== 'string' || !this.validatePayload(data['type'], data['payload'])) return false;
     return true;
   }
 
+  /** Validates required payload field types for each webview command. */
   validatePayload(type: string, payload: unknown): boolean {
     const optional = new Set(['clearChat', 'unrevert', 'getSavedModel', 'loadSkills', 'webviewReady', 'listProviders', 'abort', 'getSessions']);
     if (payload === undefined && optional.has(type)) return true;
@@ -72,6 +76,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     return true;
   }
 
+  /** Aborts active work, stops the local server, and releases the view. */
   dispose(): void {
     void this._sessions.abort().catch(() => undefined);
     this._opencode.stop();

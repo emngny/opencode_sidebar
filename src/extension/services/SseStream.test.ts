@@ -112,8 +112,12 @@ describe('SseStream', () => {
       body: { getReader: () => mockReader },
     });
 
+    const events: any[] = [];
     const stream = new SseStream();
-    await stream.connect('http://localhost/event', {}, () => {}, { aborted: false } as any);
+    await stream.connect('http://localhost/event', {}, (event) => events.push(event), { aborted: false } as any);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('test');
   });
 
   it('should retry on failure', async () => {
@@ -133,9 +137,12 @@ describe('SseStream', () => {
     });
 
     const stream = new SseStream();
-    stream.maxRetries = 1;
+    (stream as unknown as { maxRetries: number }).maxRetries = 1;
 
     await stream.connect('http://localhost/event', {}, () => {}, { aborted: false } as any);
+
+    expect(attempts).toBe(2);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it('uses equal jitter with exponential backoff', async () => {
