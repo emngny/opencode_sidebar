@@ -15,7 +15,11 @@ interface MessageHandlerState {
   // Chat state setters
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setBusy: React.Dispatch<React.SetStateAction<boolean>>;
-  setContextEvents: React.Dispatch<React.SetStateAction<Array<{ id: string; name: string; status: string; content: string; meta?: Record<string, unknown> }>>>;
+  setContextEvents: React.Dispatch<
+    React.SetStateAction<
+      Array<{ id: string; name: string; status: string; content: string; meta?: Record<string, unknown> }>
+    >
+  >;
   // Streaming refs
   pendingChunkRef: React.MutableRefObject<string>;
   chunkFlushTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
@@ -35,7 +39,9 @@ interface MessageHandlerState {
   setFileSearchQuery: React.Dispatch<React.SetStateAction<string>>;
   setRevertActive: React.Dispatch<React.SetStateAction<boolean>>;
   setConfirmDialog: React.Dispatch<React.SetStateAction<{ message: string; onConfirm: () => void } | null>>;
-  setReadPermissionPrompt: React.Dispatch<React.SetStateAction<{ filePath: string; reason: string; requestId: string } | null>>;
+  setReadPermissionPrompt: React.Dispatch<
+    React.SetStateAction<{ filePath: string; reason: string; requestId: string } | null>
+  >;
   setAgents: React.Dispatch<React.SetStateAction<string[]>>;
   processProviderList: (result: ProviderListResult) => void;
   tryAutoSelectModel: (models: ModelItem[], currentModel: string, hidden: Record<string, boolean>) => void;
@@ -43,13 +49,30 @@ interface MessageHandlerState {
 
 export function useMessageHandler(state: MessageHandlerState): void {
   const {
-    setMessages, setBusy, setContextEvents,
-    pendingChunkRef, chunkFlushTimerRef, streamingMsgIdRef, DEBOUNCE_MS,
-    flushPendingChunk, cleanupStreaming,
-    setModel, setMode, setGitInfo, setAvailableModels, setHiddenModels,
-    setProvidersLoaded, setSkills, setFileSearchResults, setFileSearchQuery,
-    setRevertActive, setConfirmDialog, setReadPermissionPrompt, setAgents,
-    processProviderList, tryAutoSelectModel,
+    setMessages,
+    setBusy,
+    setContextEvents,
+    pendingChunkRef,
+    chunkFlushTimerRef,
+    streamingMsgIdRef,
+    DEBOUNCE_MS,
+    flushPendingChunk,
+    cleanupStreaming,
+    setModel,
+    setMode,
+    setGitInfo,
+    setAvailableModels,
+    setHiddenModels,
+    setProvidersLoaded,
+    setSkills,
+    setFileSearchResults,
+    setFileSearchQuery,
+    setRevertActive,
+    setConfirmDialog,
+    setReadPermissionPrompt,
+    setAgents,
+    processProviderList,
+    tryAutoSelectModel,
   } = state;
 
   const streamEndedRef = useRef(false);
@@ -149,7 +172,11 @@ export function useMessageHandler(state: MessageHandlerState): void {
           break;
         }
         case 'projectInfo': {
-          const payload = msg.payload as { project?: { path?: string }; path?: { path?: string }; vcs?: { branch?: string; message?: string } };
+          const payload = msg.payload as {
+            project?: { path?: string };
+            path?: { path?: string };
+            vcs?: { branch?: string; message?: string };
+          };
           const pathInfo = payload?.path;
           const project = payload?.project;
           const vcs = payload?.vcs;
@@ -170,9 +197,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
         }
         case 'savedModel': {
           if (msg.payload) {
-            const modelStr = typeof msg.payload === 'string'
-              ? msg.payload
-              : (msg.payload as SavedModelPayload).model;
+            const modelStr = typeof msg.payload === 'string' ? msg.payload : (msg.payload as SavedModelPayload).model;
             if (modelStr) setModel(modelStr);
           }
           break;
@@ -185,48 +210,84 @@ export function useMessageHandler(state: MessageHandlerState): void {
         case 'toolEvent': {
           const event = msg.payload;
           const eventId = event.id || `tool_${Date.now()}_${genId()}`;
-          const isContextTool = ['read', 'glob', 'grep', 'list', 'webfetch', 'websearch', 'search'].includes(event.name);
+          const isContextTool = ['read', 'glob', 'grep', 'list', 'webfetch', 'websearch', 'search'].includes(
+            event.name,
+          );
           if (isContextTool) {
             setContextEvents((prev) => {
               const idx = prev.findIndex((e) => e.id === eventId);
               if (idx >= 0) {
                 const updated = [...prev];
-                updated[idx] = { ...updated[idx], status: event.status, content: event.content || '', meta: event.meta };
+                updated[idx] = {
+                  ...updated[idx],
+                  status: event.status,
+                  content: event.content || '',
+                  meta: event.meta,
+                };
                 return updated;
               }
-              return [...prev, { id: eventId, name: event.name, status: event.status, content: event.content || '', meta: event.meta }];
+              return [
+                ...prev,
+                { id: eventId, name: event.name, status: event.status, content: event.content || '', meta: event.meta },
+              ];
             });
           } else {
             setContextEvents([]);
             const baseId = event.id || '';
             setMessages((prev) => {
-              const idx = prev.findIndex((m) =>
-                m.role === 'event' &&
-                baseId.length > 0 &&
-                (m.id === baseId || m.id === `${baseId}_fixed` || (m.id?.startsWith(baseId + '_')))
+              const idx = prev.findIndex(
+                (m) =>
+                  m.role === 'event' &&
+                  baseId.length > 0 &&
+                  (m.id === baseId || m.id === `${baseId}_fixed` || m.id?.startsWith(baseId + '_')),
               );
               if (idx >= 0) {
                 const updated = [...prev];
-                updated[idx] = { ...updated[idx], content: event.content || '', eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta as ChatMessage['eventMeta'], eventCount: updated[idx].eventCount, timestamp: Date.now() };
+                updated[idx] = {
+                  ...updated[idx],
+                  content: event.content || '',
+                  eventStatus: event.status as ChatMessage['eventStatus'],
+                  eventMeta: event.meta as ChatMessage['eventMeta'],
+                  eventCount: updated[idx].eventCount,
+                  timestamp: Date.now(),
+                };
                 return updated;
               }
               // Merge identical consecutive events (e.g. repeated "bash completed")
               // into one card with a counter instead of flooding the chat.
               const last = prev.at(-1);
-              const sameTool = !!last &&
+              const sameTool =
+                !!last &&
                 last.role === 'event' &&
                 last.eventType === event.type &&
                 last.eventStatus === event.status &&
                 last.content === (event.content || '') &&
-                JSON.stringify(last.eventMeta?.args ?? null) === JSON.stringify((isRecord(event.meta) ? (event.meta as Record<string, unknown>)['args'] : undefined) ?? null) &&
-                JSON.stringify(last.eventMeta?.result ?? null) === JSON.stringify((isRecord(event.meta) ? (event.meta as Record<string, unknown>)['result'] : undefined) ?? null);
+                JSON.stringify(last.eventMeta?.args ?? null) ===
+                  JSON.stringify(
+                    (isRecord(event.meta) ? (event.meta as Record<string, unknown>)['args'] : undefined) ?? null,
+                  ) &&
+                JSON.stringify(last.eventMeta?.result ?? null) ===
+                  JSON.stringify(
+                    (isRecord(event.meta) ? (event.meta as Record<string, unknown>)['result'] : undefined) ?? null,
+                  );
               if (sameTool && last) {
                 const updated = [...prev];
                 updated[prev.length - 1] = { ...last, eventCount: (last.eventCount || 1) + 1, timestamp: Date.now() };
                 return updated;
               }
               const msgId = baseId ? `${baseId}_${Date.now()}` : `event_${Date.now()}`;
-              return [...prev, { role: 'event', content: event.content || '', timestamp: Date.now(), id: msgId, eventType: event.type as ChatMessage['eventType'], eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta as ChatMessage['eventMeta'] }];
+              return [
+                ...prev,
+                {
+                  role: 'event',
+                  content: event.content || '',
+                  timestamp: Date.now(),
+                  id: msgId,
+                  eventType: event.type as ChatMessage['eventType'],
+                  eventStatus: event.status as ChatMessage['eventStatus'],
+                  eventMeta: event.meta as ChatMessage['eventMeta'],
+                },
+              ];
             });
           }
           break;
@@ -246,9 +307,10 @@ export function useMessageHandler(state: MessageHandlerState): void {
             const updated = [...prev];
             for (let i = updated.length - 1; i >= 0; i--) {
               if (updated[i].role === 'assistant' && !updated[i].agent) {
-                const duration = meta.time?.completed && meta.time?.created
-                  ? Math.round((meta.time.completed - meta.time.created) / 1000)
-                  : undefined;
+                const duration =
+                  meta.time?.completed && meta.time?.created
+                    ? Math.round((meta.time.completed - meta.time.created) / 1000)
+                    : undefined;
                 updated[i] = { ...updated[i], agent: meta.agent, modelId: meta.modelId, duration };
                 break;
               }
@@ -329,12 +391,29 @@ export function useMessageHandler(state: MessageHandlerState): void {
       flushPendingChunk();
     };
   }, [
-    setMessages, setBusy, setContextEvents,
-    pendingChunkRef, chunkFlushTimerRef, streamingMsgIdRef, DEBOUNCE_MS,
-    flushPendingChunk, cleanupStreaming,
-    setModel, setMode, setGitInfo, setAvailableModels, setHiddenModels,
-    setProvidersLoaded, setSkills, setFileSearchResults, setFileSearchQuery,
-    setRevertActive, setConfirmDialog, setReadPermissionPrompt, setAgents,
-    processProviderList, tryAutoSelectModel,
+    setMessages,
+    setBusy,
+    setContextEvents,
+    pendingChunkRef,
+    chunkFlushTimerRef,
+    streamingMsgIdRef,
+    DEBOUNCE_MS,
+    flushPendingChunk,
+    cleanupStreaming,
+    setModel,
+    setMode,
+    setGitInfo,
+    setAvailableModels,
+    setHiddenModels,
+    setProvidersLoaded,
+    setSkills,
+    setFileSearchResults,
+    setFileSearchQuery,
+    setRevertActive,
+    setConfirmDialog,
+    setReadPermissionPrompt,
+    setAgents,
+    processProviderList,
+    tryAutoSelectModel,
   ]);
 }

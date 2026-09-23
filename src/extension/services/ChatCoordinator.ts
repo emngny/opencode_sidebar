@@ -12,9 +12,13 @@ export class ChatCoordinator {
   ) {}
 
   async processPrompt(prompt: string, mode: string, context?: ContextPart[], model?: string): Promise<void> {
-    const processed = this._context ? await this._context.process(prompt, context) : { userContent: prompt, extraParts: [] };
+    const processed = this._context
+      ? await this._context.process(prompt, context)
+      : { userContent: prompt, extraParts: [] };
     try {
-      const sessionId = this._sessions.currentSessionId || (await this._opencode.createSession(`Review - ${prompt.slice(0, 50)}...`)).id;
+      const sessionId =
+        this._sessions.currentSessionId ||
+        (await this._opencode.createSession(`Review - ${prompt.slice(0, 50)}...`)).id;
       if (!this._sessions.currentSessionId) this._sessions.currentSessionId = sessionId;
       this._postMessage({ type: 'receiveMessage', payload: { role: 'user', content: prompt } });
       this._postMessage({ type: 'receiveMessage', payload: { role: 'assistant', content: '' } });

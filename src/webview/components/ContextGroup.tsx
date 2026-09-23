@@ -19,7 +19,9 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
   for (const e of events) {
     counts[e.name] = (counts[e.name] || 0) + 1;
   }
-  const label = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ');
+  const label = Object.entries(counts)
+    .map(([k, v]) => `${v} ${k}`)
+    .join(', ');
   const anyRunning = events.some((e) => e.status === 'running');
   let headerIcon = '🔍';
   if (!anyRunning && allDone) {
@@ -46,15 +48,27 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
       onClick={() => setExpanded((current) => !current)}
     >
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', fontSize: 12, color: allDone ? '#a6e3a1' : '#a6adc8' }}>
-        <span style={{ fontSize: 14 }}>
-          {headerIcon}
-        </span>
-        <span style={{ flex: 1 }}>
-          {anyRunning ? 'Gathering context...' : 'Gathered context'}
-        </span>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 12px',
+          fontSize: 12,
+          color: allDone ? '#a6e3a1' : '#a6adc8',
+        }}
+      >
+        <span style={{ fontSize: 14 }}>{headerIcon}</span>
+        <span style={{ flex: 1 }}>{anyRunning ? 'Gathering context...' : 'Gathered context'}</span>
         <span style={{ color: '#6c7086', fontSize: 11 }}>{label}</span>
-        <span style={{ color: '#585b70', fontSize: 10, transition: 'transform 0.2s', transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+        <span
+          style={{
+            color: '#585b70',
+            fontSize: 10,
+            transition: 'transform 0.2s',
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+          }}
+        >
           ▶
         </span>
       </div>
@@ -67,22 +81,64 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
             if (e.status === 'running') statusIcon = '⏳';
             if (e.status === 'completed') statusIcon = '✅';
             return (
-            <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 11, color: '#6c7086' }}>
-              <span>{statusIcon}</span>
-              <span style={{ color: '#a6adc8', fontWeight: 500 }}>{e.name}</span>
-              {e.meta?.args && (
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150, color: '#585b70' }}>
-                  {typeof e.meta.args === 'string' ? e.meta.args : JSON.stringify(e.meta.args)}
-                </span>
-              )}
-              {e.status === 'running' && (
-                <span style={{ display: 'inline-flex', gap: 2 }}>
-                  <span style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: '#89b4fa', animation: 'thinking 1.4s ease-in-out infinite' }} />
-                  <span style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: '#89b4fa', animation: 'thinking 1.4s ease-in-out infinite 0.2s' }} />
-                  <span style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: '#89b4fa', animation: 'thinking 1.4s ease-in-out infinite 0.4s' }} />
-                </span>
-              )}
-            </div>
+              <div
+                key={e.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '3px 0',
+                  fontSize: 11,
+                  color: '#6c7086',
+                }}
+              >
+                <span>{statusIcon}</span>
+                <span style={{ color: '#a6adc8', fontWeight: 500 }}>{e.name}</span>
+                {e.meta?.args && (
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      maxWidth: 150,
+                      color: '#585b70',
+                    }}
+                  >
+                    {typeof e.meta.args === 'string' ? e.meta.args : JSON.stringify(e.meta.args)}
+                  </span>
+                )}
+                {e.status === 'running' && (
+                  <span style={{ display: 'inline-flex', gap: 2 }}>
+                    <span
+                      style={{
+                        width: 3,
+                        height: 3,
+                        borderRadius: '50%',
+                        backgroundColor: '#89b4fa',
+                        animation: 'thinking 1.4s ease-in-out infinite',
+                      }}
+                    />
+                    <span
+                      style={{
+                        width: 3,
+                        height: 3,
+                        borderRadius: '50%',
+                        backgroundColor: '#89b4fa',
+                        animation: 'thinking 1.4s ease-in-out infinite 0.2s',
+                      }}
+                    />
+                    <span
+                      style={{
+                        width: 3,
+                        height: 3,
+                        borderRadius: '50%',
+                        backgroundColor: '#89b4fa',
+                        animation: 'thinking 1.4s ease-in-out infinite 0.4s',
+                      }}
+                    />
+                  </span>
+                )}
+              </div>
             );
           })}
         </div>

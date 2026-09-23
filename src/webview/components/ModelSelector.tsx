@@ -29,14 +29,18 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
   }, [isOpen]);
 
   const filteredModels = availableModels.filter(
-    (m) => m.name.toLowerCase().includes(search.toLowerCase()) || m.providerId.toLowerCase().includes(search.toLowerCase())
+    (m) =>
+      m.name.toLowerCase().includes(search.toLowerCase()) || m.providerId.toLowerCase().includes(search.toLowerCase()),
   );
 
-  const grouped = filteredModels.reduce((acc, m) => {
-    if (!acc[m.providerId]) acc[m.providerId] = [];
-    acc[m.providerId].push(m);
-    return acc;
-  }, {} as Record<string, typeof availableModels>);
+  const grouped = filteredModels.reduce(
+    (acc, m) => {
+      if (!acc[m.providerId]) acc[m.providerId] = [];
+      acc[m.providerId].push(m);
+      return acc;
+    },
+    {} as Record<string, typeof availableModels>,
+  );
 
   const currentModel = availableModels.find((m) => m.id === model);
 
@@ -56,7 +60,16 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
           backgroundColor: isOpen ? '#313244' : 'transparent',
         }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
           <line x1="8" y1="21" x2="16" y2="21" />
           <line x1="12" y1="17" x2="12" y2="21" />
@@ -64,7 +77,15 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
         <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {currentModel?.name || model}
         </span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginLeft: 2 }}>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          style={{ marginLeft: 2 }}
+        >
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </div>
@@ -113,9 +134,7 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
           {/* Models List */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
             {Object.keys(grouped).length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 20, color: '#585b70', fontSize: 13 }}>
-                Model not found
-              </div>
+              <div style={{ textAlign: 'center', padding: 20, color: '#585b70', fontSize: 13 }}>Model not found</div>
             ) : (
               Object.entries(grouped).map(([providerId, models]) => (
                 <div key={providerId}>
@@ -148,12 +167,25 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
                         cursor: 'pointer',
                         backgroundColor: m.id === model ? '#313244' : 'transparent',
                       }}
-                      onMouseEnter={(e) => { if (m.id !== model) e.currentTarget.style.backgroundColor = '#181825'; }}
-                      onMouseLeave={(e) => { if (m.id !== model) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                      onMouseEnter={(e) => {
+                        if (m.id !== model) e.currentTarget.style.backgroundColor = '#181825';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (m.id !== model) e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
                     >
                       <span style={{ fontSize: 13, color: '#cdd6f4' }}>{m.name}</span>
                       {m.id === model && (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a6e3a1" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="#a6e3a1"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       )}

@@ -4,11 +4,7 @@ import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ChatContainer } from './ChatContainer';
-import {
-  DEFAULT_VISIBLE_MESSAGE_COUNT,
-  expandVisibleCount,
-  getVisibleWindow,
-} from './ChatContainer.windowing';
+import { DEFAULT_VISIBLE_MESSAGE_COUNT, expandVisibleCount, getVisibleWindow } from './ChatContainer.windowing';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -56,7 +52,9 @@ describe('ChatContainer message windowing', () => {
     expect(container.querySelectorAll('[data-testid="chat-message"]')).toHaveLength(DEFAULT_VISIBLE_MESSAGE_COUNT);
     expect(container.textContent).not.toContain('Message 949');
 
-    const loadOlder = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Load older');
+    const loadOlder = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Load older',
+    );
     act(() => loadOlder?.click());
 
     expect(container.querySelectorAll('[data-testid="chat-message"]')).toHaveLength(100);

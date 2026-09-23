@@ -31,13 +31,24 @@ export class ContextService {
       if (!allowed && deniedPattern) {
         this._postMessage({
           type: 'readFilePrompt',
-          payload: { filePath, reason: `Matches deny pattern: ${deniedPattern}`, requestId: `${filePath}_${Date.now()}` },
+          payload: {
+            filePath,
+            reason: `Matches deny pattern: ${deniedPattern}`,
+            requestId: `${filePath}_${Date.now()}`,
+          },
         });
         if (!(await this._permissions.waitForReadPermission(filePath))) {
           userContent += `\n\n[Skipped: ${filePath} — read denied by pattern]`;
           this._postMessage({
             type: 'toolEvent',
-            payload: { id: `file_read_${filePath}`, type: 'file_read', name: 'read', status: 'failed', content: `Read denied: ${filePath}`, meta: { path: filePath, error: 'Permission denied' } },
+            payload: {
+              id: `file_read_${filePath}`,
+              type: 'file_read',
+              name: 'read',
+              status: 'failed',
+              content: `Read denied: ${filePath}`,
+              meta: { path: filePath, error: 'Permission denied' },
+            },
           });
           continue;
         }

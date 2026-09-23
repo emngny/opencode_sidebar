@@ -10,7 +10,8 @@
   "license": "MIT",
   "icon": "resources/icon.png",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": ">=20"
   },
   "categories": [
     "Machine Learning",
@@ -34,9 +35,6 @@
     "url": "https://github.com/emngny/opencode_sidebar/issues"
   },
   "main": "./out/extension.js",
-  "activationEvents": [
-    "onView:opencode.sidebar"
-  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -71,12 +69,23 @@
     "build:webview": "node esbuild.config.js",
     "watch:extension": "tsc -watch -p tsconfig.extension.json",
     "watch:webview": "node esbuild.config.js --watch",
-    "lint": "eslint src --ext ts,tsx",
+    "lint": "eslint src --ext ts,tsx --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint:staged": "lint-staged",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.extension.json --noEmit && tsc -p tsconfig.webview.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "audit": "npm audit"
+    "audit": "npm audit",
+    "audit:high": "npm audit --audit-level=high",
+    "package": "vsce package",
+    "validate": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run compile && npm run audit:high",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs,json,md,yml,yaml,css}": "prettier --check",
+    "*.{ts,tsx,js,mjs,cjs}": "eslint --fix"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -90,10 +99,14 @@
     "@types/react-dom": "^18.3.0",
     "@types/vscode": "^1.85.0",
     "@vitest/coverage-v8": "^4.1.5",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
     "eslint": "^10.11.0",
     "globals": "^17.12.0",
+    "husky": "^9.1.7",
     "jsdom": "^29.1.1",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.9.9",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.70.1",
     "vitest": "^4.1.5"

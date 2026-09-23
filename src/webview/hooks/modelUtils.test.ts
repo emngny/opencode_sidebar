@@ -28,7 +28,9 @@ describe('buildModelItems', () => {
     };
 
     expect(buildModelItems(result as any).map((model) => model.providerId)).toEqual([
-      'opencode', 'opencode-go', 'z-provider',
+      'opencode',
+      'opencode-go',
+      'z-provider',
     ]);
   });
 });

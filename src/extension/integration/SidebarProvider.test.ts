@@ -42,13 +42,7 @@ describe('SidebarProvider Message Handling', () => {
 
   describe('Message Type Validation', () => {
     it('should accept valid message types', () => {
-      const validTypes = [
-        'sendMessage',
-        'searchFiles',
-        'listProviders',
-        'setApiKey',
-        'loadSkills',
-      ];
+      const validTypes = ['sendMessage', 'searchFiles', 'listProviders', 'setApiKey', 'loadSkills'];
 
       for (const type of validTypes) {
         expect(validTypes).toContain(type);

@@ -52,18 +52,21 @@ export function DiffChanges({ additions, deletions, variant = 'default' }: Props
     }
 
     const neutral = Math.max(0, TOTAL_BLOCKS - totalAlloc);
-    return [
-      ...Array(added).fill('added'),
-      ...Array(deleted).fill('deleted'),
-      ...Array(neutral).fill('neutral'),
-    ];
+    return [...Array(added).fill('added'), ...Array(deleted).fill('deleted'), ...Array(neutral).fill('neutral')];
   }, [additions, deletions, total]);
 
   const colors = { added: '#a6e3a1', deleted: '#f38ba8', neutral: '#585b70' };
 
   if (variant === 'bars') {
     return (
-      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+      <svg
+        width="18"
+        height="14"
+        viewBox="0 0 18 14"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ flexShrink: 0 }}
+      >
         {blocks.map((type, i) => (
           <rect key={i} x={i * 4} width="2" height="14" rx="1" fill={colors[type as keyof typeof colors]} />
         ))}

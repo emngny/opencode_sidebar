@@ -24,31 +24,32 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
     })),
   ];
 
-  const filtered = filter
-    ? items.filter((c) => c.command.toLowerCase().startsWith(filter.toLowerCase()))
-    : items;
+  const filtered = filter ? items.filter((c) => c.command.toLowerCase().startsWith(filter.toLowerCase())) : items;
 
   useEffect(() => {
     setSelectedIndex(0);
   }, [filter]);
 
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
-      if (filtered[selectedIndex]) {
-        onSelect(filtered[selectedIndex]);
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex((i) => Math.max(i - 1, 0));
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        if (filtered[selectedIndex]) {
+          onSelect(filtered[selectedIndex]);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
       }
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      onClose();
-    }
-  }, [filtered, selectedIndex, onSelect, onClose]);
+    },
+    [filtered, selectedIndex, onSelect, onClose],
+  );
 
   useEffect(() => {
     if (filtered.length === 0) return;
@@ -92,7 +93,10 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
             key={`${cmd.type}_${cmd.command}`}
             data-index={i}
             onClick={() => onSelect(cmd)}
-            onMouseEnter={() => { setSelectedIndex(i); setHoveredIndex(i); }}
+            onMouseEnter={() => {
+              setSelectedIndex(i);
+              setHoveredIndex(i);
+            }}
             style={{
               padding: '8px 12px',
               cursor: 'pointer',
@@ -103,11 +107,15 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
               transition: 'background-color 0.1s',
             }}
           >
-            <span style={{
-              width: 8, height: 8, borderRadius: '50%',
-              backgroundColor: color?.text || '#6c7086',
-              flexShrink: 0,
-            }} />
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: color?.text || '#6c7086',
+                flexShrink: 0,
+              }}
+            />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, color: '#cdd6f4', fontWeight: 500 }}>
                 <span style={{ color: color?.text || '#6c7086' }}>/{cmd.command}</span>
@@ -115,7 +123,16 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
                   <span style={{ fontSize: 10, color: '#6c7086', marginLeft: 6, fontWeight: 400 }}>skill</span>
                 )}
               </div>
-              <div style={{ fontSize: 11, color: '#6c7086', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#6c7086',
+                  marginTop: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {cmd.description}
               </div>
             </div>

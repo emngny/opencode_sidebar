@@ -10,10 +10,6 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": [
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx",
-    "vitest.setup.ts"
-  ],
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "vitest.setup.ts"],
   "exclude": []
 }

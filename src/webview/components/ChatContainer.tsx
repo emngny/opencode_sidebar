@@ -5,11 +5,7 @@ import { EventCard } from './EventCard';
 import { ContextGroup } from './ContextGroup';
 import { CompactionDivider } from './CompactionDivider';
 import { ToolMessage } from './ToolMessage';
-import {
-  DEFAULT_VISIBLE_MESSAGE_COUNT,
-  expandVisibleCount,
-  getVisibleWindow,
-} from './ChatContainer.windowing';
+import { DEFAULT_VISIBLE_MESSAGE_COUNT, expandVisibleCount, getVisibleWindow } from './ChatContainer.windowing';
 
 interface Props {
   messages: ChatMessage[];
@@ -26,14 +22,24 @@ export function getMessageKey(message: ChatMessage, index: number): string {
   return message.id || `message-${index}`;
 }
 
-export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, contextEvents, onLoadSession, onRespondPermission, onOpenDiff }: Readonly<Props>) {
+export function ChatContainer({
+  messages,
+  onRevert,
+  revertActive,
+  onUnrevert,
+  contextEvents,
+  onLoadSession,
+  onRespondPermission,
+  onOpenDiff,
+}: Readonly<Props>) {
   const [visibleCount, setVisibleCount] = useState(DEFAULT_VISIBLE_MESSAGE_COUNT);
   const containerRef = useRef<HTMLDivElement>(null);
   const pendingScrollRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
-  const { messages: visibleMessages, hiddenCount, hasMore } = useMemo(
-    () => getVisibleWindow(messages, visibleCount),
-    [messages, visibleCount]
-  );
+  const {
+    messages: visibleMessages,
+    hiddenCount,
+    hasMore,
+  } = useMemo(() => getVisibleWindow(messages, visibleCount), [messages, visibleCount]);
 
   useLayoutEffect(() => {
     const pendingScroll = pendingScrollRef.current;
@@ -55,9 +61,7 @@ export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, co
         scrollHeight: scrollParent.scrollHeight,
       };
     }
-    setVisibleCount((current) => loadAll
-      ? messages.length
-      : expandVisibleCount(current, messages.length));
+    setVisibleCount((current) => (loadAll ? messages.length : expandVisibleCount(current, messages.length)));
   };
 
   if (messages.length === 0 && (!contextEvents || contextEvents.length === 0)) return null;
@@ -70,10 +74,23 @@ export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, co
       {hasMore && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '4px 0' }}>
           <span style={{ fontSize: 11, color: '#6c7086' }}>{hiddenCount} older messages hidden</span>
-          <button onClick={() => loadOlder()} style={{ border: '1px solid #45475a', borderRadius: 6, background: '#181825', color: '#cdd6f4', cursor: 'pointer', padding: '4px 10px' }}>
+          <button
+            onClick={() => loadOlder()}
+            style={{
+              border: '1px solid #45475a',
+              borderRadius: 6,
+              background: '#181825',
+              color: '#cdd6f4',
+              cursor: 'pointer',
+              padding: '4px 10px',
+            }}
+          >
             Load older
           </button>
-          <button onClick={() => loadOlder(true)} style={{ border: 0, background: 'transparent', color: '#89b4fa', cursor: 'pointer', fontSize: 11 }}>
+          <button
+            onClick={() => loadOlder(true)}
+            style={{ border: 0, background: 'transparent', color: '#89b4fa', cursor: 'pointer', fontSize: 11 }}
+          >
             Load all
           </button>
         </div>
@@ -84,7 +101,14 @@ export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, co
         if (msg.eventType === 'compacting') {
           content = <CompactionDivider status={msg.eventStatus} />;
         } else if (msg.role === 'event') {
-          content = <EventCard message={msg} onLoadSession={onLoadSession} onRespondPermission={onRespondPermission} onOpenDiff={onOpenDiff} />;
+          content = (
+            <EventCard
+              message={msg}
+              onLoadSession={onLoadSession}
+              onRespondPermission={onRespondPermission}
+              onOpenDiff={onOpenDiff}
+            />
+          );
         } else if (msg.role === 'tool') {
           content = <ToolMessage content={msg.content} />;
         } else {

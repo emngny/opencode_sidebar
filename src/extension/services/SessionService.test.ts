@@ -4,7 +4,14 @@ import { SessionService } from './SessionService';
 describe('SessionService.abort', () => {
   it('keeps current session until abort request resolves', async () => {
     let resolveAbort: (() => void) | undefined;
-    const opencode = { abortSession: vi.fn(() => new Promise<void>((resolve) => { resolveAbort = resolve; })) } as never;
+    const opencode = {
+      abortSession: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveAbort = resolve;
+          }),
+      ),
+    } as never;
     const sessions = new SessionService(opencode);
     sessions.currentSessionId = 'session-1';
 

@@ -49,7 +49,7 @@ function patternToRegex(pattern: string): RegExp {
   let regex = regexCache.get(pattern);
   if (regex) return regex;
   const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/[.+^${}()|[\]\\]/g, String.raw`\$&`)
     .replace(/\*\*/g, '___DOUBLESTAR___')
     .replace(/\*/g, '[^/]*')
     .replace(/___DOUBLESTAR___/g, '.*');

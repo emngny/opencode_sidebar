@@ -5,7 +5,10 @@ export function expandVisibleCount(current: number, total: number): number {
   return Math.min(current + MESSAGE_WINDOW_BATCH_SIZE, total);
 }
 
-export function getVisibleWindow<T>(messages: T[], visibleCount: number): {
+export function getVisibleWindow<T>(
+  messages: T[],
+  visibleCount: number,
+): {
   messages: T[];
   hiddenCount: number;
   hasMore: boolean;

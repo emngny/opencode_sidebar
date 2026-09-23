@@ -1,0 +1,378 @@
+openapi: 3.1.0
+info:
+  title: Opencode Sidebar API Contract
+  version: 0.1.0
+  description: >-
+    HTTP surface consumed by this extension from a locally running `opencode serve`
+    process. This documents the extension contract, not the complete Opencode server API.
+    Server revisions may add fields; clients must ignore unknown properties.
+servers:
+  - url: http://127.0.0.1:{port}
+    description: Ephemeral local server started by the extension
+    variables:
+      port:
+        default: '4096'
+security:
+  - basicAuth: []
+tags:
+  - name: Sessions
+  - name: Discovery
+  - name: Providers
+  - name: Permissions
+paths:
+  /session:
+    post:
+      tags: [Sessions]
+      operationId: createSession
+      summary: Create a chat session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+      responses:
+        '200':
+          description: Created session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+    get:
+      tags: [Sessions]
+      operationId: listSessions
+      summary: List chat sessions
+      responses:
+        '200':
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Session' }
+  /session/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    delete:
+      tags: [Sessions]
+      operationId: deleteSession
+      summary: Delete a chat session
+      responses:
+        '200': { description: Session deleted }
+  /session/{sessionId}/message:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [Sessions]
+      operationId: getSessionMessages
+      summary: List messages in a session
+      responses:
+        '200':
+          description: Session messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+    post:
+      tags: [Sessions]
+      operationId: sendMessage
+      summary: Submit a prompt or instruction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendPrompt' }
+      responses:
+        '200': { description: Accepted; progress is delivered through SSE events }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /session/{sessionId}/diff:
+    get:
+      tags: [Sessions]
+      operationId: getSessionDiff
+      summary: Get file changes associated with a session
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Normalized or legacy diff response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items: { $ref: '#/components/schemas/Diff' }
+                  - type: object
+                    required: [files]
+                    properties:
+                      files:
+                        type: array
+                        items: { $ref: '#/components/schemas/Diff' }
+  /session/{sessionId}/summarize:
+    post:
+      tags: [Sessions]
+      operationId: summarizeSession
+      summary: Summarize a session with a selected model
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [providerID, modelID, auto]
+              properties:
+                providerID: { type: string }
+                modelID: { type: string }
+                auto: { type: boolean }
+      responses:
+        '200': { description: Summarization result }
+  /session/{sessionId}/revert:
+    post:
+      tags: [Sessions]
+      operationId: revertSession
+      summary: Revert changes made after a message
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messageID]
+              properties:
+                messageID: { type: string }
+      responses:
+        '200': { description: Revert result }
+  /session/{sessionId}/unrevert:
+    post:
+      tags: [Sessions]
+      operationId: unrevertSession
+      summary: Restore changes removed by revert
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200': { description: Unrevert result }
+  /session/{sessionId}/abort:
+    post:
+      tags: [Sessions]
+      operationId: abortSession
+      summary: Abort active session work
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200': { description: Abort accepted }
+  /agent:
+    get:
+      tags: [Discovery]
+      operationId: listAgents
+      summary: List available agents
+      responses:
+        '200':
+          description: Agent identifiers
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items: { type: string }
+                  - type: object
+                    properties:
+                      agents:
+                        type: array
+                        items: { type: string }
+  /project/current:
+    get:
+      tags: [Discovery]
+      operationId: getCurrentProject
+      summary: Get current project metadata
+      responses:
+        '200':
+          description: Project metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectInfo' }
+  /path:
+    get:
+      tags: [Discovery]
+      operationId: getPath
+      summary: Get server working path
+      responses:
+        '200':
+          description: Path metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PathInfo' }
+  /vcs:
+    get:
+      tags: [Discovery]
+      operationId: getVcsInfo
+      summary: Get repository metadata
+      responses:
+        '200':
+          description: VCS metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VcsInfo' }
+  /provider:
+    get:
+      tags: [Providers]
+      operationId: listProviders
+      summary: List providers and their models
+      responses:
+        '200':
+          description: Provider map
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /provider/auth:
+    get:
+      tags: [Providers]
+      operationId: getProviderAuth
+      summary: List provider authentication states
+      responses:
+        '200':
+          description: Provider-to-auth map
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /auth/{providerId}:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Providers]
+      operationId: setProviderAuth
+      summary: Store API authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, key]
+              properties:
+                type: { type: string, const: api }
+                key: { type: string, writeOnly: true }
+      responses:
+        '200': { description: Authentication stored }
+    delete:
+      tags: [Providers]
+      operationId: removeProviderAuth
+      summary: Remove API authentication
+      responses:
+        '200': { description: Authentication removed }
+  /session/{sessionId}/permissions/{permissionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/PermissionId'
+    post:
+      tags: [Permissions]
+      operationId: respondToPermission
+      summary: Respond to a permission request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response, remember]
+              properties:
+                response: { type: string, examples: [once, always, reject] }
+                remember: { type: boolean }
+      responses:
+        '200': { description: Permission decision accepted }
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: Ephemeral password printed by `opencode serve`
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string }
+    PermissionId:
+      name: permissionId
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Session:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        title: { type: string }
+      additionalProperties: true
+    SendPrompt:
+      type: object
+      properties:
+        parts:
+          type: array
+          items:
+            type: object
+            required: [type]
+            properties:
+              type: { type: string }
+              text: { type: string }
+            additionalProperties: true
+        model: { $ref: '#/components/schemas/ModelSelection' }
+        agent: { type: string }
+        system: { type: string }
+        variant: { type: string }
+      additionalProperties: true
+    ModelSelection:
+      oneOf:
+        - type: string
+        - type: object
+          required: [providerID, modelID]
+          properties:
+            providerID: { type: string }
+            modelID: { type: string }
+    Diff:
+      type: object
+      properties:
+        path: { type: string }
+        additions: { type: integer, minimum: 0 }
+        deletions: { type: integer, minimum: 0 }
+        diff: { type: string }
+      additionalProperties: true
+    ProjectInfo:
+      type: object
+      properties:
+        id: { type: string }
+        worktree: { type: string }
+      additionalProperties: true
+    PathInfo:
+      type: object
+      properties:
+        path: { type: string }
+        directory: { type: string }
+      additionalProperties: true
+    VcsInfo:
+      type: object
+      properties:
+        root: { type: string }
+        branch: { type: string }
+      additionalProperties: true
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+      additionalProperties: true

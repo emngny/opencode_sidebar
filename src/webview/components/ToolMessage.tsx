@@ -11,9 +11,18 @@ function ToolMessageComponent({ content }: Readonly<Props>) {
 
   let icon = '🔧';
   let bgColor = '#1e1e2e';
-  if (isRunning) { icon = '⏳'; bgColor = '#181825'; }
-  if (isCompleted) { icon = '✅'; bgColor = 'rgba(166,227,161,0.08)'; }
-  if (isFailed) { icon = '❌'; bgColor = 'rgba(243,139,168,0.08)'; }
+  if (isRunning) {
+    icon = '⏳';
+    bgColor = '#181825';
+  }
+  if (isCompleted) {
+    icon = '✅';
+    bgColor = 'rgba(166,227,161,0.08)';
+  }
+  if (isFailed) {
+    icon = '❌';
+    bgColor = 'rgba(243,139,168,0.08)';
+  }
 
   return (
     <div

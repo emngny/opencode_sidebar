@@ -9,7 +9,9 @@ interface AppState {
   busy: boolean;
   setBusy: React.Dispatch<React.SetStateAction<boolean>>;
   contextEvents: Array<{ id: string; name: string; status: string; content: string; meta?: any }>;
-  setContextEvents: React.Dispatch<React.SetStateAction<Array<{ id: string; name: string; status: string; content: string; meta?: any }>>>;
+  setContextEvents: React.Dispatch<
+    React.SetStateAction<Array<{ id: string; name: string; status: string; content: string; meta?: any }>>
+  >;
   pendingChunkRef: React.MutableRefObject<string>;
   chunkFlushTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   streamingMsgIdRef: React.MutableRefObject<string | null>;
@@ -39,7 +41,9 @@ interface AppState {
   confirmDialog: { message: string; onConfirm: () => void } | null;
   setConfirmDialog: React.Dispatch<React.SetStateAction<{ message: string; onConfirm: () => void } | null>>;
   readPermissionPrompt: { filePath: string; reason: string; requestId: string } | null;
-  setReadPermissionPrompt: React.Dispatch<React.SetStateAction<{ filePath: string; reason: string; requestId: string } | null>>;
+  setReadPermissionPrompt: React.Dispatch<
+    React.SetStateAction<{ filePath: string; reason: string; requestId: string } | null>
+  >;
   showProviders: boolean;
   setShowProviders: React.Dispatch<React.SetStateAction<boolean>>;
   showSessions: boolean;
@@ -48,7 +52,11 @@ interface AppState {
   handleToggleAllModels: (providerId: string, show: boolean) => void;
   pendingRevertRef: React.MutableRefObject<string | null>;
   processProviderList: (result: ProviderListResult) => void;
-  tryAutoSelectModel: (models: Array<{ id: string; name: string; providerId: string }>, currentModel: string, hidden: Record<string, boolean>) => void;
+  tryAutoSelectModel: (
+    models: Array<{ id: string; name: string; providerId: string }>,
+    currentModel: string,
+    hidden: Record<string, boolean>,
+  ) => void;
 }
 
 const AppContext = createContext<AppState | null>(null);

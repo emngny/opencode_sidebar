@@ -10,11 +10,29 @@ describe('Extension-Webview Message Protocol', () => {
   describe('Message Type Definitions', () => {
     it('keeps webview allow-list aligned with declared message types', () => {
       const requiredTypes = [
-        'sendMessage', 'acceptReview', 'rejectReview', 'clearChat', 'abort',
-        'getSessions', 'loadSession', 'deleteSession', 'switchAgent', 'listProviders',
-        'setApiKey', 'removeApiKey', 'searchFiles', 'getSavedModel', 'saveModel',
-        'revertMessage', 'unrevert', 'respondPermission', 'respondReadPermission',
-        'openDiff', 'runCommand', 'loadSkills', 'webviewReady',
+        'sendMessage',
+        'acceptReview',
+        'rejectReview',
+        'clearChat',
+        'abort',
+        'getSessions',
+        'loadSession',
+        'deleteSession',
+        'switchAgent',
+        'listProviders',
+        'setApiKey',
+        'removeApiKey',
+        'searchFiles',
+        'getSavedModel',
+        'saveModel',
+        'revertMessage',
+        'unrevert',
+        'respondPermission',
+        'respondReadPermission',
+        'openDiff',
+        'runCommand',
+        'loadSkills',
+        'webviewReady',
       ] satisfies Array<WebviewToExtensionMessage['type']>;
 
       expect(new Set(WEBVIEW_TO_EXTENSION_TYPES)).toEqual(new Set(requiredTypes));
@@ -22,11 +40,29 @@ describe('Extension-Webview Message Protocol', () => {
 
     it('keeps extension allow-list aligned with declared message types', () => {
       const requiredTypes = [
-        'receiveMessage', 'receiveChunk', 'streamEnd', 'reviewReady', 'reviewResolved',
-        'status', 'gitInfo', 'projectInfo', 'sessionList', 'sessionLoaded', 'sessionDeleted',
-        'agentList', 'error', 'providerList', 'providerUpdated', 'fileSearchResults',
-        'savedModel', 'toolEvent', 'revertResult', 'messageMeta', 'reasoningContent',
-        'readFilePrompt', 'skillList',
+        'receiveMessage',
+        'receiveChunk',
+        'streamEnd',
+        'reviewReady',
+        'reviewResolved',
+        'status',
+        'gitInfo',
+        'projectInfo',
+        'sessionList',
+        'sessionLoaded',
+        'sessionDeleted',
+        'agentList',
+        'error',
+        'providerList',
+        'providerUpdated',
+        'fileSearchResults',
+        'savedModel',
+        'toolEvent',
+        'revertResult',
+        'messageMeta',
+        'reasoningContent',
+        'readFilePrompt',
+        'skillList',
       ] satisfies Array<ExtensionToWebviewMessage['type']>;
 
       expect(new Set(EXTENSION_TO_WEBVIEW_TYPES)).toEqual(new Set(requiredTypes));
@@ -39,9 +75,7 @@ describe('Extension-Webview Message Protocol', () => {
         prompt: 'Hello world',
         model: 'openai/gpt-4',
         mode: 'build',
-        context: [
-          { type: 'file', name: 'src/index.ts', path: 'src/index.ts' },
-        ],
+        context: [{ type: 'file', name: 'src/index.ts', path: 'src/index.ts' }],
       };
       expect(validPayload.prompt).toBeDefined();
       expect(validPayload.mode).toBeDefined();

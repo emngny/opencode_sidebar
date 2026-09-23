@@ -37,13 +37,11 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
   const handleDeleteOld = async (days: number) => {
     const now = Date.now();
     const cutoff = days === 0 ? 0 : now - days * 24 * 60 * 60 * 1000;
-    const oldSessions = cutoff === 0
-      ? sessions
-      : sessions.filter(s => s.time?.created && s.time.created < cutoff);
+    const oldSessions = cutoff === 0 ? sessions : sessions.filter((s) => s.time?.created && s.time.created < cutoff);
     for (const s of oldSessions) {
       postMessage({ type: 'deleteSession', payload: { sessionId: s.id } });
     }
-    setSessions(prev => prev.filter(s => !oldSessions.includes(s)));
+    setSessions((prev) => prev.filter((s) => !oldSessions.includes(s)));
     setShowDeleteMenu(false);
   };
 
@@ -62,27 +60,53 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
     return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   };
 
-  const oldCount = sessions.filter(s => s.time?.created && s.time.created < Date.now() - 7 * 24 * 60 * 60 * 1000).length;
+  const oldCount = sessions.filter(
+    (s) => s.time?.created && s.time.created < Date.now() - 7 * 24 * 60 * 60 * 1000,
+  ).length;
 
   return (
     <div
       style={{
-        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200,
-        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        zIndex: 200,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
       }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
         style={{
-          backgroundColor: '#1e1e2e', border: '1px solid #313244', borderBottom: 'none',
-          borderRadius: '16px 16px 0 0', width: '100%', maxHeight: '75vh',
-          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          backgroundColor: '#1e1e2e',
+          border: '1px solid #313244',
+          borderBottom: 'none',
+          borderRadius: '16px 16px 0 0',
+          width: '100%',
+          maxHeight: '75vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
           boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
         }}
       >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #313244', flexShrink: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '14px 16px',
+            borderBottom: '1px solid #313244',
+            flexShrink: 0,
+          }}
+        >
           <div>
             <div style={{ fontSize: 16, fontWeight: 600, color: '#cdd6f4' }}>Session History</div>
             <div style={{ fontSize: 11, color: '#585b70', marginTop: 2 }}>
@@ -95,8 +119,13 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
                 <button
                   onClick={() => setShowDeleteMenu(!showDeleteMenu)}
                   style={{
-                    background: 'none', border: '1px solid #313244', color: '#a6adc8', cursor: 'pointer',
-                    fontSize: 12, padding: '6px 10px', borderRadius: 6,
+                    background: 'none',
+                    border: '1px solid #313244',
+                    color: '#a6adc8',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    padding: '6px 10px',
+                    borderRadius: 6,
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#585b70')}
                   onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#313244')}
@@ -104,22 +133,34 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
                   Delete old ▼
                 </button>
                 {showDeleteMenu && (
-                  <div style={{
-                    position: 'absolute', right: 0, top: '100%', marginTop: 4,
-                    backgroundColor: '#181825', border: '1px solid #313244',
-                    borderRadius: 8, padding: '4px 0', minWidth: 140, zIndex: 10,
-                  }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: '100%',
+                      marginTop: 4,
+                      backgroundColor: '#181825',
+                      border: '1px solid #313244',
+                      borderRadius: 8,
+                      padding: '4px 0',
+                      minWidth: 140,
+                      zIndex: 10,
+                    }}
+                  >
                     {[
                       { days: 7, label: 'Older than 7 days' },
                       { days: 30, label: 'Older than 30 days' },
                       { days: 90, label: 'Older than 90 days' },
                       { days: 0, label: 'All sessions' },
-                    ].map(opt => (
+                    ].map((opt) => (
                       <div
                         key={opt.days}
                         onClick={() => handleDeleteOld(opt.days)}
                         style={{
-                          padding: '8px 12px', cursor: 'pointer', fontSize: 12, color: '#cdd6f4',
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          fontSize: 12,
+                          color: '#cdd6f4',
                         }}
                         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#313244')}
                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
@@ -131,7 +172,20 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
                 )}
               </div>
             )}
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#a6adc8', cursor: 'pointer', fontSize: 20, padding: 4, lineHeight: 1 }}>✕</button>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#a6adc8',
+                cursor: 'pointer',
+                fontSize: 20,
+                padding: 4,
+                lineHeight: 1,
+              }}
+            >
+              ✕
+            </button>
           </div>
         </div>
 
@@ -147,15 +201,28 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
                 key={s.id}
                 onClick={() => onSelect(s.id)}
                 style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 14px', borderRadius: 10, backgroundColor: '#181825',
-                  marginBottom: 6, cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 14px',
+                  borderRadius: 10,
+                  backgroundColor: '#181825',
+                  marginBottom: 6,
+                  cursor: 'pointer',
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#313244')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#181825')}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: '#cdd6f4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: '#cdd6f4',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {s.title || `Session ${s.id.slice(0, 8)}`}
                   </div>
                   <div style={{ fontSize: 11, color: '#585b70', marginTop: 2 }}>
@@ -165,8 +232,14 @@ export function SessionListPopup({ onClose, onSelect }: Props) {
                 <button
                   onClick={(e) => handleDelete(e, s.id)}
                   style={{
-                    background: 'none', border: 'none', color: '#585b70', cursor: 'pointer',
-                    padding: '4px 8px', borderRadius: 4, fontSize: 12, marginLeft: 8,
+                    background: 'none',
+                    border: 'none',
+                    color: '#585b70',
+                    cursor: 'pointer',
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    fontSize: 12,
+                    marginLeft: 8,
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.color = '#f38ba8')}
                   onMouseLeave={(e) => (e.currentTarget.style.color = '#585b70')}

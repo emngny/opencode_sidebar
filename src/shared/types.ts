@@ -8,7 +8,8 @@ export interface ChatMessage {
   timestamp: number;
   id?: string;
   isStreaming?: boolean;
-  eventType?: 'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
+  eventType?:
+    'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
   eventStatus?: 'running' | 'completed' | 'failed';
   /** Number of identical consecutive tool events merged into this card. */
   eventCount?: number;
@@ -49,7 +50,11 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === 'string') return err;
-  try { return String(err); } catch { return 'Unknown error'; }
+  try {
+    return String(err);
+  } catch {
+    return 'Unknown error';
+  }
 }
 
 /** Raw message part as returned by GET /session/:id/message */
@@ -169,11 +174,16 @@ export type ToolPart = ToolCallPart | ToolStatePart | { id?: string; type: strin
 /** Convert RawSessionMessage[] to ChatMessage[] — shared mapper */
 export function mapRawMessagesToChatMessages(raw: RawSessionMessage[], genId: () => string): ChatMessage[] {
   return raw.map((m) => {
-    const content = m.parts?.map((p) => {
-      if (typeof p.text === 'string') return p.text;
-      if (typeof p.content === 'string') return p.content;
-      return '';
-    }).join('\n') || m.info?.content || '';
+    const content =
+      m.parts
+        ?.map((p) => {
+          if (typeof p.text === 'string') return p.text;
+          if (typeof p.content === 'string') return p.content;
+          return '';
+        })
+        .join('\n') ||
+      m.info?.content ||
+      '';
     return {
       role: m.info?.role === 'user' ? 'user' : 'assistant',
       content,
@@ -563,11 +573,29 @@ export interface PathInfo {
  * Used for validation in vscode-api.ts and SidebarProvider.ts.
  */
 export const WEBVIEW_TO_EXTENSION_TYPES = [
-  'sendMessage', 'acceptReview', 'rejectReview', 'clearChat', 'abort',
-  'getSessions', 'loadSession', 'deleteSession', 'switchAgent', 'listProviders',
-  'setApiKey', 'removeApiKey', 'searchFiles', 'getSavedModel', 'saveModel',
-  'revertMessage', 'unrevert', 'respondPermission', 'respondReadPermission',
-  'openDiff', 'runCommand', 'loadSkills', 'webviewReady',
+  'sendMessage',
+  'acceptReview',
+  'rejectReview',
+  'clearChat',
+  'abort',
+  'getSessions',
+  'loadSession',
+  'deleteSession',
+  'switchAgent',
+  'listProviders',
+  'setApiKey',
+  'removeApiKey',
+  'searchFiles',
+  'getSavedModel',
+  'saveModel',
+  'revertMessage',
+  'unrevert',
+  'respondPermission',
+  'respondReadPermission',
+  'openDiff',
+  'runCommand',
+  'loadSkills',
+  'webviewReady',
 ] as const;
 
 /**
@@ -575,9 +603,27 @@ export const WEBVIEW_TO_EXTENSION_TYPES = [
  * Used for validation in vscode-api.ts and SidebarProvider.ts.
  */
 export const EXTENSION_TO_WEBVIEW_TYPES = [
-  'receiveMessage', 'receiveChunk', 'streamEnd', 'reviewReady', 'reviewResolved',
-  'status', 'gitInfo', 'projectInfo', 'sessionList', 'sessionLoaded', 'sessionDeleted',
-  'agentList', 'error', 'providerList', 'providerUpdated', 'fileSearchResults',
-  'savedModel', 'toolEvent', 'revertResult', 'messageMeta', 'reasoningContent',
-  'readFilePrompt', 'skillList',
+  'receiveMessage',
+  'receiveChunk',
+  'streamEnd',
+  'reviewReady',
+  'reviewResolved',
+  'status',
+  'gitInfo',
+  'projectInfo',
+  'sessionList',
+  'sessionLoaded',
+  'sessionDeleted',
+  'agentList',
+  'error',
+  'providerList',
+  'providerUpdated',
+  'fileSearchResults',
+  'savedModel',
+  'toolEvent',
+  'revertResult',
+  'messageMeta',
+  'reasoningContent',
+  'readFilePrompt',
+  'skillList',
 ] as const;

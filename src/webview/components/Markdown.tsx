@@ -27,10 +27,15 @@ export function Markdown({ content }: Props) {
       const pre = btn.closest('pre');
       const code = pre?.querySelector('code');
       if (!code) return;
-      navigator.clipboard.writeText(code.textContent || '').then(() => {
-        btn.textContent = 'Copied!';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
-      }).catch(() => {});
+      navigator.clipboard
+        .writeText(code.textContent || '')
+        .then(() => {
+          btn.textContent = 'Copied!';
+          setTimeout(() => {
+            btn.textContent = 'Copy';
+          }, 2000);
+        })
+        .catch(() => {});
     };
     root.addEventListener('click', handler);
     return () => root.removeEventListener('click', handler);
@@ -44,9 +49,16 @@ export function Markdown({ content }: Props) {
   };
 
   return (
-    <div ref={rootRef} className="opencode-markdown" style={{
-      fontSize: 13, lineHeight: 1.6, color: '#cdd6f4', wordBreak: 'break-word',
-    }}>
+    <div
+      ref={rootRef}
+      className="opencode-markdown"
+      style={{
+        fontSize: 13,
+        lineHeight: 1.6,
+        color: '#cdd6f4',
+        wordBreak: 'break-word',
+      }}
+    >
       <div dangerouslySetInnerHTML={{ __html: html }} onClick={handleLinkClick} />
     </div>
   );

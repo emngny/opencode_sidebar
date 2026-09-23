@@ -4,20 +4,30 @@ import { existsSync } from 'node:fs';
 function getGitExecutable(): string {
   const programFiles = process.env.ProgramFiles || String.raw`C:\Program Files`;
   const programFilesX86 = process.env['ProgramFiles(x86)'] || String.raw`C:\Program Files (x86)`;
-  const candidates = process.platform === 'win32'
-    ? [
-        String.raw`${programFiles}\Git\cmd\git.exe`,
-        String.raw`${programFilesX86}\Git\cmd\git.exe`,
-        String.raw`${process.env.LOCALAPPDATA || ''}\Programs\Git\cmd\git.exe`,
-      ]
-    : ['/opt/homebrew/bin/git', '/usr/local/bin/git', '/usr/bin/git'];
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          String.raw`${programFiles}\Git\cmd\git.exe`,
+          String.raw`${programFilesX86}\Git\cmd\git.exe`,
+          String.raw`${process.env.LOCALAPPDATA || ''}\Programs\Git\cmd\git.exe`,
+        ]
+      : ['/opt/homebrew/bin/git', '/usr/local/bin/git', '/usr/bin/git'];
   return candidates.find((candidate) => existsSync(candidate)) || candidates.at(-1) || '/usr/bin/git';
 }
 
 export class GitService {
   private static readonly ALLOWED_FLAGS = new Set([
-    '--no-index', '-U', '--unified', '--stat', '--shortstat', '--numstat',
-    '--name-only', '--name-status', '--check', '--color', '--color-words',
+    '--no-index',
+    '-U',
+    '--unified',
+    '--stat',
+    '--shortstat',
+    '--numstat',
+    '--name-only',
+    '--name-status',
+    '--check',
+    '--color',
+    '--color-words',
   ]);
 
   constructor(

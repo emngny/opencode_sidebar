@@ -41,10 +41,13 @@ function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
   const [showReasoning, setShowReasoning] = React.useState(false);
   const agentColor = !isUser ? getAgentColor(message.agent) : null;
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {});
+    navigator.clipboard
+      .writeText(message.content)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {});
   };
   return (
     <div
@@ -69,11 +72,11 @@ function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
       }}
       onMouseEnter={(e) => {
         const btns = e.currentTarget.querySelectorAll('.msg-action-btn') as NodeListOf<HTMLElement>;
-        btns.forEach((b) => b.style.opacity = '1');
+        btns.forEach((b) => (b.style.opacity = '1'));
       }}
       onMouseLeave={(e) => {
         const btns = e.currentTarget.querySelectorAll('.msg-action-btn') as NodeListOf<HTMLElement>;
-        btns.forEach((b) => b.style.opacity = '0');
+        btns.forEach((b) => (b.style.opacity = '0'));
       }}
     >
       {message.role === 'assistant' && message.isStreaming && message.content.length < 20 && (
@@ -87,52 +90,94 @@ function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
           <button
             type="button"
             onClick={() => setShowReasoning((visible) => !visible)}
-            style={{ ...flexRow, gap: 6, cursor: 'pointer', fontSize: 11, color: COLORS.textDim, userSelect: 'none', background: 'none', border: 'none', padding: 0, textAlign: 'left' }}
+            style={{
+              ...flexRow,
+              gap: 6,
+              cursor: 'pointer',
+              fontSize: 11,
+              color: COLORS.textDim,
+              userSelect: 'none',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              textAlign: 'left',
+            }}
           >
             <span>{showReasoning ? '▾' : '▸'}</span>
             <span>Reasoning ({message.reasoning.length} chars)</span>
           </button>
           {showReasoning && (
-            <div style={{
-              marginTop: 4, padding: '8px 10px',
-              backgroundColor: 'rgba(137,180,250,0.06)',
-              border: '1px solid rgba(137,180,250,0.15)',
-              borderRadius: 8,
-              fontSize: 11, color: '#a6adc8', lineHeight: 1.5,
-              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-              maxHeight: 200, overflowY: 'auto',
-            }}>
+            <div
+              style={{
+                marginTop: 4,
+                padding: '8px 10px',
+                backgroundColor: 'rgba(137,180,250,0.06)',
+                border: '1px solid rgba(137,180,250,0.15)',
+                borderRadius: 8,
+                fontSize: 11,
+                color: '#a6adc8',
+                lineHeight: 1.5,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                maxHeight: 200,
+                overflowY: 'auto',
+              }}
+            >
               {message.reasoning}
-              {message.isStreaming && <span style={{ display: 'inline-block', animation: 'blink 1s step-end infinite', marginLeft: 2 }}>▌</span>}
+              {message.isStreaming && (
+                <span style={{ display: 'inline-block', animation: 'blink 1s step-end infinite', marginLeft: 2 }}>
+                  ▌
+                </span>
+              )}
             </div>
           )}
         </div>
       )}
-      {message.content && (
-        message.role === 'assistant' ? (
+      {message.content &&
+        (message.role === 'assistant' ? (
           <Markdown content={message.content} />
         ) : (
-          <span style={{ whiteSpace: 'pre-wrap' }}>{message.role === 'user' ? highlightMentions(message.content) : collapseWhitespace(message.content)}</span>
-        )
-      )}
+          <span style={{ whiteSpace: 'pre-wrap' }}>
+            {message.role === 'user' ? highlightMentions(message.content) : collapseWhitespace(message.content)}
+          </span>
+        ))}
       {!message.isStreaming && (message.agent || message.modelId || message.duration !== undefined) && (
-        <div style={{ fontSize: 10, color: '#6c7086', display: 'flex', gap: 6, alignItems: 'center', marginTop: 2, flexWrap: 'wrap' }}>
-          {message.agent && (() => {
-            const c = getAgentColor(message.agent);
-            return (
-              <span style={{
-                padding: '1px 6px', borderRadius: 4, fontWeight: 500,
-                backgroundColor: c?.bg || 'transparent',
-                color: c?.text || '#6c7086',
-                border: `1px solid ${c?.border || 'transparent'}`,
-              }}>
-                {message.agent}
-              </span>
-            );
-          })()}
-          {(message.agent && message.modelId) && <span>·</span>}
-          {message.modelId && <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{message.modelId}</span>}
-          {(message.modelId && message.duration !== undefined) && <span>·</span>}
+        <div
+          style={{
+            fontSize: 10,
+            color: '#6c7086',
+            display: 'flex',
+            gap: 6,
+            alignItems: 'center',
+            marginTop: 2,
+            flexWrap: 'wrap',
+          }}
+        >
+          {message.agent &&
+            (() => {
+              const c = getAgentColor(message.agent);
+              return (
+                <span
+                  style={{
+                    padding: '1px 6px',
+                    borderRadius: 4,
+                    fontWeight: 500,
+                    backgroundColor: c?.bg || 'transparent',
+                    color: c?.text || '#6c7086',
+                    border: `1px solid ${c?.border || 'transparent'}`,
+                  }}
+                >
+                  {message.agent}
+                </span>
+              );
+            })()}
+          {message.agent && message.modelId && <span>·</span>}
+          {message.modelId && (
+            <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {message.modelId}
+            </span>
+          )}
+          {message.modelId && message.duration !== undefined && <span>·</span>}
           {message.duration !== undefined && <span>{message.duration}s</span>}
           {message.interrupted && <span style={{ color: '#f38ba8' }}>· Interrupted</span>}
         </div>
@@ -147,7 +192,10 @@ function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
           {isUser && message.id && onRevert && (
             <button
               className="msg-action-btn"
-              onClick={(e) => { e.stopPropagation(); onRevert(message.id!); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRevert(message.id!);
+              }}
               style={{
                 padding: '2px 6px',
                 fontSize: 10,

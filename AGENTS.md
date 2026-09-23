@@ -13,10 +13,10 @@
 
 Two independent compilation targets under `src/`:
 
-| Target | Dir | Entry | Build |
-|--------|-----|-------|-------|
-| Extension (Node.js) | `src/extension/` | `extension.ts` | tsc → `out/` |
-| Webview (React/DOM) | `src/webview/` | `index.tsx` | esbuild → `out/webview.js` |
+| Target              | Dir              | Entry          | Build                      |
+| ------------------- | ---------------- | -------------- | -------------------------- |
+| Extension (Node.js) | `src/extension/` | `extension.ts` | tsc → `out/`               |
+| Webview (React/DOM) | `src/webview/`   | `index.tsx`    | esbuild → `out/webview.js` |
 
 - Webview imports types from `src/extension/types.ts` (included via `tsconfig.webview.json`)
 - Webview ↔ Extension via typed `postMessage`/`onMessage` in `types.ts` + `vscode-api.ts`
@@ -26,15 +26,15 @@ Two independent compilation targets under `src/`:
 
 ## Key Files
 
-| File | Role |
-|------|------|
-| `src/extension/extension.ts` | Activation entrypoint; registers SidebarProvider only |
-| `src/extension/providers/SidebarProvider.ts` | Webview view provider; message dispatch, session management, permission prompts, skills loading |
-| `src/extension/services/OpencodeCli.ts` | Spawns `opencode serve --port 0`, HTTP API client, SSE streaming, diff polling, permission granting |
-| `src/extension/types.ts` | Shared types: ChatMessage, message types (WebviewTo/ExtensionTo), ProviderInfo, SessionDiff, etc. |
-| `src/extension/services/readPatterns.ts` | Deny patterns blocking reads of `.env`, secrets, `node_modules`, build artifacts |
-| `src/webview/App.tsx` | Main React app; message handler hub, model/mode/session state, revert, abort |
-| `src/webview/components/ChatContainer.tsx` | Message renderer: ChatBubble, EventCard, ContextGroup, CompactionDivider, DiffPreview |
+| File                                         | Role                                                                                                |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `src/extension/extension.ts`                 | Activation entrypoint; registers SidebarProvider only                                               |
+| `src/extension/providers/SidebarProvider.ts` | Webview view provider; message dispatch, session management, permission prompts, skills loading     |
+| `src/extension/services/OpencodeCli.ts`      | Spawns `opencode serve --port 0`, HTTP API client, SSE streaming, diff polling, permission granting |
+| `src/extension/types.ts`                     | Shared types: ChatMessage, message types (WebviewTo/ExtensionTo), ProviderInfo, SessionDiff, etc.   |
+| `src/extension/services/readPatterns.ts`     | Deny patterns blocking reads of `.env`, secrets, `node_modules`, build artifacts                    |
+| `src/webview/App.tsx`                        | Main React app; message handler hub, model/mode/session state, revert, abort                        |
+| `src/webview/components/ChatContainer.tsx`   | Message renderer: ChatBubble, EventCard, ContextGroup, CompactionDivider, DiffPreview               |
 
 ## Critical Gotchas
 
@@ -59,6 +59,7 @@ Two independent compilation targets under `src/`:
 ## Slash Commands
 
 Built-in (handled in `App.tsx` + `slashCommands.ts`):
+
 - `/init` — Creates a template `AGENTS.md` in workspace root
 - `/review` — Without text: runs `git diff --cached`, sends output for AI review. With text: switches to review mode and sends the remaining text as a prompt
 - `/plan`, `/build`, `/ask`, `/debug`, `/docs`, `/code` — Switch agent mode; any remaining text after the command is sent as a prompt in that mode
@@ -78,11 +79,12 @@ Pattern: [thing] [action] [reason]. [next step].
 ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift.
 Code/commits/PRs: normal. Off: "stop caveman" / "normal mode".
 
-
 <!-- caveman-begin -->
+
 Respond terse like smart caveman. All technical substance stay. Only fluff die.
 
 Rules:
+
 - Drop: articles (a/an/the), filler (just/really/basically), pleasantries, hedging
 - Fragments OK. Short synonyms. Technical terms exact. Code unchanged.
 - Pattern: [thing] [action] [reason]. [next step].
@@ -97,8 +99,8 @@ Auto-Clarity: drop caveman for security warnings, irreversible actions, user con
 Boundaries: code/commits/PRs written normal.
 <!-- caveman-end -->
 
-
 <!-- CODEGRAPH_START -->
+
 # CodeGraph
 
 In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo root), reach for it BEFORE grep/find or reading files when you need to understand or locate code:
@@ -109,8 +111,8 @@ In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the re
 If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
 <!-- CODEGRAPH_END -->
 
-
 <!-- CONTEXT_MODE_START -->
+
 # context-mode — MANDATORY routing rules
 
 `context-mode` tools are available. Rules protect context window from flooding.
@@ -155,12 +157,12 @@ Write artifacts to files, not inline. Return file path plus one-line description
 
 ## ctx commands
 
-| Command | Action |
-|---|---|
-| `ctx stats` | Call stats tool and display output verbatim |
-| `ctx doctor` | Call doctor tool, run returned command, display checklist |
+| Command       | Action                                                     |
+| ------------- | ---------------------------------------------------------- |
+| `ctx stats`   | Call stats tool and display output verbatim                |
+| `ctx doctor`  | Call doctor tool, run returned command, display checklist  |
 | `ctx upgrade` | Call upgrade tool, run returned command, display checklist |
-| `ctx purge` | Warn, then call purge with `confirm: true` |
+| `ctx purge`   | Warn, then call purge with `confirm: true`                 |
 
 After `/clear` or `/compact`, context-mode knowledge base and session stats persist. Use `ctx purge` to start fresh.
 <!-- CONTEXT_MODE_END -->

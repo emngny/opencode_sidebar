@@ -67,8 +67,17 @@ export function useChatState() {
   }, []);
 
   return {
-    messages, setMessages, busy, setBusy, contextEvents, setContextEvents,
-    pendingChunkRef, chunkFlushTimerRef, streamingMsgIdRef, DEBOUNCE_MS,
-    flushPendingChunk, cleanupStreaming,
+    messages,
+    setMessages,
+    busy,
+    setBusy,
+    contextEvents,
+    setContextEvents,
+    pendingChunkRef,
+    chunkFlushTimerRef,
+    streamingMsgIdRef,
+    DEBOUNCE_MS,
+    flushPendingChunk,
+    cleanupStreaming,
   };
 }

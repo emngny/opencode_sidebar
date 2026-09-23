@@ -50,8 +50,16 @@ describe('OpencodeCli.sendPrompt', () => {
     testable.sseStream = {
       connect: vi.fn(),
       parse: vi.fn(async (_response, handler) => {
-        handler({ id: 'evt-1', type: 'message.part.delta', properties: { sessionID: 'session-1', field: 'text', delta: 'hello' } });
-        handler({ id: 'evt-2', type: 'session.status', properties: { sessionID: 'session-1', status: { type: 'idle' } } });
+        handler({
+          id: 'evt-1',
+          type: 'message.part.delta',
+          properties: { sessionID: 'session-1', field: 'text', delta: 'hello' },
+        });
+        handler({
+          id: 'evt-2',
+          type: 'session.status',
+          properties: { sessionID: 'session-1', status: { type: 'idle' } },
+        });
       }),
     };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));

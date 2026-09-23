@@ -180,19 +180,39 @@ export class OpencodeCli {
       model?: string;
       agent?: string;
       extraParts?: SendPromptPart[];
-      onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: Record<string, unknown> }) => void;
-      onMessageMeta?: (meta: { id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } }) => void;
+      onToolEvent?: (event: {
+        id: string;
+        type: string;
+        name: string;
+        status: string;
+        content: string;
+        meta?: Record<string, unknown>;
+      }) => void;
+      onMessageMeta?: (meta: {
+        id: string;
+        agent?: string;
+        modelId?: string;
+        time?: { created?: number; completed?: number };
+      }) => void;
       onReasoning?: (text: string) => void;
       onDiffs?: (diffs: NormalizedDiff[]) => void;
     },
   ): Promise<string> {
-    const { onContent, onToolCall, onError, model, agent, extraParts, onToolEvent, onMessageMeta, onReasoning, onDiffs } = options || {};
+    const {
+      onContent,
+      onToolCall,
+      onError,
+      model,
+      agent,
+      extraParts,
+      onToolEvent,
+      onMessageMeta,
+      onReasoning,
+      onDiffs,
+    } = options || {};
     await this.start();
 
-    const parts: SendPromptPart[] = [
-      ...(extraParts || []),
-      { type: 'text', text: prompt },
-    ];
+    const parts: SendPromptPart[] = [...(extraParts || []), { type: 'text', text: prompt }];
     const body: SendPromptBody = { parts };
 
     if (model?.includes('/')) {
@@ -207,7 +227,15 @@ export class OpencodeCli {
     const controller = new AbortController();
     this.abortController = controller;
 
-    const callbacks: EventCallbacks = { onContent, onToolCall, onError, onToolEvent, onMessageMeta, onReasoning, onDiffs };
+    const callbacks: EventCallbacks = {
+      onContent,
+      onToolCall,
+      onError,
+      onToolEvent,
+      onMessageMeta,
+      onReasoning,
+      onDiffs,
+    };
     const dispatcher = new EventDispatcher(callbacks);
     this.eventDispatcher = dispatcher;
     dispatcher.resetSession(sessionId);
@@ -249,9 +277,10 @@ export class OpencodeCli {
 
         dispatcher.dispatch(event, sessionId);
         const info = props['info'];
-        const infoId = info && typeof info === 'object' && typeof (info as Record<string, unknown>)['id'] === 'string'
-          ? (info as Record<string, unknown>)['id'] as string
-          : undefined;
+        const infoId =
+          info && typeof info === 'object' && typeof (info as Record<string, unknown>)['id'] === 'string'
+            ? ((info as Record<string, unknown>)['id'] as string)
+            : undefined;
         if (!messageId && infoId) messageId = infoId;
 
         const status = props['status'];
@@ -265,15 +294,17 @@ export class OpencodeCli {
         headers: { 'Content-Type': 'application/json', ...this.authHeader },
         body: JSON.stringify(body),
         signal: controller.signal,
-      }).then(async (response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-        await this.sseStream.parse(response, dispatchEvent, controller.signal);
-        finish();
-      }).catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return;
-        onError?.(`Request failed: ${getErrorMessage(error)}`);
-        finish();
-      });
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+          await this.sseStream.parse(response, dispatchEvent, controller.signal);
+          finish();
+        })
+        .catch((error: unknown) => {
+          if (error instanceof Error && error.name === 'AbortError') return;
+          onError?.(`Request failed: ${getErrorMessage(error)}`);
+          finish();
+        });
 
       timeout = setTimeout(finish, 120000);
     });
@@ -320,7 +351,12 @@ export class OpencodeCli {
     return this.ensureApiClient().unrevertSession(sessionId);
   }
 
-  async respondPermission(sessionID: string, permissionId: string, response: string, remember?: boolean): Promise<boolean> {
+  async respondPermission(
+    sessionID: string,
+    permissionId: string,
+    response: string,
+    remember?: boolean,
+  ): Promise<boolean> {
     await this.start();
     return this.ensureApiClient().respondPermission(sessionID, permissionId, response, remember);
   }

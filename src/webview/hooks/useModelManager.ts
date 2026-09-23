@@ -21,7 +21,11 @@ export function useModelManager() {
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [revertActive, setRevertActive] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
-  const [readPermissionPrompt, setReadPermissionPrompt] = useState<{ filePath: string; reason: string; requestId: string } | null>(null);
+  const [readPermissionPrompt, setReadPermissionPrompt] = useState<{
+    filePath: string;
+    reason: string;
+    requestId: string;
+  } | null>(null);
   const [showProviders, setShowProviders] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
 
@@ -37,45 +41,68 @@ export function useModelManager() {
     setHiddenModels((prev) => ({ ...prev, [modelId]: !prev[modelId] }));
   }, []);
 
-  const handleToggleAllModels = useCallback((providerId: string, show: boolean) => {
-    setHiddenModels((prev) => {
-      const next = { ...prev };
-      for (const m of availableModels) {
-        if (m.providerId === providerId) {
-          if (show) delete next[m.id];
-          else next[m.id] = true;
+  const handleToggleAllModels = useCallback(
+    (providerId: string, show: boolean) => {
+      setHiddenModels((prev) => {
+        const next = { ...prev };
+        for (const m of availableModels) {
+          if (m.providerId === providerId) {
+            if (show) delete next[m.id];
+            else next[m.id] = true;
+          }
         }
-      }
-      return next;
-    });
-  }, [availableModels]);
+        return next;
+      });
+    },
+    [availableModels],
+  );
 
   const processProviderList = useCallback((result: ProviderListResult) => {
     setAvailableModels(buildModelItems(result));
     setProvidersLoaded(true);
   }, []);
 
-  const tryAutoSelectModel = useCallback((models: ModelItem[], currentModel: string, hidden: Record<string, boolean>) => {
-    const next = pickAutoSelectModel(models, currentModel, hidden);
-    if (next) setModel(next);
-  }, []);
+  const tryAutoSelectModel = useCallback(
+    (models: ModelItem[], currentModel: string, hidden: Record<string, boolean>) => {
+      const next = pickAutoSelectModel(models, currentModel, hidden);
+      if (next) setModel(next);
+    },
+    [],
+  );
 
   return {
-    model, setModel, mode, setMode,
-    gitInfo, setGitInfo,
-    availableModels, setAvailableModels,
-    hiddenModels, setHiddenModels,
-    providersLoaded, setProvidersLoaded,
-    skills, setSkills,
-    fileSearchResults, setFileSearchResults,
-    fileSearchQuery, setFileSearchQuery,
-    revertActive, setRevertActive,
-    confirmDialog, setConfirmDialog,
-    readPermissionPrompt, setReadPermissionPrompt,
-    showProviders, setShowProviders,
-    showSessions, setShowSessions,
+    model,
+    setModel,
+    mode,
+    setMode,
+    gitInfo,
+    setGitInfo,
+    availableModels,
+    setAvailableModels,
+    hiddenModels,
+    setHiddenModels,
+    providersLoaded,
+    setProvidersLoaded,
+    skills,
+    setSkills,
+    fileSearchResults,
+    setFileSearchResults,
+    fileSearchQuery,
+    setFileSearchQuery,
+    revertActive,
+    setRevertActive,
+    confirmDialog,
+    setConfirmDialog,
+    readPermissionPrompt,
+    setReadPermissionPrompt,
+    showProviders,
+    setShowProviders,
+    showSessions,
+    setShowSessions,
     pendingRevertRef,
-    toggleModelVisibility, handleToggleAllModels,
-    processProviderList, tryAutoSelectModel,
+    toggleModelVisibility,
+    handleToggleAllModels,
+    processProviderList,
+    tryAutoSelectModel,
   };
 }

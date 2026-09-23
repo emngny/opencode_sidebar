@@ -17,8 +17,8 @@
 
 ## Prerequisites
 
-- **Node.js** 18+ (for development and `opencode-ai` npm package)
-- **VS Code** 1.82+
+- **Node.js** 20+ (for development and `opencode-ai` npm package)
+- **VS Code** 1.85+
 - **opencode CLI** installed globally or available on PATH:
   ```sh
   npm install -g opencode-ai
@@ -39,21 +39,29 @@
 
 Supported providers include OpenAI, Anthropic, Google, Groq, and any provider supported by the opencode server.
 
+## Project Documentation
+
+- [Architecture](ARCHITECTURE.md) — components, runtime boundaries, data flow, and security model
+- [Contributing](CONTRIBUTING.md) — setup, development loop, and pull request checks
+- [OpenAPI contract](docs/openapi.yaml) — HTTP endpoints consumed by the extension
+- [Architecture decisions](docs/adr/) — accepted structural decisions
+- [Changelog](CHANGELOG.md) — release history and unreleased work
+
 ## Slash Commands
 
 Type `/` in the chat input to use slash commands:
 
-| Command | Description |
-|---------|-------------|
-| `/init` | Creates a template `AGENTS.md` in the workspace root |
-| `/review` | Runs `git diff --cached` and sends the output for AI review |
-| `/plan` | Switch to plan agent mode |
-| `/build` | Switch to build agent mode |
-| `/ask` | Switch to ask agent mode |
-| `/debug` | Switch to debug agent mode |
-| `/docs` | Switch to docs agent mode |
-| `/code` | Switch to code agent mode |
-| `/skillname` | Run any installed skill (from `.agents/skills/`) |
+| Command      | Description                                                 |
+| ------------ | ----------------------------------------------------------- |
+| `/init`      | Creates a template `AGENTS.md` in the workspace root        |
+| `/review`    | Runs `git diff --cached` and sends the output for AI review |
+| `/plan`      | Switch to plan agent mode                                   |
+| `/build`     | Switch to build agent mode                                  |
+| `/ask`       | Switch to ask agent mode                                    |
+| `/debug`     | Switch to debug agent mode                                  |
+| `/docs`      | Switch to docs agent mode                                   |
+| `/code`      | Switch to code agent mode                                   |
+| `/skillname` | Run any installed skill (from `.agents/skills/`)            |
 
 Built-in slash commands are handled by the extension itself. Skills are loaded from `.agents/skills/` — each subdirectory with a `SKILL.md` becomes a `/skillname` command.
 
@@ -122,19 +130,21 @@ npm run watch:extension   # tsc --watch
 npm run watch:webview     # esbuild --watch
 
 # Package for distribution
-npx vsce package
+npm run package
 ```
 
 ### Build Commands
 
-| Command | Description |
-|---------|-------------|
-| `npm run compile` | Full build: tsc + esbuild |
-| `tsc -p tsconfig.extension.json` | Extension (Node.js) only, outputs to `out/` |
-| `node esbuild.config.js` | Webview (React) only, outputs to `out/webview.js` |
-| `npm run watch:extension` | Watch mode for extension |
-| `npm run watch:webview` | Watch mode for webview |
-| `npx vsce package` | Package .vsix for distribution |
+| Command                          | Description                                       |
+| -------------------------------- | ------------------------------------------------- |
+| `npm run compile`                | Full build: tsc + esbuild                         |
+| `tsc -p tsconfig.extension.json` | Extension (Node.js) only, outputs to `out/`       |
+| `node esbuild.config.js`         | Webview (React) only, outputs to `out/webview.js` |
+| `npm run watch:extension`        | Watch mode for extension                          |
+| `npm run watch:webview`          | Watch mode for webview                            |
+| `npm run format:check`           | Check Prettier formatting                         |
+| `npm run validate`               | Run all CI quality gates                          |
+| `npm run package`                | Package `.vsix` for distribution                  |
 
 ### Project Structure
 
@@ -146,14 +156,14 @@ npx vsce package
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| Extension won't activate | Ensure VS Code 1.82+ and the sidebar is visible (View → Open View → Opencode) |
-| `opencode serve` starts but chat doesn't respond | Check the Developer Tools console for HTTP errors. The server uses dynamic port allocation via `--port 0`. |
-| API key not persisting | Keys are stored in VS Code SecretStorage. Try re-entering the key if it doesn't survive a restart. |
-| "Binary not found" error | Install `opencode-ai` globally (`npm install -g opencode-ai`) or set `OPENCODE_BIN_PATH` env var to the full path of the opencode executable. |
-| Webview shows blank screen | Run `npm run compile` to rebuild the webview bundle, then reload the VS Code window. |
-| SSE streams not arriving | Check network tab in DevTools. The server URL is logged to console as `[opencode] Server started on port: <port>`. |
+| Issue                                            | Solution                                                                                                                                      |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Extension won't activate                         | Ensure VS Code 1.85+ and the sidebar is visible (View → Open View → Opencode)                                                                 |
+| `opencode serve` starts but chat doesn't respond | Check the Developer Tools console for HTTP errors. The server uses dynamic port allocation via `--port 0`.                                    |
+| API key not persisting                           | Keys are stored in VS Code SecretStorage. Try re-entering the key if it doesn't survive a restart.                                            |
+| "Binary not found" error                         | Install `opencode-ai` globally (`npm install -g opencode-ai`) or set `OPENCODE_BIN_PATH` env var to the full path of the opencode executable. |
+| Webview shows blank screen                       | Run `npm run compile` to rebuild the webview bundle, then reload the VS Code window.                                                          |
+| SSE streams not arriving                         | Check network tab in DevTools. The server URL is logged to console as `[opencode] Server started on port: <port>`.                            |
 
 ## Security
 

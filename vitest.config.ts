@@ -10,12 +10,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: [
-        '**/*.test.{ts,tsx}',
-        'src/shared/types.ts',
-        'src/webview/index.tsx',
-        'out/**',
-      ],
+      exclude: ['**/*.test.{ts,tsx}', 'src/shared/types.ts', 'src/webview/index.tsx', 'out/**'],
       thresholds: {
         lines: 70,
         branches: 60,

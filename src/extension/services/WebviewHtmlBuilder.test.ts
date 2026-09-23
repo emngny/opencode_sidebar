@@ -6,7 +6,10 @@ vi.mock('vscode', () => ({ Uri: { joinPath: vi.fn((_root, ...parts: string[]) =>
 
 describe('WebviewHtmlBuilder', () => {
   it('builds secured webview HTML', () => {
-    const webview = { asWebviewUri: vi.fn((uri: vscode.Uri) => uri), cspSource: 'vscode-webview:' } as unknown as vscode.Webview;
+    const webview = {
+      asWebviewUri: vi.fn((uri: vscode.Uri) => uri),
+      cspSource: 'vscode-webview:',
+    } as unknown as vscode.Webview;
     const html = new WebviewHtmlBuilder({ fsPath: '/ext' } as vscode.Uri, () => undefined).build(webview);
     expect(html).toContain('<meta http-equiv="Content-Security-Policy"');
     expect(html).toContain('<div id="root"></div>');

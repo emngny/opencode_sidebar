@@ -18,7 +18,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private readonly _sessions: SessionService;
   private readonly _handler: SidebarMessageHandler;
 
-  constructor(private readonly _extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
+  constructor(
+    private readonly _extensionUri: vscode.Uri,
+    context: vscode.ExtensionContext,
+  ) {
     this._opencode = new OpencodeCli(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
     this._sessions = new SessionService(this._opencode);
     const permissions = new PermissionService();
@@ -29,7 +32,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const chat = new ChatCoordinator(this._opencode, this._sessions, post, contextService);
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
     const git = new GitService(root, (prompt, mode) => chat.processPrompt(prompt, mode));
-    this._handler = new SidebarMessageHandler(this._opencode, this._sessions, permissions, auth, skills, chat, context.workspaceState, post, git);
+    this._handler = new SidebarMessageHandler(
+      this._opencode,
+      this._sessions,
+      permissions,
+      auth,
+      skills,
+      chat,
+      context.workspaceState,
+      post,
+      git,
+    );
   }
 
   /** Configures webview options, HTML, and validated message dispatch. */
@@ -51,13 +64,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   /** Narrows untrusted webview data to a supported message envelope. */
   private validateMessage(data: unknown): data is WebviewToExtensionMessage {
-    if (!isRecord(data) || typeof data['type'] !== 'string' || !this.validatePayload(data['type'], data['payload'])) return false;
+    if (!isRecord(data) || typeof data['type'] !== 'string' || !this.validatePayload(data['type'], data['payload']))
+      return false;
     return true;
   }
 
   /** Validates required payload field types for each webview command. */
   validatePayload(type: string, payload: unknown): boolean {
-    const optional = new Set(['clearChat', 'unrevert', 'getSavedModel', 'loadSkills', 'webviewReady', 'listProviders', 'abort', 'getSessions']);
+    const optional = new Set([
+      'clearChat',
+      'unrevert',
+      'getSavedModel',
+      'loadSkills',
+      'webviewReady',
+      'listProviders',
+      'abort',
+      'getSessions',
+    ]);
     if (payload === undefined && optional.has(type)) return true;
     if (!isRecord(payload)) return false;
     const value = payload;
@@ -70,7 +93,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (type === 'respondPermission') return hasStrings('permId', 'response');
     if (type === 'respondReadPermission') return hasStrings('filePath', 'response');
     if (type === 'setApiKey') return hasStrings('providerId', 'key');
-    if (type === 'removeApiKey' || type === 'loadSession' || type === 'deleteSession') return hasStrings(type === 'removeApiKey' ? 'providerId' : 'sessionId');
+    if (type === 'removeApiKey' || type === 'loadSession' || type === 'deleteSession')
+      return hasStrings(type === 'removeApiKey' ? 'providerId' : 'sessionId');
     if (type === 'sendMessage') return hasStrings('prompt');
     if (type === 'switchAgent') return hasStrings('agent');
     return true;

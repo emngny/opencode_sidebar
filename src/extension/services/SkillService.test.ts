@@ -3,7 +3,12 @@ import * as vscode from 'vscode';
 import { SkillService } from './SkillService';
 
 vi.mock('vscode', () => ({ workspace: { workspaceFolders: [{ uri: { fsPath: '/workspace' } }] } }));
-vi.mock('node:fs', () => ({ existsSync: vi.fn(), readFileSync: vi.fn(), readdirSync: vi.fn(), writeFileSync: vi.fn() }));
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+  readdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+}));
 vi.mock('node:path', () => ({ join: vi.fn((...parts: string[]) => parts.join('/')) }));
 
 describe('SkillService', () => {

@@ -2,7 +2,10 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
-export interface SkillSummary { name: string; description?: string }
+export interface SkillSummary {
+  name: string;
+  description?: string;
+}
 
 export class SkillService {
   private _skillsDir(): string | null {
@@ -35,8 +38,12 @@ export class SkillService {
     if (!skillsDir) return null;
     const skillMdPath = path.join(skillsDir, name, 'SKILL.md');
     if (!existsSync(skillMdPath)) return null;
-    try { return readFileSync(skillMdPath, 'utf-8'); }
-    catch (error) { console.warn('[opencode] Load skill content failed:', error); return null; }
+    try {
+      return readFileSync(skillMdPath, 'utf-8');
+    } catch (error) {
+      console.warn('[opencode] Load skill content failed:', error);
+      return null;
+    }
   }
 
   createAgentsFile(): { status: 'created' | 'exists' | 'error'; message?: string } {
@@ -45,7 +52,11 @@ export class SkillService {
     const agentsMdPath = path.join(root, 'AGENTS.md');
     if (existsSync(agentsMdPath)) return { status: 'exists' };
     const content = `# Project Guide for Opencode AI\n\n## Project Overview\n- **What does this project do?**\n-\n\n## Conventions\n-\n\n## Commands\n- **Build:**\n- **Test:**\n- **Lint:**\n\n## Key Files\n- **Entry point:**\n- **Configuration:**\n`;
-    try { writeFileSync(agentsMdPath, content, 'utf-8'); return { status: 'created' }; }
-    catch (error) { return { status: 'error', message: error instanceof Error ? error.message : String(error) }; }
+    try {
+      writeFileSync(agentsMdPath, content, 'utf-8');
+      return { status: 'created' };
+    } catch (error) {
+      return { status: 'error', message: error instanceof Error ? error.message : String(error) };
+    }
   }
 }

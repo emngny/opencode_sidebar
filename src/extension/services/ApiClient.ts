@@ -207,7 +207,12 @@ export class ApiClient {
     }
   }
 
-  async respondPermission(sessionID: string, permissionId: string, response: string, remember?: boolean): Promise<boolean> {
+  async respondPermission(
+    sessionID: string,
+    permissionId: string,
+    response: string,
+    remember?: boolean,
+  ): Promise<boolean> {
     try {
       const url = `${this.baseUrl}/session/${sessionID}/permissions/${permissionId}`;
       const res = await fetch(url, {

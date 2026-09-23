@@ -13,7 +13,8 @@ interface Props {
 
 function formatArgs(args: unknown): React.ReactNode {
   if (typeof args === 'string') return <span style={{ fontSize: 11, color: '#6c7086' }}>{args}</span>;
-  if (typeof args !== 'object' || args === null) return <span style={{ fontSize: 11, color: '#6c7086' }}>{String(args)}</span>;
+  if (typeof args !== 'object' || args === null)
+    return <span style={{ fontSize: 11, color: '#6c7086' }}>{String(args)}</span>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}>
@@ -52,7 +53,19 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
   if (eventType === 'thinking') {
     borderColor = '#585b70';
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', backgroundColor: bgColor, border: `1px solid ${borderColor}`, borderRadius: 10, fontSize: 12, color: '#a6adc8' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 12px',
+          backgroundColor: bgColor,
+          border: `1px solid ${borderColor}`,
+          borderRadius: 10,
+          fontSize: 12,
+          color: '#a6adc8',
+        }}
+      >
         <ThinkingDots small />
         <span>Thinking...</span>
       </div>
@@ -69,34 +82,99 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
     };
     if (responded || status === 'completed') {
       return (
-        <div style={{
-          padding: '10px 14px', backgroundColor: 'rgba(166,227,161,0.05)',
-          border: '1px solid rgba(166,227,161,0.3)', borderRadius: 10,
-          display: 'flex', alignItems: 'center', gap: 8, maxWidth: '90%', alignSelf: 'flex-start',
-          fontSize: 12, color: '#a6e3a1',
-        }}>
+        <div
+          style={{
+            padding: '10px 14px',
+            backgroundColor: 'rgba(166,227,161,0.05)',
+            border: '1px solid rgba(166,227,161,0.3)',
+            borderRadius: 10,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            maxWidth: '90%',
+            alignSelf: 'flex-start',
+            fontSize: 12,
+            color: '#a6e3a1',
+          }}
+        >
           <span style={{ fontSize: 14 }}>{responded === 'deny' ? '🔒' : '🔓'}</span>
           <span>Permission {responded || 'resolved'}</span>
         </div>
       );
     }
     return (
-      <div style={{
-        padding: '12px 14px', backgroundColor: 'rgba(137,180,250,0.06)',
-        border: '1px solid rgba(137,180,250,0.3)', borderRadius: 10,
-        display: 'flex', flexDirection: 'column', gap: 8, maxWidth: '90%', alignSelf: 'flex-start',
-      }}>
+      <div
+        style={{
+          padding: '12px 14px',
+          backgroundColor: 'rgba(137,180,250,0.06)',
+          border: '1px solid rgba(137,180,250,0.3)',
+          borderRadius: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          maxWidth: '90%',
+          alignSelf: 'flex-start',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 14 }}>🔒</span>
           <span style={{ fontSize: 12, color: '#89b4fa', fontWeight: 500 }}>Permission required</span>
         </div>
         <div style={{ fontSize: 12, color: '#a6adc8', paddingLeft: 22 }}>
-          {permType}{patterns.length > 0 && <span style={{ color: '#cdd6f4', fontFamily: 'monospace', marginLeft: 4 }}>{patterns.join(', ')}</span>}
+          {permType}
+          {patterns.length > 0 && (
+            <span style={{ color: '#cdd6f4', fontFamily: 'monospace', marginLeft: 4 }}>{patterns.join(', ')}</span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 6, paddingLeft: 22 }}>
-          <button onClick={() => handleResponse('allow', false)} disabled={!!responded} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 6, border: '1px solid rgba(137,180,250,0.3)', background: 'rgba(137,180,250,0.15)', color: '#89b4fa', cursor: responded ? 'not-allowed' : 'pointer', opacity: responded ? 0.6 : 1 }}>Allow once</button>
-          <button onClick={() => handleResponse('allow', true)} disabled={!!responded} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 6, border: '1px solid #7c3aed', background: '#7c3aed', color: '#fff', cursor: responded ? 'not-allowed' : 'pointer', opacity: responded ? 0.6 : 1 }}>Always</button>
-          <button onClick={() => handleResponse('deny', false)} disabled={!!responded} style={{ padding: '5px 12px', fontSize: 11, borderRadius: 6, border: '1px solid #45475a', background: 'transparent', color: '#f38ba8', cursor: responded ? 'not-allowed' : 'pointer', opacity: responded ? 0.6 : 1 }}>Deny</button>
+          <button
+            onClick={() => handleResponse('allow', false)}
+            disabled={!!responded}
+            style={{
+              padding: '5px 12px',
+              fontSize: 11,
+              borderRadius: 6,
+              border: '1px solid rgba(137,180,250,0.3)',
+              background: 'rgba(137,180,250,0.15)',
+              color: '#89b4fa',
+              cursor: responded ? 'not-allowed' : 'pointer',
+              opacity: responded ? 0.6 : 1,
+            }}
+          >
+            Allow once
+          </button>
+          <button
+            onClick={() => handleResponse('allow', true)}
+            disabled={!!responded}
+            style={{
+              padding: '5px 12px',
+              fontSize: 11,
+              borderRadius: 6,
+              border: '1px solid #7c3aed',
+              background: '#7c3aed',
+              color: '#fff',
+              cursor: responded ? 'not-allowed' : 'pointer',
+              opacity: responded ? 0.6 : 1,
+            }}
+          >
+            Always
+          </button>
+          <button
+            onClick={() => handleResponse('deny', false)}
+            disabled={!!responded}
+            style={{
+              padding: '5px 12px',
+              fontSize: 11,
+              borderRadius: 6,
+              border: '1px solid #45475a',
+              background: 'transparent',
+              color: '#f38ba8',
+              cursor: responded ? 'not-allowed' : 'pointer',
+              opacity: responded ? 0.6 : 1,
+            }}
+          >
+            Deny
+          </button>
         </div>
       </div>
     );
@@ -162,15 +240,33 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
 
   if (eventType === 'tool_result' && meta?.result) {
     if (typeof meta.result === 'string') {
-      resultContent = <pre style={{ margin: 0, fontSize: 10, color: '#6c7086', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{meta.result.slice(0, 500)}{meta.result.length > 500 ? '...' : ''}</pre>;
+      resultContent = (
+        <pre style={{ margin: 0, fontSize: 10, color: '#6c7086', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {meta.result.slice(0, 500)}
+          {meta.result.length > 500 ? '...' : ''}
+        </pre>
+      );
     } else {
-      resultContent = <pre style={{ margin: 0, fontSize: 10, color: '#6c7086', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{JSON.stringify(meta.result, null, 2).slice(0, 500)}{JSON.stringify(meta.result).length > 500 ? '...' : ''}</pre>;
+      resultContent = (
+        <pre style={{ margin: 0, fontSize: 10, color: '#6c7086', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {JSON.stringify(meta.result, null, 2).slice(0, 500)}
+          {JSON.stringify(meta.result).length > 500 ? '...' : ''}
+        </pre>
+      );
     }
   }
 
   if (status === 'failed' && meta?.error) {
     errorContent = (
-      <div style={{ fontSize: 11, color: '#f38ba8', padding: '6px 10px', backgroundColor: 'rgba(243,139,168,0.08)', borderRadius: 6 }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: '#f38ba8',
+          padding: '6px 10px',
+          backgroundColor: 'rgba(243,139,168,0.08)',
+          borderRadius: 6,
+        }}
+      >
         {meta.error}
       </div>
     );
@@ -186,12 +282,19 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
           <span style={{ color: '#a6e3a1' }}>+{added}</span>
           <span style={{ color: '#f38ba8' }}>-{deleted}</span>
           <button
-            onClick={(e) => { e.stopPropagation(); if (meta.path) onOpenDiff?.(meta.path); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (meta.path) onOpenDiff?.(meta.path);
+            }}
             style={{
-              marginLeft: 8, padding: '2px 8px', fontSize: 10, borderRadius: 4,
+              marginLeft: 8,
+              padding: '2px 8px',
+              fontSize: 10,
+              borderRadius: 4,
               border: '1px solid rgba(137,180,250,0.3)',
               background: 'rgba(137,180,250,0.1)',
-              color: '#89b4fa', cursor: 'pointer',
+              color: '#89b4fa',
+              cursor: 'pointer',
             }}
           >
             Open
@@ -206,23 +309,32 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
 
   let taskLink: React.ReactNode = null;
   if (eventType === 'tool_result' && meta?.sessionId) {
-    const agentLabel = meta.subagentType ? `${meta.subagentType.charAt(0).toUpperCase() + meta.subagentType.slice(1)} agent` : 'Sub-agent';
+    const agentLabel = meta.subagentType
+      ? `${meta.subagentType.charAt(0).toUpperCase() + meta.subagentType.slice(1)} agent`
+      : 'Sub-agent';
     icon = '📋';
     title = meta.description || `${agentLabel} task`;
     const sessionId = meta.sessionId;
-    taskLink = sessionId && onLoadSession ? (
-      <button
-        onClick={(e) => { e.stopPropagation(); onLoadSession(sessionId); }}
-        style={{
-          padding: '4px 10px', fontSize: 11, borderRadius: 6,
-          border: '1px solid rgba(137,180,250,0.3)',
-          background: 'rgba(137,180,250,0.1)',
-          color: '#89b4fa', cursor: 'pointer',
-        }}
-      >
-        🔗 Open {agentLabel}
-      </button>
-    ) : null;
+    taskLink =
+      sessionId && onLoadSession ? (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onLoadSession(sessionId);
+          }}
+          style={{
+            padding: '4px 10px',
+            fontSize: 11,
+            borderRadius: 6,
+            border: '1px solid rgba(137,180,250,0.3)',
+            background: 'rgba(137,180,250,0.1)',
+            color: '#89b4fa',
+            cursor: 'pointer',
+          }}
+        >
+          🔗 Open {agentLabel}
+        </button>
+      ) : null;
   }
 
   const hasDetail = argsContent || resultContent || errorContent || fileInfo || !!taskLink;
@@ -246,15 +358,43 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
         type="button"
         disabled={!hasDetail}
         onClick={() => hasDetail && setExpanded((current) => !current)}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: 0, border: 'none', background: 'none', color: 'inherit', textAlign: 'left', cursor: hasDetail ? 'pointer' : 'default' }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          width: '100%',
+          padding: 0,
+          border: 'none',
+          background: 'none',
+          color: 'inherit',
+          textAlign: 'left',
+          cursor: hasDetail ? 'pointer' : 'default',
+        }}
       >
         <span style={{ fontSize: 14 }}>{icon}</span>
-        <span style={{ fontSize: 12, color: titleColor, fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span
+          style={{
+            fontSize: 12,
+            color: titleColor,
+            fontWeight: 500,
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {title}
         </span>
         {status === 'running' && <ThinkingDots small />}
         {hasDetail && (
-          <span style={{ color: '#585b70', fontSize: 10, transition: 'transform 0.2s', transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+          <span
+            style={{
+              color: '#585b70',
+              fontSize: 10,
+              transition: 'transform 0.2s',
+              transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            }}
+          >
             ▶
           </span>
         )}
@@ -270,9 +410,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
           {taskLink}
         </div>
       )}
-      {taskLink && !expanded && (
-        <div style={{ paddingLeft: 22 }}>{taskLink}</div>
-      )}
+      {taskLink && !expanded && <div style={{ paddingLeft: 22 }}>{taskLink}</div>}
     </div>
   );
 }

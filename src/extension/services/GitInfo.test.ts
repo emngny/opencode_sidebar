@@ -31,12 +31,8 @@ describe('getGitInfo', () => {
   });
 
   it('reads branch and relative commit time from first workspace folder', () => {
-    (vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = [
-      { uri: { fsPath: '/workspace/project' } },
-    ];
-    vi.mocked(execFileSync)
-      .mockReturnValueOnce('main\n')
-      .mockReturnValueOnce('2 hours ago\n');
+    (vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = [{ uri: { fsPath: '/workspace/project' } }];
+    vi.mocked(execFileSync).mockReturnValueOnce('main\n').mockReturnValueOnce('2 hours ago\n');
 
     expect(getGitInfo()).toEqual({
       projectPath: '/workspace/project',
@@ -54,9 +50,7 @@ describe('getGitInfo', () => {
   });
 
   it('keeps successful values when one git command fails', () => {
-    (vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = [
-      { uri: { fsPath: '/workspace/project' } },
-    ];
+    (vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = [{ uri: { fsPath: '/workspace/project' } }];
     vi.mocked(execFileSync)
       .mockReturnValueOnce('feature\n')
       .mockImplementationOnce(() => {

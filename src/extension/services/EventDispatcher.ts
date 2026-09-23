@@ -38,7 +38,11 @@ function extractReadPaths(tool: string, args: unknown): string[] {
   if (!args) return [];
   let a: unknown = args;
   if (typeof args === 'string') {
-    try { a = JSON.parse(args) as unknown; } catch { return []; }
+    try {
+      a = JSON.parse(args) as unknown;
+    } catch {
+      return [];
+    }
   }
   if (!isRecord(a) && !Array.isArray(a)) return [];
   switch (tool) {
@@ -117,9 +121,10 @@ export class EventDispatcher {
     if (!isRecord(infoRaw) || typeof infoRaw['id'] !== 'string' || !cb.onMessageMeta) return;
     const agent = typeof infoRaw['agent'] === 'string' ? (infoRaw['agent'] as string) : undefined;
     const modelRaw = isRecord(infoRaw['model']) ? (infoRaw['model'] as Record<string, unknown>) : undefined;
-    const modelId = modelRaw && typeof modelRaw['providerID'] === 'string' && typeof modelRaw['modelID'] === 'string'
-      ? `${modelRaw['providerID'] as string}/${modelRaw['modelID'] as string}`
-      : undefined;
+    const modelId =
+      modelRaw && typeof modelRaw['providerID'] === 'string' && typeof modelRaw['modelID'] === 'string'
+        ? `${modelRaw['providerID'] as string}/${modelRaw['modelID'] as string}`
+        : undefined;
     const timeRaw = isRecord(infoRaw['time']) ? (infoRaw['time'] as Record<string, unknown>) : undefined;
     const time = timeRaw
       ? {
@@ -174,11 +179,13 @@ export class EventDispatcher {
         content: `${name} result`,
         meta: { result: part['result'] },
       });
-      const resultStr = typeof part['result'] === 'string' ? (part['result'] as string) : JSON.stringify(part['result']);
+      const resultStr =
+        typeof part['result'] === 'string' ? (part['result'] as string) : JSON.stringify(part['result']);
       cb.onContent?.(`\n[Tool: ${name}]\n${resultStr}\n[/Tool]\n`);
     }
   }
 
+  /** Emits the initial tool call and read-path metadata. */
   private handleToolCallEvent(cb: EventCallbacks, part: ToolPart): void {
     const rec = part as Record<string, unknown>;
     const toolName = typeof rec['name'] === 'string' ? (rec['name'] as string) : 'unknown';
@@ -207,6 +214,7 @@ export class EventDispatcher {
     cb.onToolCall?.(toolName, toolArgs);
   }
 
+  /** Emits running, completed, or failed states for an active tool. */
   private handleToolStateEvent(cb: EventCallbacks, part: ToolPart): void {
     const rec = part as Record<string, unknown>;
     const toolName = typeof rec['tool'] === 'string' ? (rec['tool'] as string) : 'unknown';
@@ -256,7 +264,9 @@ export class EventDispatcher {
         meta,
       });
       if (toolResult !== undefined && toolResult !== null && toolResult !== '') {
-        cb.onContent?.(`\n[${toolName} result]\n${typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)}\n[/${toolName}]\n`);
+        cb.onContent?.(
+          `\n[${toolName} result]\n${typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)}\n[/${toolName}]\n`,
+        );
       }
     } else if (status === 'failed') {
       if (READ_TOOLS.has(toolName)) {
@@ -281,7 +291,9 @@ export class EventDispatcher {
         content: `${toolName} failed`,
         meta: { error: (state?.['error'] as string) || (state?.['reason'] as string) },
       });
-      cb.onError?.(`${toolName} failed: ${(state?.['error'] as string) || (state?.['reason'] as string) || 'unknown error'}`);
+      cb.onError?.(
+        `${toolName} failed: ${(state?.['error'] as string) || (state?.['reason'] as string) || 'unknown error'}`,
+      );
     }
   }
 
@@ -305,7 +317,8 @@ export class EventDispatcher {
   /** Forwards server-reported session errors to the error callback. */
   private handleSessionError(event: SSEMessage): void {
     const errRaw = (event.properties as Record<string, unknown>)['error'];
-    const msg = isRecord(errRaw) && typeof errRaw['message'] === 'string' ? (errRaw['message'] as string) : 'Unknown error';
+    const msg =
+      isRecord(errRaw) && typeof errRaw['message'] === 'string' ? (errRaw['message'] as string) : 'Unknown error';
     this.callbacks.onError?.(msg);
   }
 
@@ -344,8 +357,12 @@ export class EventDispatcher {
   private handlePermissionAsked(event: SSEMessage, sessionId: string): void {
     const cb = this.callbacks;
     const props = event.properties as Record<string, unknown>;
-    const permId = (props['id'] as string | undefined) || (props['permissionID'] as string | undefined) || (props['permissionId'] as string | undefined);
-    const permSessionId = (props['sessionID'] as string | undefined) || (props['sessionId'] as string | undefined) || sessionId;
+    const permId =
+      (props['id'] as string | undefined) ||
+      (props['permissionID'] as string | undefined) ||
+      (props['permissionId'] as string | undefined);
+    const permSessionId =
+      (props['sessionID'] as string | undefined) || (props['sessionId'] as string | undefined) || sessionId;
     const permType = props['permission'] as string | undefined;
     const patternsRaw = props['patterns'];
     const patterns = Array.isArray(patternsRaw) ? (patternsRaw as unknown[]) : [];

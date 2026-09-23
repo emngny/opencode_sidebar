@@ -18,7 +18,8 @@ describe('SseStream', () => {
   it('should parse data: lines', async () => {
     const encoder = new TextEncoder();
     const mockReader = {
-      read: vi.fn()
+      read: vi
+        .fn()
         .mockResolvedValueOnce({ done: false, value: encoder.encode('data: {"type":"test","properties":{}}\n\n') })
         .mockResolvedValueOnce({ done: true }),
     };
@@ -39,12 +40,13 @@ describe('SseStream', () => {
   it('parses events split across many small chunks', async () => {
     const encoder = new TextEncoder();
     const event = 'data: {"type":"test","properties":{"value":"' + 'x'.repeat(1000) + '"}}\n\n';
-    const chunks = Array.from({ length: Math.ceil(event.length / 10) }, (_, index) => encoder.encode(event.slice(index * 10, (index + 1) * 10)));
+    const chunks = Array.from({ length: Math.ceil(event.length / 10) }, (_, index) =>
+      encoder.encode(event.slice(index * 10, (index + 1) * 10)),
+    );
     const mockReader = {
-      read: vi.fn()
-        .mockImplementation(async () => chunks.length > 0
-          ? { done: false, value: chunks.shift() }
-          : { done: true }),
+      read: vi
+        .fn()
+        .mockImplementation(async () => (chunks.length > 0 ? { done: false, value: chunks.shift() } : { done: true })),
     };
     mockFetch.mockResolvedValue({
       ok: true,
@@ -61,8 +63,14 @@ describe('SseStream', () => {
   it('should handle multi-line data', async () => {
     const encoder = new TextEncoder();
     const mockReader = {
-      read: vi.fn()
-        .mockResolvedValueOnce({ done: false, value: encoder.encode('data: {"type":"msg","properties":{"part":{"id":"1","type":"text"}}}\ndata: {"type":"msg","properties":{"part":{"id":"1","type":"text","result":"done"}}}\n\n') })
+      read: vi
+        .fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: encoder.encode(
+            'data: {"type":"msg","properties":{"part":{"id":"1","type":"text"}}}\ndata: {"type":"msg","properties":{"part":{"id":"1","type":"text","result":"done"}}}\n\n',
+          ),
+        })
         .mockResolvedValueOnce({ done: true }),
     };
 
@@ -81,8 +89,12 @@ describe('SseStream', () => {
   it('should handle event: prefix for event type', async () => {
     const encoder = new TextEncoder();
     const mockReader = {
-      read: vi.fn()
-        .mockResolvedValueOnce({ done: false, value: encoder.encode('event: message\ndata: {"type":"test","properties":{}}\n\n') })
+      read: vi
+        .fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: encoder.encode('event: message\ndata: {"type":"test","properties":{}}\n\n'),
+        })
         .mockResolvedValueOnce({ done: true }),
     };
 
@@ -102,8 +114,12 @@ describe('SseStream', () => {
   it('should handle retry: directive', async () => {
     const encoder = new TextEncoder();
     const mockReader = {
-      read: vi.fn()
-        .mockResolvedValueOnce({ done: false, value: encoder.encode('retry: 5000\ndata: {"type":"test","properties":{}}\n\n') })
+      read: vi
+        .fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: encoder.encode('retry: 5000\ndata: {"type":"test","properties":{}}\n\n'),
+        })
         .mockResolvedValueOnce({ done: true }),
     };
 
@@ -137,9 +153,10 @@ describe('SseStream', () => {
     });
 
     const stream = new SseStream();
-    (stream as unknown as { maxRetries: number }).maxRetries = 1;
+    (stream as unknown as { maxRetries: number }).maxRetries = 2;
+    const sleep = vi.spyOn(stream as any, 'sleep').mockResolvedValue(undefined);
 
-    await stream.connect('http://localhost/event', {}, () => {}, { aborted: false } as any);
+    await stream.connect('http://localhost/event', {}, () => {}, new AbortController().signal);
 
     expect(attempts).toBe(2);
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -163,7 +180,8 @@ describe('SseStream', () => {
     const response = { ok: true, body: null } as Response;
     const stream = new SseStream();
 
-    await expect(stream.parse(response, () => {}, new AbortController().signal))
-      .rejects.toThrow('SSE response has no body');
+    await expect(stream.parse(response, () => {}, new AbortController().signal)).rejects.toThrow(
+      'SSE response has no body',
+    );
   });
 });

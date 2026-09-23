@@ -6,7 +6,10 @@ import { isReadDenied } from './readPatterns';
  */
 export class PermissionService {
   private readonly _readAllowCache = new Set<string>();
-  private readonly _pendingResolvers = new Map<string, Set<(response: { allowed: boolean; remember?: boolean }) => void>>();
+  private readonly _pendingResolvers = new Map<
+    string,
+    Set<(response: { allowed: boolean; remember?: boolean }) => void>
+  >();
 
   isReadAllowed(filePath: string): { allowed: boolean; deniedPattern?: string } {
     const deniedPattern = isReadDenied(filePath);

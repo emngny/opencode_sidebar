@@ -30,7 +30,7 @@ export class SseStream {
     url: string,
     headers: Record<string, string>,
     onEvent: EventCallback,
-    signal: AbortSignal
+    signal: AbortSignal,
   ): Promise<void> {
     let attempt = 0;
 
@@ -54,17 +54,16 @@ export class SseStream {
         }
 
         const delay = this.getRetryDelay(attempt);
-        console.warn(`[opencode:sse] ${url} disconnected, retrying in ${delay}ms (attempt ${attempt}/${this.maxRetries})`);
+        console.warn(
+          `[opencode:sse] ${url} disconnected, retrying in ${delay}ms (attempt ${attempt}/${this.maxRetries})`,
+        );
         await this.sleep(delay, signal);
       }
     }
   }
 
   private getRetryDelay(attempt: number): number {
-    const exponentialDelay = Math.min(
-      this.maxRetryDelay,
-      this.baseRetryDelay * Math.pow(2, attempt - 1),
-    );
+    const exponentialDelay = Math.min(this.maxRetryDelay, this.baseRetryDelay * Math.pow(2, attempt - 1));
     const halfDelay = exponentialDelay / 2;
     return Math.round(halfDelay + randomInt(0, exponentialDelay) / 2);
   }

@@ -14,7 +14,7 @@ async function build() {
     // Keep production bundle lean; watch builds still get useful source maps.
     sourcemap: watch,
     minify: true,
-    external: ['vscode']
+    external: ['vscode'],
   });
 
   if (watch) {
