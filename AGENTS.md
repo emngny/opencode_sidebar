@@ -22,7 +22,7 @@ Two independent compilation targets under `src/`:
 - Webview ↔ Extension via typed `postMessage`/`onMessage` in `types.ts` + `vscode-api.ts`
 - Extension runs in VS Code's Electron Node — Node builtins available
 - Single `package.json`, no monorepo
-- The `commands/` directory is empty — no VS Code commands are registered beyond the webview provider. The `opencode.run` command declared in `package.json` is never wired up.
+- The `commands/` directory is empty — no VS Code commands are registered beyond the webview provider.
 
 ## Key Files
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from '../types';
+import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from '../../shared/types';
 
 describe('Extension-Webview Message Protocol', () => {
   describe('Message Type Definitions', () => {

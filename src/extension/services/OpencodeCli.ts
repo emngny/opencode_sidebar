@@ -1,12 +1,25 @@
 import { spawn, ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { access } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { ProviderListResult } from '../types';
+import {
+  ProviderListResult,
+  ProjectInfo,
+  PathInfo,
+  VcsInfo,
+  ProviderAuthMap,
+  RawSessionMessage,
+  RevertResult,
+  UnrevertResult,
+  SendPromptBody,
+  SendPromptPart,
+  getErrorMessage,
+} from '../../shared/types';
 import { ApiClient } from './ApiClient';
 import { SseStream, SSEMessage } from './SseStream';
 import { EventDispatcher, EventCallbacks } from './EventDispatcher';
 import { NormalizedDiff } from '../utils/diffUtils';
+import { ServerProcessManager } from './ServerProcessManager';
 
 interface OpencodeServerInfo {
   port: number;
@@ -32,14 +45,15 @@ export class OpencodeCli {
   private abortController: AbortController | null = null;
   private binaryCandidates: string[] = [];
   private readonly cwd: string | undefined;
+  private readonly serverManager: ServerProcessManager;
   private apiClient: ApiClient | null = null;
   private readonly sseStream: SseStream;
   private eventDispatcher: EventDispatcher | null = null;
   private readonly idleResolveRefs = new Map<string, () => void>();
 
   constructor(cwd?: string) {
-    this.binaryCandidates = this.resolveBinaryCandidates();
     this.cwd = cwd;
+    this.serverManager = new ServerProcessManager(cwd);
     this.sseStream = new SseStream();
   }
 
@@ -49,27 +63,30 @@ export class OpencodeCli {
    * (e.g. left behind by an old npm install) must not hard-fail startup:
    * if it fails at serve time we fall through to the next candidate.
    */
-  private resolveBinaryCandidates(): string[] {
+  private async resolveBinaryCandidates(): Promise<string[]> {
     const existing: string[] = [];
 
-    // Priority 1: explicit env var override (restricted to allowed directories)
+    // Priority 1: explicit env var override (restricted to user npm directories)
     const envPath = process.env.OPENCODE_BIN_PATH;
     if (envPath) {
       try {
-        if (existsSync(envPath)) {
+        await access(envPath);
+        {
+          const home = process.env.HOME || process.env.USERPROFILE;
+          const npmPrefix = process.env.npm_config_prefix;
+          const appData = process.env.APPDATA;
+          const npmExecutableDir = process.platform === 'win32' ? 'npm' : 'bin';
           const allowedRoots = [
-            process.env.HOME || process.env.USERPROFILE || '',
-            process.env.LOCALAPPDATA || '',
-            process.env.APPDATA || '',
-            process.env.SystemRoot || '',
-            process.env.WINDIR || '',
-            '/usr/local',
-            '/usr/bin',
-            '/bin',
-            '/usr/lib',
+            appData ? resolve(appData, 'npm') : '',
+            npmPrefix ? resolve(npmPrefix, npmExecutableDir) : '',
+            home ? resolve(home, '.npm-global', 'bin') : '',
+            '/usr/local/bin',
           ].filter(Boolean);
-          const resolvedPath = resolve(envPath).replaceAll('\\', '/').toLowerCase();
-          const isAllowed = allowedRoots.some(root => resolvedPath.startsWith(root.replaceAll('\\', '/').toLowerCase()));
+          const resolvedPath = resolve(envPath);
+          const isAllowed = allowedRoots.some(root => {
+            const pathFromRoot = relative(resolve(root), resolvedPath);
+            return pathFromRoot === '' || (!pathFromRoot.startsWith('..') && !isAbsolute(pathFromRoot));
+          });
           if (isAllowed) existing.push(envPath);
           else console.warn('[opencode] OPENCODE_BIN_PATH not in allowed directories:', envPath);
         }
@@ -114,11 +131,10 @@ export class OpencodeCli {
     for (const candidate of candidates) {
       if (!candidate) continue;
       try {
-        if (existsSync(candidate)) {
-          existing.push(candidate);
-        }
-      } catch (err) {
-        console.warn('[opencode] Binary candidate check failed:', candidate, err);
+        await access(candidate);
+        existing.push(candidate);
+      } catch {
+        // Candidate does not exist or is not accessible.
       }
     }
 
@@ -130,35 +146,45 @@ export class OpencodeCli {
   }
 
   get authHeader(): Record<string, string> {
-    if (!this.server) return {};
-    const encoded = Buffer.from(`opencode:${this.server.password}`).toString('base64');
-    return { Authorization: `Basic ${encoded}` };
+    return this.serverManager.authHeader;
   }
 
-  private ensureApiClient(): ApiClient {
-    if (!this.server) throw new Error('Opencode server not running');
+  get isRunning(): boolean {
+    return this.serverManager.isRunning;
+  }
+
+  get url(): string | null {
+    return this.serverManager.url;
+  }
+
+  /**
+   * Returns the shared API client for the running server.
+   * Auth and other services must use this instance so URL and auth headers
+   * stay synchronized with the server lifecycle.
+   */
+  getApiClient(): ApiClient {
+    if (!this.serverManager.isRunning) throw new Error('Opencode server not running');
     if (this.apiClient) {
-      this.apiClient.updateAuth(this.server.url, this.authHeader);
+      this.apiClient.updateAuth(this.serverManager.url!, this.serverManager.authHeader);
     } else {
       this.apiClient = new ApiClient({
-        baseUrl: this.server.url,
-        authHeader: this.authHeader,
+        baseUrl: this.serverManager.url!,
+        authHeader: this.serverManager.authHeader,
       });
     }
     return this.apiClient;
   }
 
-  /**
-   * Starts the opencode server process if not already running.
-   * Tries each resolved binary candidate in priority order (`OPENCODE_BIN_PATH`
-   * first, then platform-specific installs, then PATH) so one stale install
-   * cannot break startup for everyone. Spawns `opencode serve --port 0` with
-   * a generated password for Basic Auth.
-   * @throws Error (including captured stderr) if every candidate fails or the
-   *         server does not start within the 30s total timeout
-   */
-  async start(): Promise<void> {
+  private ensureApiClient(): ApiClient {
+    return this.getApiClient();
+  }
+
+  private async legacyStart(): Promise<void> {
     if (this.server) return;
+
+    if (this.binaryCandidates.length === 0) {
+      this.binaryCandidates = await this.resolveBinaryCandidates();
+    }
 
     const password = randomBytes(16).toString('hex');
     const deadline = Date.now() + 30000;
@@ -170,9 +196,9 @@ export class OpencodeCli {
       try {
         await this.tryStart(binary, password, remaining);
         return;
-      } catch (err: any) {
-        failures.push(`${binary}: ${err?.message || err}`);
-        console.warn('[opencode] serve failed with candidate', binary, '-', err?.message || err);
+      } catch (err: unknown) {
+        failures.push(`${binary}: ${getErrorMessage(err)}`);
+        console.warn('[opencode] serve failed with candidate', binary, '-', getErrorMessage(err));
       }
     }
 
@@ -203,7 +229,6 @@ export class OpencodeCli {
         OPENCODE_DISABLE_EMBEDDED_WEB_UI: process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI,
         OPENCODE_EXPERIMENTAL_FILEWATCHER: process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER,
         OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY,
-        OPENCODE_BIN_PATH: process.env.OPENCODE_BIN_PATH,
       };
       for (const key of Object.keys(minimalEnv)) {
         if (minimalEnv[key] === undefined) delete minimalEnv[key];
@@ -216,8 +241,8 @@ export class OpencodeCli {
           cwd: this.cwd,
           env: minimalEnv,
         });
-      } catch (err: any) {
-        reject(err);
+      } catch (err: unknown) {
+        reject(err instanceof Error ? err : new Error(getErrorMessage(err)));
         return;
       }
 
@@ -257,7 +282,7 @@ export class OpencodeCli {
         fail(err.message);
       });
 
-      proc.on('exit', (code: any) => {
+      proc.on('exit', (code: number | null) => {
         if (!started) {
           fail(`opencode serve exited with code ${code}`);
           return;
@@ -278,12 +303,8 @@ export class OpencodeCli {
     });
   }
 
-  get isRunning(): boolean {
-    return this.server !== null;
-  }
-
-  get url(): string | null {
-    return this.server?.url ?? null;
+  async start(): Promise<void> {
+    return this.serverManager.start();
   }
 
   /**
@@ -306,12 +327,12 @@ export class OpencodeCli {
     await this.start();
     try {
       return await this.ensureApiClient().getSessionDiff(sessionId);
-    } catch (err: any) {
+    } catch {
       return [];
     }
   }
 
-  async getSessionMessages(sessionId: string): Promise<any[]> {
+  async getSessionMessages(sessionId: string): Promise<RawSessionMessage[]> {
     await this.start();
     return this.ensureApiClient().getSessionMessages(sessionId);
   }
@@ -326,17 +347,17 @@ export class OpencodeCli {
     return this.ensureApiClient().getAgents();
   }
 
-  async getCurrentProject(): Promise<any> {
+  async getCurrentProject(): Promise<ProjectInfo | null> {
     await this.start();
     return this.ensureApiClient().getCurrentProject();
   }
 
-  async getPath(): Promise<any> {
+  async getPath(): Promise<PathInfo | null> {
     await this.start();
     return this.ensureApiClient().getPath();
   }
 
-  async getVcsInfo(): Promise<any> {
+  async getVcsInfo(): Promise<VcsInfo | null> {
     await this.start();
     return this.ensureApiClient().getVcsInfo();
   }
@@ -346,7 +367,7 @@ export class OpencodeCli {
     return this.ensureApiClient().listProviders();
   }
 
-  async getProviderAuth(): Promise<Record<string, Array<{ type: string; label: string; prompts?: any[] }>>> {
+  async getProviderAuth(): Promise<ProviderAuthMap> {
     await this.start();
     return this.ensureApiClient().getProviderAuth();
   }
@@ -375,12 +396,12 @@ export class OpencodeCli {
     prompt: string,
     options?: {
       onContent?: (text: string) => void;
-      onToolCall?: (name: string, args: any) => void;
+      onToolCall?: (name: string, args: unknown) => void;
       onError?: (error: string) => void;
       model?: string;
       agent?: string;
-      extraParts?: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
-      onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: any }) => void;
+      extraParts?: SendPromptPart[];
+      onToolEvent?: (event: { id: string; type: string; name: string; status: string; content: string; meta?: Record<string, unknown> }) => void;
       onMessageMeta?: (meta: { id: string; agent?: string; modelId?: string; time?: { created?: number; completed?: number } }) => void;
       onReasoning?: (text: string) => void;
       onDiffs?: (diffs: NormalizedDiff[]) => void;
@@ -389,11 +410,11 @@ export class OpencodeCli {
     const { onContent, onToolCall, onError, model, agent, extraParts, onToolEvent, onMessageMeta, onReasoning, onDiffs } = options || {};
     await this.start();
 
-    const parts: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [
+    const parts: SendPromptPart[] = [
       ...(extraParts || []),
       { type: 'text', text: prompt },
     ];
-    const body: Record<string, any> = { parts };
+    const body: SendPromptBody = { parts };
 
     if (model?.includes('/')) {
       const [providerID, modelID] = model.split('/');
@@ -404,71 +425,89 @@ export class OpencodeCli {
     if (agent) body.agent = agent;
 
     if (this.abortController) this.abortController.abort();
-    this.abortController = new AbortController();
+    const controller = new AbortController();
+    this.abortController = controller;
 
-    const callbacks: EventCallbacks = {
-      onContent,
-      onToolCall,
-      onError,
-      onToolEvent,
-      onMessageMeta,
-      onReasoning,
-      onDiffs,
-    };
-
-    this.eventDispatcher = new EventDispatcher(callbacks);
-    this.eventDispatcher.resetSession(sessionId);
+    const callbacks: EventCallbacks = { onContent, onToolCall, onError, onToolEvent, onMessageMeta, onReasoning, onDiffs };
+    const dispatcher = new EventDispatcher(callbacks);
+    this.eventDispatcher = dispatcher;
+    dispatcher.resetSession(sessionId);
 
     let messageId = '';
-
+    const seenEventIds = new Set<string>();
     const idlePromise = new Promise<void>((resolve) => {
       let settled = false;
-      this.idleResolveRefs.set(sessionId, () => {
-        if (!settled) {
-          settled = true;
-          resolve();
-          this.idleResolveRefs.delete(sessionId);
-        }
-      });
-      const guard = this.idleResolveRefs.get(sessionId)!;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const onAbort = () => finish();
+      const cleanup = () => {
+        clearTimeout(timeout);
+        controller.signal.removeEventListener('abort', onAbort);
+        this.idleResolveRefs.delete(sessionId);
+        dispatcher.clearSession(sessionId);
+        if (this.eventDispatcher === dispatcher) this.eventDispatcher = null;
+      };
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
 
-      const eventUrl = `${this.server!.url}/event`;
-      this.sseStream.connect(eventUrl, this.authHeader, (event: SSEMessage) => {
-        this.eventDispatcher!.dispatch(event, sessionId);
-        if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
-        if (event.type === 'session.status' && event.properties?.status?.type === 'idle') {
-          this.eventDispatcher!.clearSession(sessionId);
-          guard();
+      this.idleResolveRefs.set(sessionId, finish);
+      controller.signal.addEventListener('abort', onAbort, { once: true });
+
+      const dispatchEvent = (event: SSEMessage) => {
+        if (settled) return;
+        if (event.id) {
+          if (seenEventIds.has(event.id)) return;
+          seenEventIds.add(event.id);
         }
-      }, this.abortController!.signal);
+        const props = event.properties;
+        const eventSessionId = typeof props['sessionID'] === 'string'
+          ? props['sessionID']
+          : typeof props['sessionId'] === 'string' ? props['sessionId'] : undefined;
+        if (eventSessionId && eventSessionId !== sessionId) return;
+
+        dispatcher.dispatch(event, sessionId);
+        const info = props['info'];
+        const infoId = info && typeof info === 'object' && typeof (info as Record<string, unknown>)['id'] === 'string'
+          ? (info as Record<string, unknown>)['id'] as string
+          : undefined;
+        if (!messageId && infoId) messageId = infoId;
+
+        const status = props['status'];
+        const statusType = status && typeof status === 'object' ? (status as Record<string, unknown>)['type'] : status;
+        if (event.type === 'session.status' && statusType === 'idle') finish();
+      };
+
+      void this.sseStream.connect(`${this.server!.url}/event`, this.authHeader, dispatchEvent, controller.signal).catch((error: unknown) => {
+        if (!controller.signal.aborted) onError?.(`Event stream failed: ${getErrorMessage(error)}`);
+        finish();
+      });
 
       const postUrl = `${this.server!.url}/session/${sessionId}/message`;
-      fetch(postUrl, {
+      void fetch(postUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...this.authHeader },
         body: JSON.stringify(body),
-        signal: this.abortController!.signal,
-      })
-        .then(async (response) => {
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          await this.sseStream.parse(response, (event: SSEMessage) => {
-            if (event.type === 'message.part.delta' || event.type === 'message.part.updated') {
-              this.eventDispatcher!.dispatch(event, sessionId);
-            }
-            if (!messageId && event.properties?.info?.id) messageId = event.properties.info.id;
-          }, this.abortController!.signal);
-        })
-        .catch((err) => {
-          console.error('[opencode:post] Error:', err?.message);
-          onError?.(err.message || 'POST error');
-          guard();
-        });
+        signal: controller.signal,
+      }).then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        await this.sseStream.parse(response, dispatchEvent, controller.signal);
+        finish();
+      }).catch((error: unknown) => {
+        if (error instanceof Error && error.name === 'AbortError') return;
+        onError?.(`Request failed: ${getErrorMessage(error)}`);
+        finish();
+      });
 
-      setTimeout(() => guard(), 120000);
+      timeout = setTimeout(finish, 120000);
     });
 
-    await idlePromise;
-    return messageId;
+    return idlePromise.then(() => {
+      if (this.abortController === controller) this.abortController = null;
+      return messageId;
+    });
   }
 
   /**
@@ -492,7 +531,7 @@ export class OpencodeCli {
    * @param messageId - Message ID to revert
    * @returns Revert result with messages and reverted status
    */
-  async revertSession(sessionId: string, messageId: string): Promise<any> {
+  async revertSession(sessionId: string, messageId: string): Promise<RevertResult | null> {
     await this.start();
     return this.ensureApiClient().revertSession(sessionId, messageId);
   }
@@ -502,7 +541,7 @@ export class OpencodeCli {
    * @param sessionId - Session ID
    * @returns Unrevert result
    */
-  async unrevertSession(sessionId: string): Promise<any> {
+  async unrevertSession(sessionId: string): Promise<UnrevertResult | null> {
     await this.start();
     return this.ensureApiClient().unrevertSession(sessionId);
   }
@@ -517,8 +556,11 @@ export class OpencodeCli {
    * @param sessionId - Session ID to abort
    */
   async abortSession(sessionId: string): Promise<void> {
-    this.abortController?.abort();
-    this.abortController = null;
+    const controller = this.abortController;
+    controller?.abort();
+    this.idleResolveRefs.get(sessionId)?.();
+    this.idleResolveRefs.delete(sessionId);
+    if (this.abortController === controller) this.abortController = null;
     await this.ensureApiClient().abortSession(sessionId);
   }
 
@@ -533,11 +575,10 @@ export class OpencodeCli {
    */
   stop(): void {
     this.abortController?.abort();
-    if (this.process) {
-      this.process.kill('SIGTERM');
-      this.process = null;
-    }
-    this.server = null;
+    for (const finish of this.idleResolveRefs.values()) finish();
+    this.idleResolveRefs.clear();
+    this.eventDispatcher = null;
+    this.serverManager.stop();
     this.apiClient = null;
   }
 }

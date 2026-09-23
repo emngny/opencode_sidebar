@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { ChatMessage } from '../../extension/types';
+import { ChatMessage } from '../../shared/types';
 
 export function genId(): string {
   const arr = new Uint8Array(12);

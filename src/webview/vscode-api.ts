@@ -1,4 +1,4 @@
-import { WebviewToExtensionMessage, ExtensionToWebviewMessage, EXTENSION_TO_WEBVIEW_TYPES } from '../extension/types';
+import { WebviewToExtensionMessage, ExtensionToWebviewMessage, EXTENSION_TO_WEBVIEW_TYPES } from '../shared/types';
 
 declare function acquireVsCodeApi(): any;
 const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : (globalThis as any).vscode;

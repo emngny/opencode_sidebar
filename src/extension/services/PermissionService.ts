@@ -5,38 +5,36 @@ import { isReadDenied } from './readPatterns';
  * Manages pending permission requests and "always allow" caching.
  */
 export class PermissionService {
-  private readonly _readAllowCache = new Map<string, string>();
-  private readonly _pendingResolvers = new Map<string, (response: { allowed: boolean; remember?: boolean }) => void>();
-
-  private cacheKey(pattern: string, filePath: string): string {
-    return `${pattern}:${filePath}`;
-  }
+  private readonly _readAllowCache = new Set<string>();
+  private readonly _pendingResolvers = new Map<string, Set<(response: { allowed: boolean; remember?: boolean }) => void>>();
 
   isReadAllowed(filePath: string): { allowed: boolean; deniedPattern?: string } {
     const deniedPattern = isReadDenied(filePath);
     if (!deniedPattern) return { allowed: true };
-    if (this._readAllowCache.has(this.cacheKey(deniedPattern, filePath))) return { allowed: true };
+    if (this._readAllowCache.has(filePath)) return { allowed: true };
     return { allowed: false, deniedPattern };
   }
 
   waitForReadPermission(filePath: string): Promise<boolean> {
     const deniedPattern = isReadDenied(filePath);
-    if (deniedPattern && this._readAllowCache.has(this.cacheKey(deniedPattern, filePath))) {
+    if (deniedPattern && this._readAllowCache.has(filePath)) {
       return Promise.resolve(true);
     }
     return new Promise<boolean>((resolve) => {
-      this._pendingResolvers.set(filePath, (resp) => resolve(resp.allowed));
+      const resolver = (response: { allowed: boolean; remember?: boolean }) => resolve(response.allowed);
+      const resolvers = this._pendingResolvers.get(filePath) ?? new Set();
+      resolvers.add(resolver);
+      this._pendingResolvers.set(filePath, resolvers);
     });
   }
 
   grantReadPermission(filePath: string, response: 'allow' | 'deny', remember?: boolean): void {
-    const resolver = this._pendingResolvers.get(filePath);
-    if (!resolver) return;
-    if (response === 'allow' && remember) {
-      const pattern = isReadDenied(filePath);
-      if (pattern) this._readAllowCache.set(this.cacheKey(pattern, filePath), filePath);
+    const resolvers = this._pendingResolvers.get(filePath);
+    if (!resolvers) return;
+    if (response === 'allow' && remember && isReadDenied(filePath)) {
+      this._readAllowCache.add(filePath);
     }
-    resolver({ allowed: response === 'allow', remember });
+    for (const resolver of resolvers) resolver({ allowed: response === 'allow', remember });
     this._pendingResolvers.delete(filePath);
   }
 }

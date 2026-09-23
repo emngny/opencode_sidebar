@@ -1,4 +1,15 @@
-import { ProviderListResult } from '../types';
+import {
+  ProviderListResult,
+  AgentRaw,
+  normalizeAgentId,
+  ProviderAuthMap,
+  RawSessionMessage,
+  RevertResult,
+  UnrevertResult,
+  SendPromptBody,
+  isRecord,
+  getErrorMessage,
+} from '../../shared/types';
 import { NormalizedDiff, normalizeDiff } from '../utils/diffUtils';
 
 export interface ApiClientOptions {
@@ -36,11 +47,8 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      const isJson = text.startsWith('{') || text.startsWith('[');
-      const safeMsg = isJson && text.includes('"error"') ? 'JSON error response' : text.slice(0, 100);
-      console.error(`[opencode:api] ${options.method || 'GET'} ${path} -> ${response.status}: ${safeMsg}`);
-      throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
+      console.error(`[opencode:api] ${options.method || 'GET'} ${path} -> HTTP ${response.status}`);
+      throw new Error(`OpenCode API request failed (HTTP ${response.status})`);
     }
 
     const contentType = response.headers.get('content-type') || '';
@@ -67,20 +75,21 @@ export class ApiClient {
   }
 
   async getSessionDiff(sessionId: string): Promise<NormalizedDiff[]> {
-    const result = await this.fetch<{ files?: NormalizedDiff[] } | NormalizedDiff[]>(`/session/${sessionId}/diff`);
-    let arr: any[] = [];
+    const result = await this.fetch<{ files?: unknown[] } | unknown[]>(`/session/${sessionId}/diff`);
+    let arr: unknown[] = [];
     if (Array.isArray(result)) {
       arr = result;
-    } else if (result && 'files' in result) {
-      arr = result.files || [];
+    } else if (isRecord(result) && Array.isArray(result['files'])) {
+      arr = result['files'] as unknown[];
     }
     const normalized = arr.map(normalizeDiff);
     return normalized;
   }
 
-  async getSessionMessages(sessionId: string): Promise<any[]> {
+  async getSessionMessages(sessionId: string): Promise<RawSessionMessage[]> {
     try {
-      return await this.fetch(`/session/${sessionId}/message`);
+      const data = await this.fetch<unknown>(`/session/${sessionId}/message`);
+      return Array.isArray(data) ? (data as RawSessionMessage[]) : [];
     } catch {
       return [];
     }
@@ -97,18 +106,12 @@ export class ApiClient {
 
   async getAgents(): Promise<string[]> {
     try {
-      const result = await this.fetch<any>('/agent');
+      const result = await this.fetch<unknown>('/agent');
       if (Array.isArray(result)) {
-        return result.map((a: any) => {
-          if (typeof a === 'string') return a;
-          return a.id || a.name || a.slug || a.key || '';
-        }).filter(Boolean);
+        return (result as AgentRaw[]).map(normalizeAgentId).filter(Boolean);
       }
-      if (result && Array.isArray(result.agents)) {
-        return result.agents.map((a: any) => {
-          if (typeof a === 'string') return a;
-          return a.id || a.name || a.slug || a.key || '';
-        }).filter(Boolean);
+      if (isRecord(result) && Array.isArray(result['agents'])) {
+        return (result['agents'] as AgentRaw[]).map(normalizeAgentId).filter(Boolean);
       }
       return [];
     } catch {
@@ -116,25 +119,25 @@ export class ApiClient {
     }
   }
 
-  async getCurrentProject(): Promise<any> {
+  async getCurrentProject(): Promise<import('../../shared/types').ProjectInfo | null> {
     try {
-      return await this.fetch('/project/current');
+      return await this.fetch<import('../../shared/types').ProjectInfo>('/project/current');
     } catch {
       return null;
     }
   }
 
-  async getPath(): Promise<any> {
+  async getPath(): Promise<import('../../shared/types').PathInfo | null> {
     try {
-      return await this.fetch('/path');
+      return await this.fetch<import('../../shared/types').PathInfo>('/path');
     } catch {
       return null;
     }
   }
 
-  async getVcsInfo(): Promise<any> {
+  async getVcsInfo(): Promise<import('../../shared/types').VcsInfo | null> {
     try {
-      return await this.fetch('/vcs');
+      return await this.fetch<import('../../shared/types').VcsInfo>('/vcs');
     } catch {
       return null;
     }
@@ -144,7 +147,7 @@ export class ApiClient {
     return this.fetch('/provider');
   }
 
-  async getProviderAuth(): Promise<Record<string, Array<{ type: string; label: string; prompts?: any[] }>>> {
+  async getProviderAuth(): Promise<ProviderAuthMap> {
     return this.fetch('/provider/auth');
   }
 
@@ -185,9 +188,9 @@ export class ApiClient {
     }
   }
 
-  async revertSession(sessionId: string, messageId: string): Promise<any> {
+  async revertSession(sessionId: string, messageId: string): Promise<RevertResult | null> {
     try {
-      return await this.fetch(`/session/${sessionId}/revert`, {
+      return await this.fetch<RevertResult>(`/session/${sessionId}/revert`, {
         method: 'POST',
         body: JSON.stringify({ messageID: messageId }),
       });
@@ -196,9 +199,9 @@ export class ApiClient {
     }
   }
 
-  async unrevertSession(sessionId: string): Promise<any> {
+  async unrevertSession(sessionId: string): Promise<UnrevertResult | null> {
     try {
-      return await this.fetch(`/session/${sessionId}/unrevert`, {
+      return await this.fetch<UnrevertResult>(`/session/${sessionId}/unrevert`, {
         method: 'POST',
       });
     } catch {
@@ -241,12 +244,12 @@ export class ApiClient {
         const text = await response.text();
         console.error('[opencode] Permission grant failed:', response.status, text.slice(0, 200));
       }
-    } catch (err: any) {
-      console.error('[opencode] Failed to grant permission:', err?.message);
+    } catch (err: unknown) {
+      console.error('[opencode] Failed to grant permission:', getErrorMessage(err));
     }
   }
 
-  async postMessage(sessionId: string, body: Record<string, any>, signal?: AbortSignal): Promise<Response> {
+  async postMessage(sessionId: string, body: SendPromptBody, signal?: AbortSignal): Promise<Response> {
     const url = `${this.baseUrl}/session/${sessionId}/message`;
     const response = await fetch(url, {
       method: 'POST',

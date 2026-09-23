@@ -1,15 +1,5 @@
 import { OpencodeCli } from './OpencodeCli';
-import { ChatMessage } from '../types';
-
-interface SessionListItem {
-  id: string;
-  name?: string;
-  title?: string;
-  updated?: string;
-  time?: { created?: number; completed?: number };
-  messageCount?: number;
-  [key: string]: unknown;
-}
+import { ChatMessage, SessionListItem, RawSessionMessage, mapRawMessagesToChatMessages } from '../../shared/types';
 
 /**
  * Manages chat session lifecycle: creation, loading, deletion, and current session state.
@@ -37,12 +27,16 @@ export class SessionService {
   }
 
   async listSessions(): Promise<SessionListItem[]> {
-    return this._opencode.listSessions() as unknown as SessionListItem[];
+    const sessions = await this._opencode.listSessions();
+    return sessions as unknown as SessionListItem[];
   }
 
   async loadSession(sessionId: string): Promise<ChatMessage[]> {
     this._currentSessionId = sessionId;
-    return this._opencode.getSessionMessages(sessionId);
+    const raw: RawSessionMessage[] = await this._opencode.getSessionMessages(sessionId);
+    // Opencode returns RawSessionMessage[]; map to ChatMessage for webview
+    // Use a simple id fallback — SessionService doesn't have genId, use info.id or index
+    return mapRawMessagesToChatMessages(raw, () => `${sessionId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -52,20 +46,24 @@ export class SessionService {
   async revert(messageId: string): Promise<{ result: unknown; messages: ChatMessage[] }> {
     if (!this._currentSessionId) throw new Error('No active session');
     const result = await this._opencode.revertSession(this._currentSessionId, messageId);
-    const messages = await this._opencode.getSessionMessages(this._currentSessionId);
+    const raw = await this._opencode.getSessionMessages(this._currentSessionId);
+    const messages = mapRawMessagesToChatMessages(raw, () => `${this._currentSessionId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
     return { result, messages };
   }
 
   async unrevert(): Promise<{ result: unknown; messages: ChatMessage[] }> {
     if (!this._currentSessionId) throw new Error('No active session');
     const result = await this._opencode.unrevertSession(this._currentSessionId);
-    const messages = await this._opencode.getSessionMessages(this._currentSessionId);
+    const raw = await this._opencode.getSessionMessages(this._currentSessionId);
+    const messages = mapRawMessagesToChatMessages(raw, () => `${this._currentSessionId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
     return { result, messages };
   }
 
-  abort(): void {
-    if (this._currentSessionId) {
-      this._opencode.abortSession(this._currentSessionId).catch(() => {});
+  async abort(): Promise<void> {
+    const sessionId = this._currentSessionId;
+    if (!sessionId) return;
+    await this._opencode.abortSession(sessionId);
+    if (this._currentSessionId === sessionId) {
       this._currentSessionId = null;
     }
   }

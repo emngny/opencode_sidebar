@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ProviderInfo, ProviderModel } from '../../extension/types';
+import { ProviderInfo, ProviderModel } from '../../shared/types';
 import { postMessage, onMessage } from '../vscode-api';
 
 interface Props {

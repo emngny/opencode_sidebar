@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.extension.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "src/extension/services/SkillService.test.ts",
+    "src/extension/services/OpencodeCli.test.ts",
+    "src/extension/services/SessionService.test.ts"
+  ],
+  "exclude": []
+}

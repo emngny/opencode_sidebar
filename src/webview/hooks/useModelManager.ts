@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { GitInfo, ProviderListResult, ContextPart } from '../../extension/types';
+import { GitInfo, ProviderListResult, ProviderModel, ContextPart } from '../../shared/types';
 import { postMessage } from '../vscode-api';
 import { CommandItem } from '../slashCommands';
 
@@ -61,9 +61,10 @@ export function useModelManager() {
     for (const provider of all) {
       if (conn.includes(provider.id)) {
         for (const [modelId, modelInfo] of Object.entries(provider.models || {})) {
+          const info = modelInfo as ProviderModel;
           models.push({
             id: `${provider.id}/${modelId}`,
-            name: (modelInfo as any).name || modelId,
+            name: info.name || modelId,
             providerId: provider.id,
           });
         }

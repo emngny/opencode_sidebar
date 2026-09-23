@@ -1,7 +1,7 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useChatState } from './useChatState';
 import { useModelManager } from './useModelManager';
-import { ChatMessage, ProviderListResult } from '../../extension/types';
+import { ChatMessage, ProviderListResult } from '../../shared/types';
 
 interface AppState {
   messages: ChatMessage[];

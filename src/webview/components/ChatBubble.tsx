@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChatMessage } from '../../extension/types';
+import { ChatMessage } from '../../shared/types';
 import { Markdown } from './Markdown';
 import { getAgentColor } from './agentColors';
 import { ThinkingDots } from './ThinkingDots';

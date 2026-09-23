@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ContextPart } from '../../extension/types';
+import { ContextPart } from '../../shared/types';
 import { CommandItem } from '../slashCommands';
 import { SlashCommandPopup } from './SlashCommandPopup';
 import { COLORS, flexRow, flexCenter, btnIcon, textSmall, inputBase } from '../styles';

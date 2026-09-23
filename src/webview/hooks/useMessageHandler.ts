@@ -1,5 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { ExtensionToWebviewMessage, ChatMessage, ProviderListResult, SavedModelPayload } from '../../extension/types';
+import {
+  ExtensionToWebviewMessage,
+  ChatMessage,
+  ProviderListResult,
+  ProviderModel,
+  SavedModelPayload,
+  isRecord,
+} from '../../shared/types';
 import { onMessage } from '../vscode-api';
 import { ModelItem } from './useModelManager';
 import { genId } from './useChatState';
@@ -8,7 +15,7 @@ interface MessageHandlerState {
   // Chat state setters
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setBusy: React.Dispatch<React.SetStateAction<boolean>>;
-  setContextEvents: React.Dispatch<React.SetStateAction<Array<{ id: string; name: string; status: string; content: string; meta?: any }>>>;
+  setContextEvents: React.Dispatch<React.SetStateAction<Array<{ id: string; name: string; status: string; content: string; meta?: Record<string, unknown> }>>>;
   // Streaming refs
   pendingChunkRef: React.MutableRefObject<string>;
   chunkFlushTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
@@ -132,13 +139,8 @@ export function useMessageHandler(state: MessageHandlerState): void {
           setMessages([]);
           const { messages: sessionMessages } = msg.payload;
           if (Array.isArray(sessionMessages)) {
-            const converted: ChatMessage[] = sessionMessages.map((m: any) => ({
-              role: m.info?.role === 'user' ? 'user' : 'assistant',
-              content: m.parts?.map((p: any) => p.text || p.content || '').join('\n') || m.info?.content || '',
-              timestamp: m.info?.time?.created || Date.now(),
-              id: m.info?.id || genId(),
-            }));
-            setMessages(converted);
+            // SessionService already maps RawSessionMessage -> ChatMessage
+            setMessages(sessionMessages as ChatMessage[]);
           }
           break;
         }
@@ -147,7 +149,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
           break;
         }
         case 'projectInfo': {
-          const payload = msg.payload as { project?: any; path?: any; vcs?: any };
+          const payload = msg.payload as { project?: { path?: string }; path?: { path?: string }; vcs?: { branch?: string; message?: string } };
           const pathInfo = payload?.path;
           const project = payload?.project;
           const vcs = payload?.vcs;
@@ -201,15 +203,30 @@ export function useMessageHandler(state: MessageHandlerState): void {
               const idx = prev.findIndex((m) =>
                 m.role === 'event' &&
                 baseId.length > 0 &&
-                (m.id === baseId || m.id === `${baseId}_fixed` || (m.id && m.id.startsWith(baseId + '_')))
+                (m.id === baseId || m.id === `${baseId}_fixed` || (m.id?.startsWith(baseId + '_')))
               );
               if (idx >= 0) {
                 const updated = [...prev];
-                updated[idx] = { ...updated[idx], content: event.content || '', eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta, timestamp: Date.now() };
+                updated[idx] = { ...updated[idx], content: event.content || '', eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta as ChatMessage['eventMeta'], eventCount: updated[idx].eventCount, timestamp: Date.now() };
+                return updated;
+              }
+              // Merge identical consecutive events (e.g. repeated "bash completed")
+              // into one card with a counter instead of flooding the chat.
+              const last = prev.at(-1);
+              const sameTool = !!last &&
+                last.role === 'event' &&
+                last.eventType === event.type &&
+                last.eventStatus === event.status &&
+                last.content === (event.content || '') &&
+                JSON.stringify(last.eventMeta?.args ?? null) === JSON.stringify((isRecord(event.meta) ? (event.meta as Record<string, unknown>)['args'] : undefined) ?? null) &&
+                JSON.stringify(last.eventMeta?.result ?? null) === JSON.stringify((isRecord(event.meta) ? (event.meta as Record<string, unknown>)['result'] : undefined) ?? null);
+              if (sameTool && last) {
+                const updated = [...prev];
+                updated[prev.length - 1] = { ...last, eventCount: (last.eventCount || 1) + 1, timestamp: Date.now() };
                 return updated;
               }
               const msgId = baseId ? `${baseId}_${Date.now()}` : `event_${Date.now()}`;
-              return [...prev, { role: 'event', content: event.content || '', timestamp: Date.now(), id: msgId, eventType: event.type as ChatMessage['eventType'], eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta }];
+              return [...prev, { role: 'event', content: event.content || '', timestamp: Date.now(), id: msgId, eventType: event.type as ChatMessage['eventType'], eventStatus: event.status as ChatMessage['eventStatus'], eventMeta: event.meta as ChatMessage['eventMeta'] }];
             });
           }
           break;
@@ -218,13 +235,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
           const { messages: sessionMessages, reverted } = msg.payload;
           setMessages([]);
           if (Array.isArray(sessionMessages)) {
-            const converted: ChatMessage[] = sessionMessages.map((m: any) => ({
-              role: m.info?.role === 'user' ? 'user' : 'assistant',
-              content: m.parts?.map((p: any) => p.text || p.content || '').join('\n') || m.info?.content || '',
-              timestamp: m.info?.time?.created || Date.now(),
-              id: m.info?.id || genId(),
-            }));
-            setMessages(converted);
+            setMessages(sessionMessages as ChatMessage[]);
           }
           setRevertActive(reverted);
           break;
@@ -277,9 +288,10 @@ export function useMessageHandler(state: MessageHandlerState): void {
               for (const provider of all) {
                 if (conn.includes(provider.id)) {
                   for (const [modelId, modelInfo] of Object.entries(provider.models || {})) {
+                    const info = modelInfo as ProviderModel;
                     models.push({
                       id: `${provider.id}/${modelId}`,
-                      name: (modelInfo as any).name || modelId,
+                      name: info.name || modelId,
                       providerId: provider.id,
                     });
                   }

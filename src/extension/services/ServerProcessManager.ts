@@ -1,0 +1,157 @@
+import { spawn, ChildProcess } from 'node:child_process';
+import { access } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { getErrorMessage } from '../../shared/types';
+
+export interface OpencodeServerInfo {
+  port: number;
+  password: string;
+  url: string;
+}
+
+/** Owns the opencode server child process and its connection metadata. */
+export class ServerProcessManager {
+  private process: ChildProcess | null = null;
+  private server: OpencodeServerInfo | null = null;
+  private binaryCandidates: string[] = [];
+  private readonly idleResolveHandlers: Set<() => void> = new Set();
+
+  constructor(private readonly cwd?: string) {}
+
+  get isRunning(): boolean {
+    return this.server !== null;
+  }
+
+  get url(): string | null {
+    return this.server?.url ?? null;
+  }
+
+  get authHeader(): Record<string, string> {
+    if (!this.server) return {};
+    const encoded = Buffer.from(`opencode:${this.server.password}`).toString('base64');
+    return { Authorization: `Basic ${encoded}` };
+  }
+
+  onServerExit(handler: () => void): () => void {
+    this.idleResolveHandlers.add(handler);
+    return () => this.idleResolveHandlers.delete(handler);
+  }
+
+  async start(): Promise<void> {
+    if (this.server) return;
+    if (this.binaryCandidates.length === 0) this.binaryCandidates = await this.resolveBinaryCandidates();
+
+    const password = randomBytes(16).toString('hex');
+    const deadline = Date.now() + 30000;
+    const failures: string[] = [];
+    for (const binary of this.binaryCandidates) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      try {
+        await this.tryStart(binary, password, remaining);
+        return;
+      } catch (err: unknown) {
+        failures.push(`${binary}: ${getErrorMessage(err)}`);
+        console.warn('[opencode] serve failed with candidate', binary, '-', getErrorMessage(err));
+      }
+    }
+    const detail = failures.length > 1 ? ` (${failures.join(' | ')})` : '';
+    throw new Error(`opencode serve failed${detail || ': no binary candidates'}`);
+  }
+
+  stop(): void {
+    if (this.process) {
+      this.process.kill('SIGTERM');
+      this.process = null;
+    }
+    this.server = null;
+  }
+
+  private async resolveBinaryCandidates(): Promise<string[]> {
+    const existing: string[] = [];
+    const envPath = process.env.OPENCODE_BIN_PATH;
+    if (envPath) {
+      try {
+        await access(envPath);
+        const allowedRoots = [process.env.HOME || process.env.USERPROFILE || '', process.env.LOCALAPPDATA || '', process.env.APPDATA || '', process.env.SystemRoot || '', process.env.WINDIR || '', '/usr/local', '/usr/bin', '/bin', '/usr/lib'].filter(Boolean);
+        const resolvedPath = resolve(envPath).replaceAll('\\', '/').toLowerCase();
+        if (allowedRoots.some(root => resolvedPath.startsWith(root.replaceAll('\\', '/').toLowerCase()))) existing.push(envPath);
+        else console.warn('[opencode] OPENCODE_BIN_PATH not in allowed directories:', envPath);
+      } catch (err) { console.warn('[opencode] Binary path check failed:', err); }
+    }
+    const candidates: string[] = [];
+    const platform = process.platform;
+    const home = process.env.HOME || process.env.USERPROFILE;
+    const npmPrefix = process.env.npm_config_prefix;
+    if (platform === 'win32') {
+      const appData = process.env.APPDATA;
+      if (appData) candidates.push(String.raw`${appData}\npm\node_modules\opencode-ai\node_modules\opencode-windows-x64\bin\opencode.exe`);
+      if (appData) candidates.push(String.raw`${appData}\npm\node_modules\opencode-ai\node_modules\opencode-windows-x64-baseline\bin\opencode.exe`);
+    } else if (platform === 'darwin') {
+      if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
+      if (home) candidates.push(`${home}/.npm-global/bin/opencode`);
+      if (home) candidates.push(`${home}/.local/bin/opencode`);
+      candidates.push('/usr/local/bin/opencode', '/opt/homebrew/bin/opencode', '/opt/local/bin/opencode', '/usr/bin/opencode');
+    } else {
+      if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
+      if (home) candidates.push(`${home}/.local/bin/opencode`);
+      if (home) candidates.push(`${home}/.local/share/opencode/bin/opencode`);
+      candidates.push('/usr/local/bin/opencode', '/snap/bin/opencode', '/usr/bin/opencode', '/bin/opencode');
+    }
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      try { await access(candidate); existing.push(candidate); } catch { /* unavailable */ }
+    }
+    existing.push('opencode');
+    return [...new Set(existing)];
+  }
+
+  private tryStart(binary: string, password: string, timeoutMs: number): Promise<void> {
+    return new Promise((resolveStart, reject) => {
+      const minimalEnv: Record<string, string | undefined> = {
+        OPENCODE_SERVER_PASSWORD: password, PATH: process.env.PATH, USERPROFILE: process.env.USERPROFILE,
+        APPDATA: process.env.APPDATA, LOCALAPPDATA: process.env.LOCALAPPDATA, SYSTEMROOT: process.env.SYSTEMROOT,
+        TEMP: process.env.TEMP, TMP: process.env.TMP, OPENCODE_SERVER_USERNAME: process.env.OPENCODE_SERVER_USERNAME || 'opencode',
+        OPENCODE_CLIENT: process.env.OPENCODE_CLIENT, OPENCODE_DISABLE_EMBEDDED_WEB_UI: process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI,
+        OPENCODE_EXPERIMENTAL_FILEWATCHER: process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER,
+        OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY,
+        OPENCODE_BIN_PATH: process.env.OPENCODE_BIN_PATH,
+      };
+      for (const key of Object.keys(minimalEnv)) if (minimalEnv[key] === undefined) delete minimalEnv[key];
+      let proc: ChildProcess;
+      try { proc = spawn(binary, ['serve', '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: this.cwd, env: minimalEnv }); }
+      catch (err: unknown) { reject(err instanceof Error ? err : new Error(getErrorMessage(err))); return; }
+      let started = false;
+      let outputBuffer = '';
+      let stderrTail = '';
+      const fail = (message: string) => {
+        if (started) return;
+        const stderr = stderrTail.trim().replace(/\s+/g, ' ').slice(-500);
+        reject(new Error(stderr ? `${message} — ${stderr}` : message));
+      };
+      proc.stdout?.on('data', (data: Buffer) => {
+        outputBuffer += data.toString();
+        const match = /http:\/\/127\.0\.0\.1:(\d+)/.exec(outputBuffer);
+        if (match && !started) {
+          started = true;
+          const port = Number.parseInt(match[1], 10);
+          this.server = { port, password, url: `http://127.0.0.1:${port}` };
+          this.process = proc;
+          resolveStart();
+        }
+      });
+      proc.stderr?.on('data', (data: Buffer) => {
+        const text = data.toString().trim();
+        if (text) { console.error('[opencode:err]', text); stderrTail = (stderrTail + '\n' + text).slice(-2000); }
+      });
+      proc.on('error', (err: Error) => fail(err.message));
+      proc.on('exit', (code: number | null) => {
+        if (!started) { fail(`opencode serve exited with code ${code}`); return; }
+        this.server = null;
+        for (const handler of this.idleResolveHandlers) handler();
+      });
+      setTimeout(() => { if (!started) { proc.kill(); fail('opencode serve timeout'); } }, timeoutMs);
+    });
+  }
+}

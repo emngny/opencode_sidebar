@@ -10,13 +10,15 @@ export interface ChatMessage {
   isStreaming?: boolean;
   eventType?: 'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
   eventStatus?: 'running' | 'completed' | 'failed';
+  /** Number of identical consecutive tool events merged into this card. */
+  eventCount?: number;
   eventMeta?: {
     path?: string;
     added?: number;
     deleted?: number;
     name?: string;
-    args?: any;
-    result?: any;
+    args?: unknown;
+    result?: unknown;
     error?: string;
     sessionId?: string;
     description?: string;
@@ -32,6 +34,149 @@ export interface ChatMessage {
   duration?: number;
   interrupted?: boolean;
   reasoning?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Shared domain types — single source of truth for ApiClient / OpencodeCli /
+// EventDispatcher / SidebarProvider / useMessageHandler
+// ---------------------------------------------------------------------------
+
+/** Type guard helper: plain record check */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try { return String(err); } catch { return 'Unknown error'; }
+}
+
+/** Raw message part as returned by GET /session/:id/message */
+export interface SessionMessagePart {
+  id?: string;
+  type?: string;
+  text?: string;
+  content?: string;
+  [key: string]: unknown;
+}
+
+export interface SessionMessageInfo {
+  id?: string;
+  role?: string;
+  content?: string;
+  time?: { created?: number; completed?: number };
+  agent?: string;
+  model?: { providerID?: string; modelID?: string };
+  [key: string]: unknown;
+}
+
+export interface RawSessionMessage {
+  info?: SessionMessageInfo;
+  parts?: SessionMessagePart[];
+  [key: string]: unknown;
+}
+
+/** Agent as returned by GET /agent — string or object with id/name/slug/key */
+export type AgentRaw = string | { id?: string; name?: string; slug?: string; key?: string; [key: string]: unknown };
+
+export function normalizeAgentId(raw: AgentRaw): string {
+  if (typeof raw === 'string') return raw;
+  if (isRecord(raw)) {
+    const id = raw['id'] ?? raw['name'] ?? raw['slug'] ?? raw['key'];
+    return typeof id === 'string' ? id : '';
+  }
+  return '';
+}
+
+export interface ProviderAuthPrompt {
+  type?: string;
+  label?: string;
+  [key: string]: unknown;
+}
+
+export interface ProviderAuthEntry {
+  type: string;
+  label: string;
+  prompts?: ProviderAuthPrompt[];
+  [key: string]: unknown;
+}
+
+export type ProviderAuthMap = Record<string, ProviderAuthEntry[]>;
+
+export type RevertResult = unknown;
+export type UnrevertResult = unknown;
+
+export interface SendPromptPart {
+  type: string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+}
+
+export interface SendPromptBody {
+  parts: SendPromptPart[];
+  model?: { providerID: string; modelID: string };
+  agent?: string;
+}
+
+export interface RawDiff {
+  path?: string;
+  file?: string;
+  content?: string;
+  patch?: string;
+  added?: number;
+  deleted?: number;
+  [key: string]: unknown;
+}
+
+export interface SessionListItem {
+  id: string;
+  name?: string;
+  title?: string;
+  updated?: string;
+  time?: { created?: number; completed?: number };
+  messageCount?: number;
+  [key: string]: unknown;
+}
+
+/** Discriminated tool part as seen in SSE message.part.updated */
+export interface ToolCallPart {
+  id?: string;
+  type: 'tool_call';
+  name?: string;
+  args?: unknown;
+  [key: string]: unknown;
+}
+
+export interface ToolStatePart {
+  id?: string;
+  type: 'tool';
+  tool?: string;
+  state?: {
+    status?: string;
+    result?: unknown;
+    error?: string;
+    reason?: string;
+    input?: { args?: unknown; description?: string; subagent_type?: string; [key: string]: unknown };
+    metadata?: { sessionId?: string; [key: string]: unknown };
+    [key: string]: unknown;
+  };
+  result?: unknown;
+  args?: unknown;
+  [key: string]: unknown;
+}
+
+export type ToolPart = ToolCallPart | ToolStatePart | { id?: string; type: string; [key: string]: unknown };
+
+/** Convert RawSessionMessage[] to ChatMessage[] — shared mapper */
+export function mapRawMessagesToChatMessages(raw: RawSessionMessage[], genId: () => string): ChatMessage[] {
+  return raw.map((m) => ({
+    role: m.info?.role === 'user' ? 'user' : 'assistant',
+    content: m.parts?.map((p) => (typeof p.text === 'string' ? p.text : typeof p.content === 'string' ? p.content : '')).join('\n') || m.info?.content || '',
+    timestamp: m.info?.time?.created || Date.now(),
+    id: m.info?.id || genId(),
+  }));
 }
 
 /**
@@ -336,7 +481,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'reviewResolved'; payload: { accepted: boolean } }
   | { type: 'status'; payload: StatusPayload }
   | { type: 'gitInfo'; payload: GitInfoPayload }
-  | { type: 'projectInfo'; payload: ProjectInfo }
+  | { type: 'projectInfo'; payload: ProjectInfoPayload }
   | { type: 'sessionList'; payload: SessionListPayload[] }
   | { type: 'sessionLoaded'; payload: SessionLoadedPayload }
   | { type: 'sessionDeleted'; payload: SessionDeletedPayload }
@@ -380,6 +525,15 @@ export interface ProjectInfo {
   project?: string;
   agent?: string;
   vcs?: Record<string, unknown>;
+}
+
+/**
+ * projectInfo message payload: project/path/vcs info, each nullable.
+ */
+export interface ProjectInfoPayload {
+  project: ProjectInfo | null;
+  path: PathInfo | null;
+  vcs: VcsInfo | null;
 }
 
 /**

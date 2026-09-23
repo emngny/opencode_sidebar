@@ -10,5 +10,5 @@
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "bundler"
   },
-  "include": ["src/webview/**/*", "src/extension/types.ts"]
+  "include": ["src/webview/**/*", "src/shared/**/*"]
 }

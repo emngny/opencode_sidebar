@@ -4,9 +4,6 @@ out/
 .esbuild/
 *.vsix
 .vscode/
-AGENTS.md
-SKILL.md
-AGENTS.md
 /.agents
 /_bmad-output
 /_bmad
@@ -20,3 +17,6 @@ AGENTS.md
 .mcp.json
 CLAUDE.md
 GEMINI.md
+.omo/
+.kilo/plans/
+docs/COMPREHENSIVE_REVIEW.md

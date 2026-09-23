@@ -4,7 +4,7 @@
     "module": "Node16",
     "lib": ["ES2022"],
     "outDir": "./out",
-    "rootDir": "./src/extension",
+    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -14,6 +14,6 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/extension/**/*"],
+  "include": ["src/extension/**/*", "src/shared/**/*"],
   "exclude": ["node_modules", ".vscode-test", "**/*.test.ts"]
 }

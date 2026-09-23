@@ -6,7 +6,7 @@ import { ModelSelector } from './components/ModelSelector';
 import { ModeSelector } from './components/ModeSelector';
 import { ProviderPopup } from './components/ProviderPopup';
 import { SessionListPopup } from './components/SessionListPopup';
-import { ContextPart } from '../extension/types';
+import { ContextPart } from '../shared/types';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { postMessage } from './vscode-api';
 import { CommandItem } from './slashCommands';
@@ -15,7 +15,60 @@ import { useModelManager } from './hooks/useModelManager';
 import { useMessageHandler } from './hooks/useMessageHandler';
 import { COLORS, flexRow, overlay, card, btnIcon, textSmall, textHeader } from './styles';
 
+interface AppErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  AppErrorBoundaryState
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo): void {
+    console.error('[opencode:webview] App render failed', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          padding: 20,
+          color: '#d32f2f',
+          fontFamily: 'system-ui, sans-serif',
+        }}>
+          <h2>Something went wrong</h2>
+          <p>{this.state.error?.message}</p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ padding: '8px 16px', cursor: 'pointer' }}
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
+  return (
+    <AppErrorBoundary>
+      <AppContent />
+    </AppErrorBoundary>
+  );
+}
+
+function AppContent() {
   const {
     messages, setMessages, busy, setBusy, contextEvents, setContextEvents,
     pendingChunkRef, chunkFlushTimerRef, streamingMsgIdRef, DEBOUNCE_MS,

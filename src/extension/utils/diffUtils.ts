@@ -1,3 +1,5 @@
+import { RawDiff, isRecord } from '../../shared/types';
+
 export interface NormalizedDiff {
   path: string;
   added: number;
@@ -5,11 +7,12 @@ export interface NormalizedDiff {
   content: string;
 }
 
-export function normalizeDiff(d: any): NormalizedDiff {
-  const path = d.path || d.file || '';
-  const content = d.content || d.patch || '';
-  let added = typeof d.added === 'number' ? d.added : 0;
-  let deleted = typeof d.deleted === 'number' ? d.deleted : 0;
+export function normalizeDiff(d: unknown): NormalizedDiff {
+  const rec: RawDiff = isRecord(d) ? (d as RawDiff) : {};
+  const path = typeof rec.path === 'string' ? rec.path : typeof rec.file === 'string' ? rec.file : '';
+  const content = typeof rec.content === 'string' ? rec.content : typeof rec.patch === 'string' ? rec.patch : '';
+  let added = typeof rec.added === 'number' ? rec.added : 0;
+  let deleted = typeof rec.deleted === 'number' ? rec.deleted : 0;
   if (added === 0 && deleted === 0 && content) {
     for (const line of content.split('\n')) {
       if (line.startsWith('+') && !line.startsWith('+++')) added++;

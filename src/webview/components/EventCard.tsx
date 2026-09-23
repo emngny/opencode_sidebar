@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChatMessage } from '../../extension/types';
+import { ChatMessage, isRecord } from '../../shared/types';
 import { ThinkingDots } from './ThinkingDots';
 import { DiffPreview } from './DiffPreview';
 import { DiffChanges } from './DiffChanges';
@@ -11,7 +11,7 @@ interface Props {
   onOpenDiff?: (filePath: string) => void;
 }
 
-function formatArgs(args: any): React.ReactNode {
+function formatArgs(args: unknown): React.ReactNode {
   if (typeof args === 'string') return <span style={{ fontSize: 11, color: '#6c7086' }}>{args}</span>;
   if (typeof args !== 'object' || args === null) return <span style={{ fontSize: 11, color: '#6c7086' }}>{String(args)}</span>;
 
@@ -127,12 +127,29 @@ export function EventCard({ message, onLoadSession, onRespondPermission, onOpenD
   let title = message.content;
   const toolName = meta?.name || eventType?.replace('_', ' ') || 'tool';
 
+  // Show the actual command/input so repeated "bash completed" cards are distinguishable
+  if ((eventType === 'tool_result' || eventType === 'tool_call') && meta?.args) {
+    const a = meta.args;
+    let cmd: unknown = null;
+    if (typeof a !== 'string' && isRecord(a) && 'command' in a) {
+      cmd = (a as Record<string, unknown>)['command'];
+    }
+    const cmdText = Array.isArray(cmd) ? (cmd as unknown[]).join(' ') : typeof cmd === 'string' ? cmd : isRecord(a) && 'description' in a ? String((a as Record<string, unknown>)['description']) : '';
+    if (cmdText) {
+      const short = cmdText.length > 70 ? cmdText.slice(0, 70) + '...' : cmdText;
+      title = status === 'running' ? `${toolName}: ${short}` : `${toolName} ✓ ${short}`;
+    }
+  }
+  if (message.eventCount && message.eventCount > 1) {
+    title = `${title} ×${message.eventCount}`;
+  }
+
   let argsContent: React.ReactNode = null;
   let resultContent: React.ReactNode = null;
   let errorContent: React.ReactNode = null;
   let fileInfo: React.ReactNode = null;
 
-  if (eventType === 'tool_call' && meta?.args) {
+  if ((eventType === 'tool_call' || eventType === 'tool_result') && meta?.args) {
     argsContent = formatArgs(meta.args);
   }
 

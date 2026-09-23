@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { randomInt } from 'node:crypto';
 import { SseStream } from './SseStream';
+
+vi.mock('node:crypto', () => ({
+  randomInt: vi.fn(() => 250),
+}));
 
 describe('SseStream', () => {
   const mockFetch = vi.fn();
 
   beforeEach(() => {
+    mockFetch.mockReset();
+    vi.restoreAllMocks();
     vi.stubGlobal('fetch', mockFetch);
   });
 
@@ -107,5 +114,27 @@ describe('SseStream', () => {
     stream.maxRetries = 1;
 
     await stream.connect('http://localhost/event', {}, () => {}, { aborted: false } as any);
+  });
+
+  it('uses equal jitter with exponential backoff', async () => {
+    mockFetch.mockRejectedValue(new Error('server unavailable'));
+    vi.mocked(randomInt).mockImplementation((_min, max) => Math.floor(max * 0.25));
+    const stream = new SseStream();
+    const sleep = vi.spyOn(stream as any, 'sleep').mockResolvedValue(undefined);
+    const signal = { aborted: false } as AbortSignal;
+
+    await stream.connect('http://localhost/event', {}, () => {}, signal);
+
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenNthCalledWith(1, 625, signal);
+    expect(sleep).toHaveBeenNthCalledWith(2, 1250, signal);
+  });
+
+  it('should reject a successful response without a body', async () => {
+    const response = { ok: true, body: null } as Response;
+    const stream = new SseStream();
+
+    await expect(stream.parse(response, () => {}, new AbortController().signal))
+      .rejects.toThrow('SSE response has no body');
   });
 });

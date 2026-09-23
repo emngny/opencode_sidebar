@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChatMessage } from '../../extension/types';
+import { ChatMessage } from '../../shared/types';
 import { ChatBubble } from './ChatBubble';
 import { EventCard } from './EventCard';
 import { ContextGroup } from './ContextGroup';
@@ -17,6 +17,10 @@ interface Props {
   onOpenDiff?: (filePath: string) => void;
 }
 
+export function getMessageKey(message: ChatMessage, index: number): string {
+  return `${message.id || 'message'}-${index}`;
+}
+
 export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, contextEvents, onLoadSession, onRespondPermission, onOpenDiff }: Readonly<Props>) {
   if (messages.length === 0 && (!contextEvents || contextEvents.length === 0)) return null;
 
@@ -26,8 +30,8 @@ export function ChatContainer({ messages, onRevert, revertActive, onUnrevert, co
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {hasContext && <ContextGroup events={contextEvents!} allDone={!!allDone} />}
-      {messages.map((msg) => (
-        <div key={msg.id || msg.timestamp}>
+      {messages.map((msg, index) => (
+        <div key={getMessageKey(msg, index)}>
           {msg.eventType === 'compacting' ? (
             <CompactionDivider status={msg.eventStatus} />
           ) : msg.role === 'event' ? (

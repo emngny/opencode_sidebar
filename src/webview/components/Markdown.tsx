@@ -11,11 +11,11 @@ export function Markdown({ content }: Props) {
 
   const html = useMemo(() => {
     const raw = marked.parse(content, { gfm: true, breaks: true }) as string;
-    const withCopyBtns = raw.replace(/<pre>/g, '<pre><button class="copy-btn">Copy</button>');
-    return DOMPurify.sanitize(withCopyBtns, {
+    const sanitized = DOMPurify.sanitize(raw, {
       ADD_ATTR: ['class'],
-      ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[a-z]+:)/i,
+      ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i,
     });
+    return sanitized.replace(/<pre>/g, '<pre><button class="copy-btn">Copy</button>');
   }, [content]);
 
   useEffect(() => {

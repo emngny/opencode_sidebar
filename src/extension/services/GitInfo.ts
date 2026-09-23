@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { execFileSync } from 'node:child_process';
-import { GitInfo } from '../types';
+import { GitInfo } from '../../shared/types';
 
 export function getGitInfo(): GitInfo {
   const workspaceFolders = vscode.workspace.workspaceFolders;
