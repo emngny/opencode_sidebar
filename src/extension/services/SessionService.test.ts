@@ -52,4 +52,22 @@ describe('SessionService mutations', () => {
     await expect(sessions.deleteSession('session-1')).rejects.toThrow('delete rejected');
     expect(sessions.currentSessionId).toBe('session-1');
   });
+
+  it('preserves the active session when revert fails', async () => {
+    const opencode = { revertSession: vi.fn().mockRejectedValue(new Error('revert rejected')) } as never;
+    const sessions = new SessionService(opencode);
+    sessions.currentSessionId = 'session-1';
+
+    await expect(sessions.revert('message-1')).rejects.toThrow('revert rejected');
+    expect(sessions.currentSessionId).toBe('session-1');
+  });
+
+  it('preserves the active session when unrevert fails', async () => {
+    const opencode = { unrevertSession: vi.fn().mockRejectedValue(new Error('unrevert rejected')) } as never;
+    const sessions = new SessionService(opencode);
+    sessions.currentSessionId = 'session-1';
+
+    await expect(sessions.unrevert()).rejects.toThrow('unrevert rejected');
+    expect(sessions.currentSessionId).toBe('session-1');
+  });
 });

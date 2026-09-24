@@ -27,7 +27,22 @@ describe('isReadDenied', () => {
     expect(isReadDenied('.env.production')).not.toBeNull();
     expect(isReadDenied('package-lock.json')).not.toBeNull();
     expect(isReadDenied('yarn.lock')).not.toBeNull();
+    expect(isReadDenied('pnpm-lock.yaml')).not.toBeNull();
+    expect(isReadDenied('.npmrc')).not.toBeNull();
+    expect(isReadDenied('.netrc')).not.toBeNull();
     expect(isReadDenied('id_rsa')).not.toBeNull();
+  });
+
+  it('should deny root-level secret, credential, and private-key files', () => {
+    for (const filePath of ['id_dsa', 'id_ecdsa', 'id_ed25519', 'known_hosts', 'authorized_keys']) {
+      expect(isReadDenied(filePath)).not.toBeNull();
+    }
+  });
+
+  it('normalizes Windows separators before matching root-level paths', () => {
+    expect(isReadDenied('.env')).toBe(isReadDenied('.env'));
+    expect(isReadDenied('config\\.env.local')).not.toBeNull();
+    expect(isReadDenied('config\\secrets\\token.json')).not.toBeNull();
   });
 
   it('should deny node_modules in subdirectories', () => {

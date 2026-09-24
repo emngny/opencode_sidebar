@@ -53,6 +53,15 @@ describe('SidebarProvider Message Handling', () => {
       expect(provider.validatePayload('unknownMessage', {})).toBe(false);
       expect(provider.validatePayload('unknownMessage', undefined)).toBe(false);
     });
+
+    it('rejects malformed message envelopes', () => {
+      for (const payload of [null, [], 42, 'sendMessage', true]) {
+        expect(provider.validatePayload('sendMessage', payload)).toBe(false);
+      }
+      expect(provider.validatePayload('searchFiles', { query: 42 })).toBe(false);
+      expect(provider.validatePayload('setApiKey', { providerId: 'openai', key: null })).toBe(false);
+      expect(provider.validatePayload('runCommand', { command: 42 })).toBe(false);
+    });
   });
 
   describe('Payload Validation', () => {

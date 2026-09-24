@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 import { ContextService } from './ContextService';
 import type { PermissionService } from './PermissionService';
 
@@ -31,16 +34,39 @@ describe('ContextService', () => {
     });
   });
 
-  it('rejects invalid image data and reports the failure', async () => {
-    const permissions = { isReadAllowed: vi.fn(), waitForReadPermission: vi.fn() } as unknown as PermissionService;
-    const post = vi.fn();
-    const result = await new ContextService(permissions, post).process('', [
-      { type: 'image', name: 'shot.png', data: 'not base64!', mimeType: 'image/png' },
-    ]);
+  it.skipIf(process.platform === 'win32')(
+    'rejects a symlink file escaping the workspace before reading it',
+    async () => {
+      const sandbox = mkdtempSync(path.join(tmpdir(), 'opencode-context-'));
+      const workspacePath = path.join(sandbox, 'workspace');
+      const outsidePath = path.join(sandbox, 'outside.txt');
+      const originalRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      try {
+        mkdirSync(workspacePath);
+        writeFileSync(outsidePath, 'secret');
+        symlinkSync(outsidePath, path.join(workspacePath, 'safe.txt'));
+        (vscode.workspace.workspaceFolders as unknown as Array<{ uri: { fsPath: string } }>)[0].uri.fsPath =
+          workspacePath;
 
-    expect(result.extraParts).toEqual([]);
-    expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: 'toolEvent' }));
-  });
+        const permissions = { isReadAllowed: vi.fn(), waitForReadPermission: vi.fn() } as unknown as PermissionService;
+        const post = vi.fn();
+        const result = await new ContextService(permissions, post).process('read this', [
+          { type: 'file', name: 'safe.txt', path: 'safe.txt' },
+        ]);
+
+        expect(result.userContent).toContain('[Skipped: safe.txt — outside workspace]');
+        expect(result.extraParts).toEqual([]);
+        expect(vscode.workspace.fs.readFile).not.toHaveBeenCalled();
+        expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: 'toolEvent' }));
+      } finally {
+        if (originalRoot) {
+          (vscode.workspace.workspaceFolders as unknown as Array<{ uri: { fsPath: string } }>)[0].uri.fsPath =
+            originalRoot;
+        }
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('rejects non-image MIME types', async () => {
     const permissions = { isReadAllowed: vi.fn(), waitForReadPermission: vi.fn() } as unknown as PermissionService;

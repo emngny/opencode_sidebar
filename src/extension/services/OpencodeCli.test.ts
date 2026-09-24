@@ -124,9 +124,13 @@ describe('OpencodeCli.sendPrompt', () => {
     const cli = createRunningCli();
     const testable = cli as unknown as TestableOpencodeCli;
     let requestSignal: AbortSignal | undefined;
+    let streamHandler: ((event: { id: string; type: string; properties: Record<string, unknown> }) => void) | undefined;
     testable.sseStream = {
       connect: vi.fn(),
-      parse: vi.fn(() => new Promise<void>(() => undefined)),
+      parse: vi.fn((_response, handler) => {
+        streamHandler = handler;
+        return new Promise<void>(() => undefined);
+      }),
     };
     vi.stubGlobal(
       'fetch',
@@ -136,7 +140,8 @@ describe('OpencodeCli.sendPrompt', () => {
       }),
     );
 
-    const pending = testable.sendPrompt('session-1', 'prompt');
+    const content = vi.fn();
+    const pending = testable.sendPrompt('session-1', 'prompt', { onContent: content });
     await vi.waitFor(() => expect(requestSignal).toBeDefined());
     await vi.advanceTimersByTimeAsync(120000);
 
@@ -144,6 +149,14 @@ describe('OpencodeCli.sendPrompt', () => {
     expect(requestSignal?.aborted).toBe(true);
     expect(testable.sseStream.parse).toHaveBeenCalledWith(expect.anything(), expect.any(Function), requestSignal);
     expect(testable.activePrompts.size).toBe(0);
+
+    streamHandler?.({
+      id: 'late-after-timeout',
+      type: 'message.part.delta',
+      properties: { sessionID: 'session-1', field: 'text', delta: 'late' },
+    });
+    expect(content).not.toHaveBeenCalled();
+    expect(testable.sseStream.parse).toHaveBeenCalledOnce();
     vi.useRealTimers();
   });
 
