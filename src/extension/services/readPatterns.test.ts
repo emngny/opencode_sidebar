@@ -22,6 +22,14 @@ describe('isReadDenied', () => {
     expect(isReadDenied('src/config/.env.local')).not.toBeNull();
   });
 
+  it('should deny root-level secret and lock files', () => {
+    expect(isReadDenied('.env')).not.toBeNull();
+    expect(isReadDenied('.env.production')).not.toBeNull();
+    expect(isReadDenied('package-lock.json')).not.toBeNull();
+    expect(isReadDenied('yarn.lock')).not.toBeNull();
+    expect(isReadDenied('id_rsa')).not.toBeNull();
+  });
+
   it('should deny node_modules in subdirectories', () => {
     expect(isReadDenied('src/node_modules/lodash/index.js')).not.toBeNull();
     expect(isReadDenied('very/deep/node_modules/pkg/index.js')).not.toBeNull();
@@ -59,6 +67,11 @@ describe('isReadDenied', () => {
   it('should handle Windows backslashes in subdirectories', () => {
     expect(isReadDenied('a/b\\config\\.env')).not.toBeNull();
     expect(isReadDenied('a/b\\node_modules\\lodash\\index.js')).not.toBeNull();
+  });
+
+  it('should handle Windows separators at root level', () => {
+    expect(isReadDenied('.env')).not.toBeNull();
+    expect(isReadDenied('package-lock.json')).not.toBeNull();
   });
 
   it('should return matching pattern when denied', () => {

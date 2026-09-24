@@ -9,10 +9,19 @@ export interface OpencodeServerInfo {
   url: string;
 }
 
+export class ServerStartupAbortedError extends Error {
+  constructor() {
+    super('opencode server startup aborted');
+    this.name = 'ServerStartupAbortedError';
+  }
+}
+
 /** Owns the opencode server child process and its connection metadata. */
 export class ServerProcessManager {
   private process: ChildProcess | null = null;
   private server: OpencodeServerInfo | null = null;
+  private startPromise: Promise<void> | null = null;
+  private epoch = 0;
   private binaryCandidates: string[] = [];
   private readonly idleResolveHandlers: Set<() => void> = new Set();
   private passwordBuffer: Buffer | null = null;
@@ -46,37 +55,64 @@ export class ServerProcessManager {
     return () => this.idleResolveHandlers.delete(handler);
   }
 
-  async start(): Promise<void> {
-    if (this.server) return;
-    if (this.binaryCandidates.length === 0) this.binaryCandidates = await this.resolveBinaryCandidates();
+  start(): Promise<void> {
+    if (this.server) return Promise.resolve();
+    if (this.startPromise) return this.startPromise;
 
-    this.passwordBuffer = randomBytes(16);
-    const password = this.passwordBuffer.toString('hex');
+    const epoch = this.epoch;
+    let startup: Promise<void>;
+    startup = this.doStart(epoch).finally(() => {
+      if (this.startPromise === startup) this.startPromise = null;
+    });
+    this.startPromise = startup;
+    void startup.catch(() => undefined);
+    return startup;
+  }
+
+  private async doStart(epoch: number): Promise<void> {
+    if (this.binaryCandidates.length === 0) this.binaryCandidates = await this.resolveBinaryCandidates();
+    this.assertCurrentEpoch(epoch);
+
+    const passwordBuffer = randomBytes(16);
+    this.passwordBuffer = passwordBuffer;
+    const password = passwordBuffer.toString('hex');
     const deadline = Date.now() + 30000;
     const failures: string[] = [];
     for (const binary of this.binaryCandidates) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
+      this.assertCurrentEpoch(epoch);
       try {
-        await this.tryStart(binary, password, remaining);
+        await this.tryStart(binary, password, remaining, epoch);
         return;
       } catch (err: unknown) {
+        if (err instanceof ServerStartupAbortedError) throw err;
         failures.push(`${binary}: ${getErrorMessage(err)}`);
         console.warn('[opencode] serve failed with candidate', binary, '-', getErrorMessage(err));
       }
     }
-    this.wipeSecret();
+    this.wipeSecretIfOwned(passwordBuffer);
     const detail = failures.length > 1 ? ` (${failures.join(' | ')})` : '';
     throw new Error(`opencode serve failed${detail || ': no binary candidates'}`);
   }
 
   stop(): void {
+    this.epoch += 1;
     if (this.process) {
       this.process.kill('SIGTERM');
       this.process = null;
     }
     this.server = null;
     this.wipeSecret();
+    this.idleResolveHandlers.forEach((handler) => handler());
+  }
+
+  private assertCurrentEpoch(epoch: number): void {
+    if (epoch !== this.epoch) throw new ServerStartupAbortedError();
+  }
+
+  private wipeSecretIfOwned(passwordBuffer: Buffer): void {
+    if (this.passwordBuffer === passwordBuffer) this.wipeSecret();
   }
 
   private async resolveBinaryCandidates(): Promise<string[]> {
@@ -147,7 +183,7 @@ export class ServerProcessManager {
     return [...new Set(existing)];
   }
 
-  private tryStart(binary: string, password: string, timeoutMs: number): Promise<void> {
+  private tryStart(binary: string, password: string, timeoutMs: number, epoch = this.epoch): Promise<void> {
     return new Promise((resolveStart, reject) => {
       const systemPath =
         process.platform === 'win32'
@@ -184,26 +220,33 @@ export class ServerProcessManager {
         reject(err instanceof Error ? err : new Error(getErrorMessage(err)));
         return;
       }
+      this.process = proc;
       let started = false;
+      let settled = false;
       let outputBuffer = '';
       let stderrTail = '';
-      const fail = (message: string) => {
-        if (started) return;
+      const fail = (message: string, error = new Error(message)) => {
+        if (settled) return;
+        settled = true;
         const stderr = stderrTail.trim().replace(/\s+/g, ' ').slice(-500);
-        reject(new Error(stderr ? `${message} — ${stderr}` : message));
+        reject(stderr ? new Error(`${message} — ${stderr}`) : error);
       };
       proc.stdout?.on('data', (data: Buffer) => {
         outputBuffer += data.toString();
         const match = /http:\/\/127\.0\.0\.1:(\d+)/.exec(outputBuffer);
-        if (match && !started) {
-          started = true;
-          const port = Number.parseInt(match[1], 10);
-          this.server = { port, url: `http://127.0.0.1:${port}` };
-          const encoded = Buffer.from(`opencode:${password}`).toString('base64');
-          this.cachedAuthHeader = { Authorization: `Basic ${encoded}` };
-          this.process = proc;
-          resolveStart();
+        if (!match || settled) return;
+        if (epoch !== this.epoch) {
+          proc.kill('SIGTERM');
+          fail('opencode server startup aborted', new ServerStartupAbortedError());
+          return;
         }
+        settled = true;
+        started = true;
+        const port = Number.parseInt(match[1], 10);
+        this.server = { port, url: `http://127.0.0.1:${port}` };
+        const encoded = Buffer.from(`opencode:${password}`).toString('base64');
+        this.cachedAuthHeader = { Authorization: `Basic ${encoded}` };
+        resolveStart();
       });
       proc.stderr?.on('data', (data: Buffer) => {
         const text = data.toString().trim();
@@ -212,21 +255,26 @@ export class ServerProcessManager {
           stderrTail = (stderrTail + '\n' + text).slice(-2000);
         }
       });
-      proc.on('error', (err: Error) => fail(err.message));
+      proc.on('error', (err: Error) => {
+        if (epoch !== this.epoch) fail('opencode server startup aborted', new ServerStartupAbortedError());
+        else fail(err.message);
+      });
       proc.on('exit', (code: number | null) => {
+        if (epoch !== this.epoch) return;
         if (!started) {
           fail(`opencode serve exited with code ${code}`);
           return;
         }
+        if (this.process !== proc) return;
+        this.process = null;
         this.server = null;
         this.wipeSecret();
         for (const handler of this.idleResolveHandlers) handler();
       });
       setTimeout(() => {
-        if (!started) {
-          proc.kill();
-          fail('opencode serve timeout');
-        }
+        if (settled) return;
+        proc.kill('SIGTERM');
+        fail('opencode serve timeout');
       }, timeoutMs);
     });
   }

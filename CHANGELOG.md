@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Provider credentials and permission behavior hardened across extracted services
+- Concurrent server startup requests now share one process and stale exits cannot corrupt live server state, preventing orphan processes and incorrect URL/auth data
 
 ## [0.1.7] - 2026-09-22
 

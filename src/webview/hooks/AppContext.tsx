@@ -12,12 +12,12 @@ interface AppState {
   setContextEvents: React.Dispatch<
     React.SetStateAction<Array<{ id: string; name: string; status: string; content: string; meta?: any }>>
   >;
-  pendingChunkRef: React.MutableRefObject<string>;
-  chunkFlushTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  streamingMsgIdRef: React.MutableRefObject<string | null>;
+  pendingChunkRef: React.MutableRefObject<Map<string, string>>;
+  chunkFlushTimerRef: React.MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>;
+  streamingMsgIdRef: React.MutableRefObject<Map<string, string>>;
   DEBOUNCE_MS: number;
-  flushPendingChunk: () => void;
-  cleanupStreaming: () => void;
+  flushPendingChunk: (requestId?: string) => void;
+  cleanupStreaming: (requestId?: string) => void;
   model: string;
   setModel: React.Dispatch<React.SetStateAction<string>>;
   mode: string;

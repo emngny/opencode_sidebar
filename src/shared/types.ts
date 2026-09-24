@@ -7,6 +7,8 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   id?: string;
+  requestId?: string;
+  sessionId?: string;
   isStreaming?: boolean;
   eventType?:
     'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
@@ -303,6 +305,7 @@ interface RemoveApiKeyPayload {
 
 interface SearchFilesPayload {
   query: string;
+  requestId?: string;
 }
 
 interface SaveModelPayload {
@@ -373,6 +376,8 @@ export type WebviewToExtensionMessage =
 interface ReceiveMessagePayload {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'event';
   content: string;
+  requestId?: string;
+  sessionId?: string;
   timestamp?: number;
   id?: string;
   project?: string;
@@ -382,10 +387,14 @@ interface ReceiveMessagePayload {
 interface ReceiveChunkPayload {
   content: string;
   fullContent?: string;
+  requestId?: string;
+  sessionId?: string;
 }
 
 interface StreamEndPayload {
   content: string;
+  requestId?: string;
+  sessionId?: string;
 }
 
 interface GitInfoPayload extends GitInfo {}
@@ -411,6 +420,8 @@ interface SessionDeletedPayload {
 interface ErrorPayload {
   message: string;
   error?: string;
+  requestId?: string;
+  sessionId?: string;
 }
 
 interface ProviderListPayload extends ProviderListResult {}
@@ -424,6 +435,7 @@ interface ProviderUpdatedPayload {
 
 interface FileSearchResultsPayload {
   query: string;
+  requestId?: string;
   files: { name: string; path: string; description?: string }[];
 }
 
@@ -436,6 +448,8 @@ export interface SavedModelPayload {
 
 interface ToolEventPayload {
   id?: string;
+  requestId?: string;
+  sessionId?: string;
   type: string;
   name: string;
   status: string;
@@ -444,6 +458,7 @@ interface ToolEventPayload {
 }
 
 interface RevertResultPayload {
+  sessionId: string;
   result: unknown;
   messages: unknown[];
   reverted: boolean;
@@ -451,17 +466,20 @@ interface RevertResultPayload {
 
 interface MessageMetaPayload {
   id?: string;
+  requestId?: string;
+  sessionId?: string;
   messageId?: string;
   agent?: string;
   modelId?: string;
   time?: { created?: number; completed?: number };
   reason?: string;
-  requestId?: string;
   filePath?: string;
   meta?: Record<string, unknown>;
 }
 
 interface ReasoningContentPayload {
+  requestId?: string;
+  sessionId?: string;
   messageId?: string;
   content?: string;
 }

@@ -35,7 +35,10 @@ export class AuthService {
   }
 
   async removeApiKey(providerId: string): Promise<void> {
-    await this._opencode.getApiClient().removeAuth(providerId);
+    const removed = await this._opencode.getApiClient().removeAuth(providerId);
+    if (!removed) {
+      throw new Error('Remote API key removal failed');
+    }
     await this._context.secrets.delete(`opencode-key-${providerId}`);
   }
 }

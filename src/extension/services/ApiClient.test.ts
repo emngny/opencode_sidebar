@@ -15,4 +15,22 @@ describe('ApiClient', () => {
 
     await expect((client as any).fetch('/session/private')).rejects.toThrow('OpenCode API request failed (HTTP 500)');
   });
+
+  it.each([
+    ['deleteSession', (client: ApiClient) => client.deleteSession('session-1')],
+    ['revertSession', (client: ApiClient) => client.revertSession('session-1', 'message-1')],
+    ['unrevertSession', (client: ApiClient) => client.unrevertSession('session-1')],
+  ])('propagates %s failures', async (_name, request) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 409, text: vi.fn() }));
+    const client = new ApiClient({ baseUrl: 'http://localhost:1234', authHeader: {} });
+
+    await expect(request(client)).rejects.toThrow('OpenCode API request failed (HTTP 409)');
+  });
+
+  it('requires a successful message refresh after a mutation', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, text: vi.fn() }));
+    const client = new ApiClient({ baseUrl: 'http://localhost:1234', authHeader: {} });
+
+    await expect(client.getSessionMessagesStrict('session-1')).rejects.toThrow('HTTP 503');
+  });
 });

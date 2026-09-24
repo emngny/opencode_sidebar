@@ -93,13 +93,13 @@ export class ApiClient {
     }
   }
 
-  async deleteSession(sessionId: string): Promise<boolean> {
-    try {
-      await this.fetch(`/session/${sessionId}`, { method: 'DELETE' });
-      return true;
-    } catch {
-      return false;
-    }
+  async getSessionMessagesStrict(sessionId: string): Promise<RawSessionMessage[]> {
+    const data = await this.fetch<unknown>(`/session/${sessionId}/message`);
+    return Array.isArray(data) ? (data as RawSessionMessage[]) : [];
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.fetch(`/session/${sessionId}`, { method: 'DELETE' });
   }
 
   async getAgents(): Promise<string[]> {
@@ -187,24 +187,16 @@ export class ApiClient {
   }
 
   async revertSession(sessionId: string, messageId: string): Promise<unknown> {
-    try {
-      return await this.fetch<unknown>(`/session/${sessionId}/revert`, {
-        method: 'POST',
-        body: JSON.stringify({ messageID: messageId }),
-      });
-    } catch {
-      return null;
-    }
+    return this.fetch<unknown>(`/session/${sessionId}/revert`, {
+      method: 'POST',
+      body: JSON.stringify({ messageID: messageId }),
+    });
   }
 
   async unrevertSession(sessionId: string): Promise<unknown> {
-    try {
-      return await this.fetch<unknown>(`/session/${sessionId}/unrevert`, {
-        method: 'POST',
-      });
-    } catch {
-      return null;
-    }
+    return this.fetch<unknown>(`/session/${sessionId}/unrevert`, {
+      method: 'POST',
+    });
   }
 
   async respondPermission(

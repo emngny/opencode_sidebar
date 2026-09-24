@@ -12,7 +12,7 @@ interface FileResult {
 interface Props {
   onSend: (text: string, context: ContextPart[]) => void;
   disabled: boolean;
-  onSearchFiles: (query: string) => void;
+  onSearchFiles: (query: string, requestId: string) => void;
   fileSearchResults: FileResult[];
   fileSearchQuery: string;
   onSlashCommand?: (cmd: CommandItem) => void;
@@ -39,6 +39,7 @@ export function BottomInput({
   const fileSearchRef = useRef<HTMLDivElement>(null);
   const slashPopupRef = useRef<HTMLDivElement>(null);
   const resizeFrameRef = useRef<number | null>(null);
+  const searchRequestIdRef = useRef(0);
 
   // Auto-resize once per animation frame to avoid layout work on every keystroke.
   useEffect(() => {
@@ -130,7 +131,8 @@ export function BottomInput({
         setMentionEnabled(true);
         setFileSearchInput(afterAt);
         setShowFileSearch(true);
-        onSearchFiles(afterAt);
+        const requestId = `file-search-${++searchRequestIdRef.current}`;
+        onSearchFiles(afterAt, requestId);
       } else if (mentionEnabled) {
         setMentionEnabled(false);
       }
@@ -162,13 +164,16 @@ export function BottomInput({
 
         const reader = new FileReader();
         reader.onload = () => {
-          const dataUrl = reader.result as string;
-          const base64 = dataUrl.split(',')[1];
+          if (typeof reader.result !== 'string') return;
+          const dataUrl = reader.result;
+          const base64 = dataUrl.split(',', 2)[1];
+          if (!base64 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) return;
           setAttachments((prev) => [
             ...prev,
             { type: 'image', name: file.name || 'paste.png', data: base64, mimeType: file.type || 'image/png' },
           ]);
         };
+        reader.onerror = () => undefined;
         reader.readAsDataURL(file);
       }
     }
@@ -197,7 +202,7 @@ export function BottomInput({
     }
     setFileSearchInput('');
     setShowFileSearch(true);
-    onSearchFiles('');
+    onSearchFiles('', `file-search-${++searchRequestIdRef.current}`);
   };
 
   const handleFileSearchKeyDown = (e: React.KeyboardEvent) => {
@@ -247,7 +252,7 @@ export function BottomInput({
               value={fileSearchInput}
               onChange={(e) => {
                 setFileSearchInput(e.target.value);
-                onSearchFiles(e.target.value);
+                onSearchFiles(e.target.value, `file-search-${++searchRequestIdRef.current}`);
               }}
               onKeyDown={handleFileSearchKeyDown}
               placeholder="Search files..."

@@ -21,12 +21,12 @@ interface MessageHandlerState {
     >
   >;
   // Streaming refs
-  pendingChunkRef: React.MutableRefObject<string>;
-  chunkFlushTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  streamingMsgIdRef: React.MutableRefObject<string | null>;
+  pendingChunkRef: React.MutableRefObject<Map<string, string>>;
+  chunkFlushTimerRef: React.MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>;
+  streamingMsgIdRef: React.MutableRefObject<Map<string, string>>;
   DEBOUNCE_MS: number;
-  flushPendingChunk: () => void;
-  cleanupStreaming: () => void;
+  flushPendingChunk: (requestId?: string) => void;
+  cleanupStreaming: (requestId?: string) => void;
   // Model manager setters
   setModel: React.Dispatch<React.SetStateAction<string>>;
   setMode: React.Dispatch<React.SetStateAction<string>>;
@@ -37,6 +37,7 @@ interface MessageHandlerState {
   setSkills: React.Dispatch<React.SetStateAction<Array<{ name: string; description?: string }>>>;
   setFileSearchResults: React.Dispatch<React.SetStateAction<Array<{ name: string; path: string }>>>;
   setFileSearchQuery: React.Dispatch<React.SetStateAction<string>>;
+  fileSearchRequestIdRef: React.MutableRefObject<string | null>;
   setRevertActive: React.Dispatch<React.SetStateAction<boolean>>;
   setConfirmDialog: React.Dispatch<React.SetStateAction<{ message: string; onConfirm: () => void } | null>>;
   setReadPermissionPrompt: React.Dispatch<
@@ -67,6 +68,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     setSkills,
     setFileSearchResults,
     setFileSearchQuery,
+    fileSearchRequestIdRef,
     setRevertActive,
     setConfirmDialog,
     setReadPermissionPrompt,
@@ -75,7 +77,16 @@ export function useMessageHandler(state: MessageHandlerState): void {
     tryAutoSelectModel,
   } = state;
 
-  const streamEndedRef = useRef(false);
+  const activeRequestIdRef = useRef<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
+  const lastRequestIdRef = useRef<string | null>(null);
+
+  const isCurrentRequest = (requestId?: string, sessionId?: string): boolean => {
+    if (requestId && activeRequestIdRef.current) return requestId === activeRequestIdRef.current;
+    if (requestId && lastRequestIdRef.current) return requestId === lastRequestIdRef.current;
+    if (sessionId && activeSessionIdRef.current) return sessionId === activeSessionIdRef.current;
+    return true;
+  };
 
   useEffect(() => {
     const processProviderListRef = { current: processProviderList };
@@ -84,73 +95,77 @@ export function useMessageHandler(state: MessageHandlerState): void {
     const unsubscribe = onMessage((msg: ExtensionToWebviewMessage) => {
       switch (msg.type) {
         case 'receiveMessage': {
-          streamEndedRef.current = false;
+          const { requestId, sessionId, role } = msg.payload;
+          if (requestId && role !== 'user' && !isCurrentRequest(requestId, sessionId)) break;
+          if (requestId && (role === 'user' || !activeRequestIdRef.current)) {
+            activeRequestIdRef.current = requestId;
+            activeSessionIdRef.current = sessionId || null;
+            lastRequestIdRef.current = requestId;
+          }
           const newMsg: ChatMessage = {
-            role: msg.payload.role,
+            role,
             content: msg.payload.content,
             timestamp: Date.now(),
-            id: genId(),
+            id: requestId || genId(),
+            requestId,
+            sessionId,
           };
-          if (msg.payload.role === 'assistant') newMsg.isStreaming = true;
-          setMessages((prev) => {
-            const updated = [...prev, newMsg];
-            return updated;
-          });
+          if (role === 'assistant') {
+            newMsg.isStreaming = true;
+            if (requestId) streamingMsgIdRef.current.set(requestId, newMsg.id!);
+          }
+          setMessages((prev) => [...prev, newMsg]);
           break;
         }
         case 'receiveChunk': {
-          if (streamEndedRef.current) break;
-          if (msg.payload.fullContent) {
-            cleanupStreaming();
-            flushPendingChunk();
+          const { requestId, sessionId, fullContent } = msg.payload;
+          if (!isCurrentRequest(requestId, sessionId)) break;
+          if (fullContent !== undefined) {
+            cleanupStreaming(requestId);
+            flushPendingChunk(requestId);
             setMessages((prev) => {
-              const lastMessage = prev.at(-1);
+              const index = requestId
+                ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === requestId)
+                : prev.reduce((found, message, index) => (message.role === 'assistant' ? index : found), -1);
+              if (index < 0) return prev;
               const updated = [...prev];
-              if (lastMessage?.role === 'assistant') {
-                updated[updated.length - 1] = {
-                  ...lastMessage,
-                  content: msg.payload.fullContent || '',
-                  isStreaming: true,
-                };
-              } else {
-                const newId = genId();
-                streamingMsgIdRef.current = newId;
-                updated.push({
-                  role: 'assistant',
-                  content: msg.payload.fullContent || '',
-                  timestamp: Date.now(),
-                  id: newId,
-                  isStreaming: true,
-                });
-              }
+              updated[index] = { ...updated[index], content: fullContent, isStreaming: true };
               return updated;
             });
-          } else {
-            pendingChunkRef.current += msg.payload.content || '';
-            if (!chunkFlushTimerRef.current) {
-              chunkFlushTimerRef.current = setTimeout(() => {
-                chunkFlushTimerRef.current = null;
-                if (!streamEndedRef.current) flushPendingChunk();
-              }, DEBOUNCE_MS);
+          } else if (requestId) {
+            pendingChunkRef.current.set(
+              requestId,
+              (pendingChunkRef.current.get(requestId) || '') + msg.payload.content,
+            );
+            if (!chunkFlushTimerRef.current.has(requestId)) {
+              chunkFlushTimerRef.current.set(
+                requestId,
+                setTimeout(() => {
+                  chunkFlushTimerRef.current.delete(requestId);
+                  if (isCurrentRequest(requestId, sessionId)) flushPendingChunk(requestId);
+                }, DEBOUNCE_MS),
+              );
             }
           }
           break;
         }
         case 'streamEnd': {
-          streamEndedRef.current = true;
-          cleanupStreaming();
-          flushPendingChunk();
-          streamingMsgIdRef.current = null;
+          const { requestId, sessionId } = msg.payload;
+          if (!isCurrentRequest(requestId, sessionId)) break;
+          cleanupStreaming(requestId);
+          flushPendingChunk(requestId);
           setMessages((prev) => {
-            for (let i = prev.length - 1; i >= 0; i--) {
-              if (prev[i].role === 'assistant') {
-                const updated = [...prev];
-                updated[i] = { ...updated[i], isStreaming: false };
-                return updated;
-              }
-            }
-            return prev;
+            const index = requestId
+              ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === requestId)
+              : prev.reduce((found, message, index) => (message.role === 'assistant' ? index : found), -1);
+            if (index < 0) return prev;
+            const updated = [...prev];
+            updated[index] = { ...updated[index], isStreaming: false };
+            return updated;
           });
+          if (requestId) streamingMsgIdRef.current.delete(requestId);
+          activeRequestIdRef.current = null;
+          activeSessionIdRef.current = null;
           setBusy(false);
           break;
         }
@@ -159,6 +174,10 @@ export function useMessageHandler(state: MessageHandlerState): void {
           break;
         }
         case 'sessionLoaded': {
+          cleanupStreaming();
+          activeRequestIdRef.current = null;
+          activeSessionIdRef.current = null;
+          lastRequestIdRef.current = null;
           setMessages([]);
           const { messages: sessionMessages } = msg.payload;
           if (Array.isArray(sessionMessages)) {
@@ -188,9 +207,18 @@ export function useMessageHandler(state: MessageHandlerState): void {
           break;
         }
         case 'error': {
+          const { requestId, sessionId } = msg.payload;
+          if (!isCurrentRequest(requestId, sessionId)) break;
           setMessages((prev) => [
             ...prev,
-            { role: 'assistant', content: `❌ ${msg.payload.message}`, timestamp: Date.now(), id: genId() },
+            {
+              role: 'assistant',
+              content: `❌ ${msg.payload.message}`,
+              timestamp: Date.now(),
+              id: genId(),
+              requestId,
+              sessionId,
+            },
           ]);
           setBusy(false);
           break;
@@ -203,12 +231,14 @@ export function useMessageHandler(state: MessageHandlerState): void {
           break;
         }
         case 'fileSearchResults': {
+          if (msg.payload.requestId && msg.payload.requestId !== fileSearchRequestIdRef.current) break;
           setFileSearchResults(msg.payload.files || []);
           setFileSearchQuery(msg.payload.query || '');
           break;
         }
         case 'toolEvent': {
           const event = msg.payload;
+          if (!isCurrentRequest(event.requestId, event.sessionId)) break;
           const eventId = event.id || `tool_${Date.now()}_${genId()}`;
           const isContextTool = ['read', 'glob', 'grep', 'list', 'webfetch', 'websearch', 'search'].includes(
             event.name,
@@ -293,7 +323,8 @@ export function useMessageHandler(state: MessageHandlerState): void {
           break;
         }
         case 'revertResult': {
-          const { messages: sessionMessages, reverted } = msg.payload;
+          const { messages: sessionMessages, reverted, sessionId } = msg.payload;
+          if (sessionId && !isCurrentRequest(undefined, sessionId)) break;
           setMessages([]);
           if (Array.isArray(sessionMessages)) {
             setMessages(sessionMessages as ChatMessage[]);
@@ -303,33 +334,37 @@ export function useMessageHandler(state: MessageHandlerState): void {
         }
         case 'messageMeta': {
           const meta = msg.payload;
+          if (!isCurrentRequest(meta.requestId, meta.sessionId)) break;
           setMessages((prev) => {
+            const index = meta.requestId
+              ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === meta.requestId)
+              : prev.reduce(
+                  (found, message, index) => (message.role === 'assistant' && !message.agent ? index : found),
+                  -1,
+                );
+            if (index < 0) return prev;
             const updated = [...prev];
-            for (let i = updated.length - 1; i >= 0; i--) {
-              if (updated[i].role === 'assistant' && !updated[i].agent) {
-                const duration =
-                  meta.time?.completed && meta.time?.created
-                    ? Math.round((meta.time.completed - meta.time.created) / 1000)
-                    : undefined;
-                updated[i] = { ...updated[i], agent: meta.agent, modelId: meta.modelId, duration };
-                break;
-              }
-            }
+            const duration =
+              meta.time?.completed && meta.time?.created
+                ? Math.round((meta.time.completed - meta.time.created) / 1000)
+                : undefined;
+            updated[index] = { ...updated[index], agent: meta.agent, modelId: meta.modelId, duration };
             return updated;
           });
           break;
         }
         case 'reasoningContent': {
-          const text = typeof msg.payload === 'string' ? msg.payload : msg.payload.content;
+          const payload = typeof msg.payload === 'string' ? { content: msg.payload } : msg.payload;
+          if (!isCurrentRequest(payload.requestId, payload.sessionId)) break;
+          const text = payload.content;
           if (typeof text !== 'string') break;
           setMessages((prev) => {
+            const index = payload.requestId
+              ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === payload.requestId)
+              : prev.reduce((found, message, index) => (message.role === 'assistant' ? index : found), -1);
+            if (index < 0) return prev;
             const updated = [...prev];
-            for (let i = updated.length - 1; i >= 0; i--) {
-              if (updated[i].role === 'assistant') {
-                updated[i] = { ...updated[i], reasoning: (updated[i].reasoning || '') + text };
-                break;
-              }
-            }
+            updated[index] = { ...updated[index], reasoning: (updated[index].reasoning || '') + text };
             return updated;
           });
           break;

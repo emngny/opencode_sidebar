@@ -22,7 +22,12 @@ export function Markdown({ content }: Readonly<Props>) {
     const root = rootRef.current;
     if (!root) return;
     const handler = (e: MouseEvent) => {
-      const btn = (e.target as HTMLElement).closest('.copy-btn');
+      const target = e.target as HTMLElement;
+      const link = target.closest('a');
+      const href = link?.getAttribute('href');
+      if (href && !href.startsWith('#')) e.preventDefault();
+
+      const btn = target.closest('.copy-btn');
       if (!btn) return;
       const pre = btn.closest('pre');
       const code = pre?.querySelector('code');
@@ -41,13 +46,6 @@ export function Markdown({ content }: Readonly<Props>) {
     return () => root.removeEventListener('click', handler);
   }, [html]);
 
-  const handleLinkClick = (e: React.MouseEvent) => {
-    const a = (e.target as HTMLElement).closest('a');
-    if (a && a.getAttribute('href') && !a.getAttribute('href')?.startsWith('#')) {
-      e.preventDefault();
-    }
-  };
-
   return (
     <div
       ref={rootRef}
@@ -59,7 +57,7 @@ export function Markdown({ content }: Readonly<Props>) {
         wordBreak: 'break-word',
       }}
     >
-      <div dangerouslySetInnerHTML={{ __html: html }} onClick={handleLinkClick} />
+      <div dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }

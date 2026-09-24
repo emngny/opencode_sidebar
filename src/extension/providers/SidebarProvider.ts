@@ -9,7 +9,13 @@ import { ChatCoordinator } from '../services/ChatCoordinator';
 import { GitService } from '../services/GitService';
 import { WebviewHtmlBuilder } from '../services/WebviewHtmlBuilder';
 import { SidebarMessageHandler } from '../services/SidebarMessageHandler';
-import { ExtensionToWebviewMessage, WebviewToExtensionMessage, isRecord } from '../../shared/types';
+import {
+  ExtensionToWebviewMessage,
+  WebviewToExtensionMessage,
+  getErrorMessage,
+  isRecord,
+  WEBVIEW_TO_EXTENSION_TYPES,
+} from '../../shared/types';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'opencode.sidebar';
@@ -53,7 +59,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = new WebviewHtmlBuilder(this._extensionUri, () => serverUrl).build(webviewView.webview);
     webviewView.webview.onDidReceiveMessage(async (data: unknown) => {
       if (!this.validateMessage(data)) return;
-      await this._handler.dispatch(data);
+      try {
+        await this._handler.dispatch(data);
+      } catch (error) {
+        this.postMessage({ type: 'error', payload: { message: getErrorMessage(error) } });
+      }
     });
   }
 
@@ -71,6 +81,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   /** Validates required payload field types for each webview command. */
   validatePayload(type: string, payload: unknown): boolean {
+    if (!(WEBVIEW_TO_EXTENSION_TYPES as readonly string[]).includes(type)) return false;
     const optional = new Set([
       'clearChat',
       'unrevert',
@@ -95,7 +106,30 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (type === 'setApiKey') return hasStrings('providerId', 'key');
     if (type === 'removeApiKey' || type === 'loadSession' || type === 'deleteSession')
       return hasStrings(type === 'removeApiKey' ? 'providerId' : 'sessionId');
-    if (type === 'sendMessage') return hasStrings('prompt');
+    if (type === 'sendMessage') {
+      if (typeof value['prompt'] !== 'string') return false;
+      if (value['context'] === undefined) return true;
+      if (!Array.isArray(value['context'])) return false;
+      return (
+        value['context'].every((item) => {
+          if (!isRecord(item)) return false;
+          if (item['type'] === 'file') return typeof item['name'] === 'string' && typeof item['path'] === 'string';
+          if (item['type'] !== 'image') return false;
+          if (
+            typeof item['name'] !== 'string' ||
+            typeof item['data'] !== 'string' ||
+            typeof item['mimeType'] !== 'string'
+          ) {
+            return false;
+          }
+          if (!item['mimeType'].startsWith('image/') || item['mimeType'].length === 'image/'.length) return false;
+          if (!item['data'] || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(item['data'])) {
+            return false;
+          }
+          return item['data'].length <= Math.ceil((10 * 1024 * 1024 * 4) / 3);
+        }) && value['context'].filter((item) => isRecord(item) && item['type'] === 'image').length <= 5
+      );
+    }
     if (type === 'switchAgent') return hasStrings('agent');
     return true;
   }

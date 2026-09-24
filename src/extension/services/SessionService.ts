@@ -42,22 +42,27 @@ export class SessionService {
 
   async deleteSession(sessionId: string): Promise<void> {
     await this._opencode.deleteSession(sessionId);
+    if (this._currentSessionId === sessionId) {
+      this._currentSessionId = null;
+    }
   }
 
-  async revert(messageId: string): Promise<{ result: unknown; messages: ChatMessage[] }> {
-    if (!this._currentSessionId) throw new Error('No active session');
-    const result = await this._opencode.revertSession(this._currentSessionId, messageId);
-    const raw = await this._opencode.getSessionMessages(this._currentSessionId);
-    const messages = mapRawMessagesToChatMessages(raw, () => `${this._currentSessionId}_${Date.now()}_${randomUUID()}`);
-    return { result, messages };
+  async revert(messageId: string): Promise<{ sessionId: string; result: unknown; messages: ChatMessage[] }> {
+    const sessionId = this._currentSessionId;
+    if (!sessionId) throw new Error('No active session');
+    const result = await this._opencode.revertSession(sessionId, messageId);
+    const raw = await this._opencode.getSessionMessagesStrict(sessionId);
+    const messages = mapRawMessagesToChatMessages(raw, () => `${sessionId}_${Date.now()}_${randomUUID()}`);
+    return { sessionId, result, messages };
   }
 
-  async unrevert(): Promise<{ result: unknown; messages: ChatMessage[] }> {
-    if (!this._currentSessionId) throw new Error('No active session');
-    const result = await this._opencode.unrevertSession(this._currentSessionId);
-    const raw = await this._opencode.getSessionMessages(this._currentSessionId);
-    const messages = mapRawMessagesToChatMessages(raw, () => `${this._currentSessionId}_${Date.now()}_${randomUUID()}`);
-    return { result, messages };
+  async unrevert(): Promise<{ sessionId: string; result: unknown; messages: ChatMessage[] }> {
+    const sessionId = this._currentSessionId;
+    if (!sessionId) throw new Error('No active session');
+    const result = await this._opencode.unrevertSession(sessionId);
+    const raw = await this._opencode.getSessionMessagesStrict(sessionId);
+    const messages = mapRawMessagesToChatMessages(raw, () => `${sessionId}_${Date.now()}_${randomUUID()}`);
+    return { sessionId, result, messages };
   }
 
   async abort(): Promise<void> {

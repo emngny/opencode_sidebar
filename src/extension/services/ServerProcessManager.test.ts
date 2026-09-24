@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
-import { ServerProcessManager } from './ServerProcessManager';
+import { ServerProcessManager, ServerStartupAbortedError } from './ServerProcessManager';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -16,7 +16,8 @@ interface TestableManager extends Omit<ServerProcessManager, 'process'> {
   cachedAuthHeader: Record<string, string>;
   server: { port: number; url: string } | null;
   process: { kill: (s?: string) => void } | null;
-  tryStart(binary: string, password: string, timeoutMs: number): Promise<void>;
+  binaryCandidates: string[];
+  tryStart(binary: string, password: string, timeoutMs: number, epoch?: number): Promise<void>;
   resolveBinaryCandidates(): Promise<string[]>;
 }
 
@@ -135,5 +136,78 @@ describe('ServerProcessManager zeroize', () => {
     const mgr = new ServerProcessManager();
     expect(mgr.authHeader).toEqual({});
     expect(mgr.isRunning).toBe(false);
+  });
+});
+
+describe('ServerProcessManager lifecycle concurrency', () => {
+  it('shares one in-flight startup between concurrent callers', async () => {
+    const proc = fakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as any);
+    const mgr = new ServerProcessManager('/tmp') as unknown as TestableManager;
+    mgr.binaryCandidates = ['opencode'];
+
+    const first = mgr.start();
+    const second = mgr.start();
+    proc.stdout.emit('data', Buffer.from('http://127.0.0.1:54321\n'));
+    await Promise.all([first, second]);
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(mgr.server).toEqual({ port: 54321, url: 'http://127.0.0.1:54321' });
+  });
+
+  it('ignores exit from a stale process after a new server starts', async () => {
+    const firstProc = fakeProc();
+    const secondProc = fakeProc();
+    vi.mocked(spawn)
+      .mockReturnValueOnce(firstProc as any)
+      .mockReturnValueOnce(secondProc as any);
+    const mgr = new ServerProcessManager('/tmp') as unknown as TestableManager;
+    mgr.binaryCandidates = ['opencode'];
+
+    const firstStart = mgr.start();
+    firstProc.stdout.emit('data', Buffer.from('http://127.0.0.1:54321\n'));
+    await firstStart;
+    mgr.stop();
+
+    const secondStart = mgr.start();
+    secondProc.stdout.emit('data', Buffer.from('http://127.0.0.1:54322\n'));
+    await secondStart;
+    firstProc.emit('exit', 0);
+
+    expect(mgr.server).toEqual({ port: 54322, url: 'http://127.0.0.1:54322' });
+    expect(mgr.authHeader.Authorization).toBeTruthy();
+  });
+
+  it('kills and rejects a process that becomes obsolete during startup', async () => {
+    const proc = fakeProc();
+    vi.mocked(spawn).mockReturnValue(proc as any);
+    const mgr = new ServerProcessManager('/tmp') as unknown as TestableManager;
+    mgr.binaryCandidates = ['opencode'];
+
+    const startup = mgr.start();
+    await Promise.resolve();
+    mgr.stop();
+    proc.stdout.emit('data', Buffer.from('http://127.0.0.1:54321\n'));
+
+    await expect(startup).rejects.toBeInstanceOf(ServerStartupAbortedError);
+    expect(proc.kill).toHaveBeenCalled();
+  });
+
+  it('allows a later startup after an earlier startup fails', async () => {
+    const proc = fakeProc();
+    vi.mocked(spawn).mockImplementationOnce(() => {
+      throw new Error('first failed');
+    });
+    vi.mocked(spawn).mockReturnValueOnce(proc as any);
+    const mgr = new ServerProcessManager('/tmp') as unknown as TestableManager;
+    mgr.binaryCandidates = ['opencode'];
+
+    await expect(mgr.start()).rejects.toThrow('opencode serve failed');
+    const retry = mgr.start();
+    proc.stdout.emit('data', Buffer.from('http://127.0.0.1:54323\n'));
+    await retry;
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(mgr.server?.port).toBe(54323);
   });
 });

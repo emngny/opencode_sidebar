@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   ProviderListResult,
   ProjectInfo,
@@ -20,6 +21,13 @@ interface SessionInfo {
   title?: string;
 }
 
+interface ActivePrompt {
+  requestId: string;
+  sessionId: string;
+  controller: AbortController;
+  finish: () => void;
+}
+
 type EventHandler = (event: SSEMessage) => void;
 
 /**
@@ -28,13 +36,11 @@ type EventHandler = (event: SSEMessage) => void;
  */
 export class OpencodeCli {
   private readonly eventHandlers: Set<EventHandler> = new Set();
-  private abortController: AbortController | null = null;
+  private readonly activePrompts = new Map<string, ActivePrompt>();
   private readonly cwd: string | undefined;
   private readonly serverManager: ServerProcessManager;
   private apiClient: ApiClient | null = null;
   private readonly sseStream: SseStream;
-  private eventDispatcher: EventDispatcher | null = null;
-  private readonly idleResolveRefs = new Map<string, () => void>();
 
   constructor(cwd?: string) {
     this.cwd = cwd;
@@ -116,9 +122,14 @@ export class OpencodeCli {
     return this.ensureApiClient().getSessionMessages(sessionId);
   }
 
-  async deleteSession(sessionId: string): Promise<boolean> {
+  async getSessionMessagesStrict(sessionId: string): Promise<RawSessionMessage[]> {
     await this.start();
-    return this.ensureApiClient().deleteSession(sessionId);
+    return this.ensureApiClient().getSessionMessagesStrict(sessionId);
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.start();
+    await this.ensureApiClient().deleteSession(sessionId);
   }
 
   async getAgents(): Promise<string[]> {
@@ -196,6 +207,7 @@ export class OpencodeCli {
       }) => void;
       onReasoning?: (text: string) => void;
       onDiffs?: (diffs: NormalizedDiff[]) => void;
+      requestId?: string;
     },
   ): Promise<string> {
     const {
@@ -209,6 +221,7 @@ export class OpencodeCli {
       onMessageMeta,
       onReasoning,
       onDiffs,
+      requestId = randomUUID(),
     } = options || {};
     await this.start();
 
@@ -223,9 +236,8 @@ export class OpencodeCli {
     }
     if (agent) body.agent = agent;
 
-    if (this.abortController) this.abortController.abort();
     const controller = new AbortController();
-    this.abortController = controller;
+    let finishRequest = () => {};
 
     const callbacks: EventCallbacks = {
       onContent,
@@ -237,8 +249,9 @@ export class OpencodeCli {
       onDiffs,
     };
     const dispatcher = new EventDispatcher(callbacks);
-    this.eventDispatcher = dispatcher;
     dispatcher.resetSession(sessionId);
+    const activePrompt: ActivePrompt = { requestId, sessionId, controller, finish: () => finishRequest() };
+    this.activePrompts.set(requestId, activePrompt);
 
     let messageId = '';
     const seenEventIds = new Set<string>();
@@ -249,9 +262,10 @@ export class OpencodeCli {
       const cleanup = () => {
         clearTimeout(timeout);
         controller.signal.removeEventListener('abort', onAbort);
-        this.idleResolveRefs.delete(sessionId);
+        if (this.activePrompts.get(requestId) === activePrompt) {
+          this.activePrompts.delete(requestId);
+        }
         dispatcher.clearSession(sessionId);
-        if (this.eventDispatcher === dispatcher) this.eventDispatcher = null;
       };
       const finish = () => {
         if (settled) return;
@@ -260,7 +274,7 @@ export class OpencodeCli {
         resolve();
       };
 
-      this.idleResolveRefs.set(sessionId, finish);
+      finishRequest = finish;
       controller.signal.addEventListener('abort', onAbort, { once: true });
 
       const dispatchEvent = (event: SSEMessage) => {
@@ -306,13 +320,13 @@ export class OpencodeCli {
           finish();
         });
 
-      timeout = setTimeout(finish, 120000);
+      timeout = setTimeout(() => {
+        controller.abort();
+        finish();
+      }, 120000);
     });
 
-    return idlePromise.then(() => {
-      if (this.abortController === controller) this.abortController = null;
-      return messageId;
-    });
+    return idlePromise.then(() => messageId);
   }
 
   /**
@@ -362,15 +376,19 @@ export class OpencodeCli {
   }
 
   /**
-   * Aborts a running prompt in the session and cancels any pending requests.
+   * Aborts a running prompt in the session and cancels matching local requests.
+   * With no request ID, all active requests in the session are cancelled.
    * @param sessionId - Session ID to abort
+   * @param requestId - Optional request ID to target
    */
-  async abortSession(sessionId: string): Promise<void> {
-    const controller = this.abortController;
-    controller?.abort();
-    this.idleResolveRefs.get(sessionId)?.();
-    this.idleResolveRefs.delete(sessionId);
-    if (this.abortController === controller) this.abortController = null;
+  async abortSession(sessionId: string, requestId?: string): Promise<void> {
+    const prompts = [...this.activePrompts.values()].filter(
+      (prompt) => prompt.sessionId === sessionId && (!requestId || prompt.requestId === requestId),
+    );
+    for (const prompt of prompts) {
+      prompt.controller.abort();
+      prompt.finish();
+    }
     await this.ensureApiClient().abortSession(sessionId);
   }
 
@@ -384,10 +402,12 @@ export class OpencodeCli {
    * Call when the extension deactivates or the sidebar closes.
    */
   stop(): void {
-    this.abortController?.abort();
-    for (const finish of this.idleResolveRefs.values()) finish();
-    this.idleResolveRefs.clear();
-    this.eventDispatcher = null;
+    const prompts = [...this.activePrompts.values()];
+    for (const prompt of prompts) {
+      prompt.controller.abort();
+      prompt.finish();
+    }
+    this.activePrompts.clear();
     this.serverManager.stop();
     this.apiClient = null;
   }

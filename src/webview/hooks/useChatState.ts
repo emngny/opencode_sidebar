@@ -20,49 +20,47 @@ export function useChatState() {
   const [busy, setBusy] = useState(false);
   const [contextEvents, setContextEvents] = useState<ContextEvent[]>([]);
 
-  const pendingChunkRef = useRef<string>('');
-  const chunkFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const streamingMsgIdRef = useRef<string | null>(null);
+  const pendingChunkRef = useRef<Map<string, string>>(new Map());
+  const chunkFlushTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const streamingMsgIdRef = useRef<Map<string, string>>(new Map());
   const DEBOUNCE_MS = 80;
 
-  const flushPendingChunk = useCallback(() => {
-    if (!pendingChunkRef.current) return;
-    const chunkContent = pendingChunkRef.current;
-    pendingChunkRef.current = '';
-
-    if (chunkFlushTimerRef.current) {
-      clearTimeout(chunkFlushTimerRef.current);
-      chunkFlushTimerRef.current = null;
-    }
-
-    setMessages((prev) => {
-      const lastMessage = prev.at(-1);
-      const updated = [...prev];
-      if (lastMessage?.role === 'assistant') {
-        updated[updated.length - 1] = {
-          ...lastMessage,
-          content: lastMessage.content + chunkContent,
-          isStreaming: true,
-        };
-      } else {
-        const newId = genId();
-        streamingMsgIdRef.current = newId;
-        updated.push({
-          role: 'assistant',
-          content: chunkContent,
-          timestamp: Date.now(),
-          id: newId,
-          isStreaming: true,
-        });
+  const flushPendingChunk = useCallback((requestId?: string) => {
+    const requestIds = requestId ? [requestId] : [...pendingChunkRef.current.keys()];
+    for (const id of requestIds) {
+      const chunkContent = pendingChunkRef.current.get(id);
+      if (!chunkContent) continue;
+      pendingChunkRef.current.delete(id);
+      const timer = chunkFlushTimerRef.current.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        chunkFlushTimerRef.current.delete(id);
       }
-      return updated;
-    });
+
+      setMessages((prev) => {
+        const messageIndex = id
+          ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === id)
+          : prev.reduce((found, message, index) => (message.role === 'assistant' ? index : found), -1);
+        if (messageIndex < 0) return prev;
+        const updated = [...prev];
+        const message = updated[messageIndex];
+        updated[messageIndex] = { ...message, content: message.content + chunkContent, isStreaming: true };
+        return updated;
+      });
+    }
   }, []);
 
-  const cleanupStreaming = useCallback(() => {
-    if (chunkFlushTimerRef.current) {
-      clearTimeout(chunkFlushTimerRef.current);
-      chunkFlushTimerRef.current = null;
+  const cleanupStreaming = useCallback((requestId?: string) => {
+    const requestIds = requestId ? [requestId] : [...chunkFlushTimerRef.current.keys()];
+    for (const id of requestIds) {
+      const timer = chunkFlushTimerRef.current.get(id);
+      if (timer) clearTimeout(timer);
+      chunkFlushTimerRef.current.delete(id);
+      if (requestId) pendingChunkRef.current.delete(id);
+    }
+    if (!requestId) {
+      pendingChunkRef.current.clear();
+      streamingMsgIdRef.current.clear();
     }
   }, []);
 

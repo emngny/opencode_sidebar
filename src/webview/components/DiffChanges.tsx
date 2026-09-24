@@ -72,7 +72,14 @@ export function DiffChanges({ additions, deletions, variant = 'default' }: Reado
         style={{ flexShrink: 0 }}
       >
         {blocks.map((type, i) => (
-          <rect key={i} x={i * 4} width="2" height="14" rx="1" fill={colors[type as keyof typeof colors]} />
+          <rect
+            key={`${type}-${i}`}
+            x={i * 4}
+            width="2"
+            height="14"
+            rx="1"
+            fill={colors[type as keyof typeof colors]}
+          />
         ))}
       </svg>
     );

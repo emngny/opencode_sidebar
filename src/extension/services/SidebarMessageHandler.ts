@@ -14,6 +14,7 @@ import type { OpencodeCli } from './OpencodeCli';
 import type { PermissionService } from './PermissionService';
 import type { SessionService } from './SessionService';
 import type { SkillService } from './SkillService';
+import { ServerStartupAbortedError } from './ServerProcessManager';
 import { getGitInfo } from './GitInfo';
 import { resolveWorkspacePath } from '../utils/workspacePath';
 
@@ -33,7 +34,7 @@ export class SidebarMessageHandler {
   async dispatch(message: WebviewToExtensionMessage): Promise<void> {
     switch (message.type) {
       case 'searchFiles':
-        return this.searchFiles(message.payload.query);
+        return this.searchFiles(message.payload.query, message.payload.requestId);
       case 'getSavedModel':
         return this.getSavedModel();
       case 'saveModel':
@@ -119,9 +120,9 @@ export class SidebarMessageHandler {
       .catch(() => undefined);
   }
 
-  private async searchFiles(query: string): Promise<void> {
+  private async searchFiles(query: string, requestId?: string): Promise<void> {
     const folder = vscode.workspace.workspaceFolders?.[0];
-    if (!folder) return this._post({ type: 'fileSearchResults', payload: { query, files: [] } });
+    if (!folder) return this._post({ type: 'fileSearchResults', payload: { query, requestId, files: [] } });
     try {
       const results = await vscode.workspace.findFiles(query ? `**/*${query}*` : '**/*', '**/node_modules/**', 30);
       const files = results
@@ -131,10 +132,10 @@ export class SidebarMessageHandler {
         })
         .filter((file) => !query || file.path.toLowerCase().includes(query.toLowerCase()))
         .slice(0, 20);
-      this._post({ type: 'fileSearchResults', payload: { query, files } });
+      this._post({ type: 'fileSearchResults', payload: { query, requestId, files } });
     } catch (error) {
       console.error('[opencode] File search error:', getErrorMessage(error));
-      this._post({ type: 'fileSearchResults', payload: { query, files: [] } });
+      this._post({ type: 'fileSearchResults', payload: { query, requestId, files: [] } });
     }
   }
 
@@ -150,7 +151,13 @@ export class SidebarMessageHandler {
       const result = await this._sessions.revert(messageId);
       this._post({ type: 'revertResult', payload: { ...result, reverted: true } });
     } catch (error) {
-      this._post({ type: 'error', payload: { message: `Revert failed: ${getErrorMessage(error)}` } });
+      this._post({
+        type: 'error',
+        payload: {
+          message: `Revert failed: ${getErrorMessage(error)}`,
+          sessionId: this._sessions.currentSessionId ?? undefined,
+        },
+      });
     }
   }
   private async unrevert(): Promise<void> {
@@ -158,7 +165,13 @@ export class SidebarMessageHandler {
       const result = await this._sessions.unrevert();
       this._post({ type: 'revertResult', payload: { ...result, reverted: false } });
     } catch (error) {
-      this._post({ type: 'error', payload: { message: `Unrevert failed: ${getErrorMessage(error)}` } });
+      this._post({
+        type: 'error',
+        payload: {
+          message: `Unrevert failed: ${getErrorMessage(error)}`,
+          sessionId: this._sessions.currentSessionId ?? undefined,
+        },
+      });
     }
   }
   private async respondPermission(payload: {
@@ -200,20 +213,25 @@ export class SidebarMessageHandler {
   }
   private async runCommand(payload: { command: string; args?: string; isSkill?: boolean }): Promise<void> {
     if (payload.command === 'init') {
-      const result = this._skills.createAgentsFile();
-      if (result.status === 'error')
-        this._post({ type: 'error', payload: { message: `Failed to create AGENTS.md: ${result.message}` } });
-      else
-        this._post({
-          type: 'receiveMessage',
-          payload: {
-            role: 'system',
-            content:
-              result.status === 'exists'
-                ? '⚠️ AGENTS.md already exists. Skipping creation.'
-                : '✅ AGENTS.md created in workspace root. You can now customize it for your project.',
-          },
-        });
+      try {
+        const result = this._skills.createAgentsFile();
+        if (result.status === 'error') {
+          this._post({ type: 'error', payload: { message: `Failed to create AGENTS.md: ${result.message}` } });
+        } else {
+          this._post({
+            type: 'receiveMessage',
+            payload: {
+              role: 'system',
+              content:
+                result.status === 'exists'
+                  ? '⚠️ AGENTS.md already exists. Skipping creation.'
+                  : '✅ AGENTS.md created in workspace root. You can now customize it for your project.',
+            },
+          });
+        }
+      } finally {
+        this._post({ type: 'status', payload: { status: 'idle' } });
+      }
     } else if (payload.command === 'review') {
       try {
         await this._git.review(payload.args || '');
@@ -232,7 +250,14 @@ export class SidebarMessageHandler {
     mode?: string;
     context?: ContextPart[];
   }): Promise<void> {
-    if (!this._opencode.isRunning) await this._opencode.start();
+    if (!this._opencode.isRunning) {
+      try {
+        await this._opencode.start();
+      } catch (error) {
+        if (error instanceof ServerStartupAbortedError) return;
+        throw error;
+      }
+    }
     if (!this._sessions.currentSessionId) await this._sessions.ensureSession(payload.prompt);
     await this._chat.processPrompt(payload.prompt, payload.mode ?? '', payload.context, payload.model);
   }
@@ -307,7 +332,10 @@ export class SidebarMessageHandler {
       await this._sessions.deleteSession(sessionId);
       this._post({ type: 'sessionDeleted', payload: { sessionId } });
     } catch (error) {
-      this._post({ type: 'error', payload: { message: `Failed to delete session: ${getErrorMessage(error)}` } });
+      this._post({
+        type: 'error',
+        payload: { message: `Failed to delete session: ${getErrorMessage(error)}`, sessionId },
+      });
     }
   }
 }

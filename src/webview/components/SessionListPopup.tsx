@@ -23,6 +23,8 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
       if (msg.type === 'sessionList') {
         setSessions(Array.isArray(msg.payload) ? msg.payload : []);
         setLoading(false);
+      } else if (msg.type === 'sessionDeleted') {
+        setSessions((prev) => prev.filter((session) => session.id !== msg.payload.sessionId));
       }
     });
     return unsubscribe;
@@ -31,7 +33,6 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
   const handleDelete = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     postMessage({ type: 'deleteSession', payload: { sessionId } });
-    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
   };
 
   const handleDeleteOld = async (days: number) => {
@@ -41,7 +42,6 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
     for (const s of oldSessions) {
       postMessage({ type: 'deleteSession', payload: { sessionId: s.id } });
     }
-    setSessions((prev) => prev.filter((s) => !oldSessions.includes(s)));
     setShowDeleteMenu(false);
   };
 
@@ -60,12 +60,16 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
     return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   };
 
-  const oldCount = sessions.filter(
-    (s) => s.time?.created && s.time.created < Date.now() - 7 * 24 * 60 * 60 * 1000,
-  ).length;
+  let sessionCountLabel = 'Loading...';
+  if (!loading) {
+    const sessionLabel = sessions.length === 1 ? 'session' : 'sessions';
+    sessionCountLabel = `${sessions.length} ${sessionLabel}`;
+  }
 
   return (
-    <div
+    <dialog
+      open
+      onCancel={onClose}
       style={{
         position: 'absolute',
         top: 0,
@@ -77,9 +81,6 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
@@ -109,9 +110,7 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
         >
           <div>
             <div style={{ fontSize: 16, fontWeight: 600, color: '#cdd6f4' }}>Session History</div>
-            <div style={{ fontSize: 11, color: '#585b70', marginTop: 2 }}>
-              {loading ? 'Loading...' : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
-            </div>
+            <div style={{ fontSize: 11, color: '#585b70', marginTop: 2 }}>{sessionCountLabel}</div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {sessions.length > 0 && (
@@ -153,7 +152,7 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                       { days: 90, label: 'Older than 90 days' },
                       { days: 0, label: 'All sessions' },
                     ].map((opt) => (
-                      <div
+                      <button
                         key={opt.days}
                         onClick={() => handleDeleteOld(opt.days)}
                         style={{
@@ -166,7 +165,7 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                       >
                         {opt.label}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -191,13 +190,13 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: 20, color: '#585b70', fontSize: 13 }}>Loading...</div>
-          ) : sessions.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 20, color: '#585b70', fontSize: 13 }}>No sessions yet</div>
+          {sessions.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 20, color: '#585b70', fontSize: 13 }}>
+              {loading ? 'Loading...' : 'No sessions yet'}
+            </div>
           ) : (
             sessions.map((s) => (
-              <div
+              <button
                 key={s.id}
                 onClick={() => onSelect(s.id)}
                 style={{
@@ -247,11 +246,11 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                 >
                   🗑
                 </button>
-              </div>
+              </button>
             ))
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

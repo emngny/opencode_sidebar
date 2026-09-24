@@ -19,6 +19,38 @@ describe('ContextService', () => {
     expect(result).toEqual({ userContent: 'hello', extraParts: [] });
   });
 
+  it('converts a valid image attachment to an image part', async () => {
+    const permissions = { isReadAllowed: vi.fn(), waitForReadPermission: vi.fn() } as unknown as PermissionService;
+    const result = await new ContextService(permissions, vi.fn()).process('describe this', [
+      { type: 'image', name: 'shot.png', data: 'aGVsbG8=', mimeType: 'image/png' },
+    ]);
+
+    expect(result).toEqual({
+      userContent: 'describe this',
+      extraParts: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
+    });
+  });
+
+  it('rejects invalid image data and reports the failure', async () => {
+    const permissions = { isReadAllowed: vi.fn(), waitForReadPermission: vi.fn() } as unknown as PermissionService;
+    const post = vi.fn();
+    const result = await new ContextService(permissions, post).process('', [
+      { type: 'image', name: 'shot.png', data: 'not base64!', mimeType: 'image/png' },
+    ]);
+
+    expect(result.extraParts).toEqual([]);
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: 'toolEvent' }));
+  });
+
+  it('rejects non-image MIME types', async () => {
+    const permissions = { isReadAllowed: vi.fn(), waitForReadPermission: vi.fn() } as unknown as PermissionService;
+    const result = await new ContextService(permissions, vi.fn()).process('', [
+      { type: 'image', name: 'not-image.txt', data: 'aGVsbG8=', mimeType: 'text/plain' },
+    ]);
+
+    expect(result.extraParts).toEqual([]);
+  });
+
   it('skips files larger than 1 MB', async () => {
     const permissions = {
       isReadAllowed: vi.fn().mockReturnValue({ allowed: true }),

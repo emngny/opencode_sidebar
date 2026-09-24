@@ -8,17 +8,23 @@ interface Props {
 
 export function ConfirmDialog({ message, onConfirm, onCancel }: Readonly<Props>) {
   return (
-    <div
+    <dialog
+      open
+      aria-label={message}
+      onCancel={onCancel}
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        width: '100%',
+        maxWidth: 'none',
+        height: '100%',
+        maxHeight: 'none',
+        border: 0,
+        padding: 0,
         backgroundColor: 'rgba(0,0,0,0.5)',
+        color: 'inherit',
       }}
-      onClick={onCancel}
     >
       <div
         style={{
@@ -28,12 +34,12 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: Readonly<Props>)
           padding: '20px 24px',
           maxWidth: 320,
           width: '90%',
+          margin: 'auto',
           display: 'flex',
           flexDirection: 'column',
           gap: 16,
           boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div style={{ fontSize: 13, color: '#cdd6f4', lineHeight: 1.5 }}>{message}</div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -68,6 +74,6 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: Readonly<Props>)
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

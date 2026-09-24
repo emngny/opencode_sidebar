@@ -48,12 +48,41 @@ describe('SidebarProvider Message Handling', () => {
         expect(validTypes).toContain(type);
       }
     });
+
+    it('rejects unknown message types', () => {
+      expect(provider.validatePayload('unknownMessage', {})).toBe(false);
+      expect(provider.validatePayload('unknownMessage', undefined)).toBe(false);
+    });
   });
 
   describe('Payload Validation', () => {
     it('should validate searchFiles payload', () => {
       const isValid = provider.validatePayload('searchFiles', { query: '*.ts' });
       expect(isValid).toBe(true);
+    });
+
+    it('accepts a valid image context payload', () => {
+      expect(
+        provider.validatePayload('sendMessage', {
+          prompt: 'describe',
+          context: [{ type: 'image', name: 'shot.png', data: 'aGVsbG8=', mimeType: 'image/png' }],
+        }),
+      ).toBe(true);
+    });
+
+    it('rejects invalid image context payloads', () => {
+      expect(
+        provider.validatePayload('sendMessage', {
+          prompt: 'describe',
+          context: [{ type: 'image', name: 'shot.png', data: 'not base64!', mimeType: 'image/png' }],
+        }),
+      ).toBe(false);
+      expect(
+        provider.validatePayload('sendMessage', {
+          prompt: 'describe',
+          context: [{ type: 'image', name: 'shot.png', data: 'aGVsbG8=', mimeType: 'text/plain' }],
+        }),
+      ).toBe(false);
     });
 
     it('should reject searchFiles with missing query', () => {
@@ -110,7 +139,7 @@ describe('SidebarProvider Message Handling', () => {
         'openDiff',
       ];
 
-      expect(handlers.length).toBe(23);
+      expect(handlers).toHaveLength(23);
     });
   });
 });

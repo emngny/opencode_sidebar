@@ -120,6 +120,7 @@ function AppContent() {
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
+  const fileSearchRequestIdRef = useRef<string | null>(null);
 
   const [agents, setAgents] = useState<string[]>(['build', 'plan', 'ask', 'debug', 'docs', 'code', 'review']);
 
@@ -142,6 +143,7 @@ function AppContent() {
     setSkills,
     setFileSearchResults,
     setFileSearchQuery,
+    fileSearchRequestIdRef,
     setRevertActive,
     setConfirmDialog,
     setReadPermissionPrompt,
@@ -358,7 +360,10 @@ function AppContent() {
         <BottomInput
           onSend={handleSend}
           disabled={busy}
-          onSearchFiles={(query) => postMessage({ type: 'searchFiles', payload: { query } })}
+          onSearchFiles={(query, requestId) => {
+            fileSearchRequestIdRef.current = requestId;
+            postMessage({ type: 'searchFiles', payload: { query, requestId } });
+          }}
           fileSearchResults={fileSearchResults}
           fileSearchQuery={fileSearchQuery}
           onSlashCommand={handleSlashCommand}
