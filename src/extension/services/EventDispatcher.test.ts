@@ -28,6 +28,31 @@ describe('EventDispatcher', () => {
     expect(capturedContent).toBe('Hello world');
   });
 
+  it('should recover assistant text from message.part.updated when deltas are absent', () => {
+    let capturedContent = '';
+    const dispatcher = createDispatcher({
+      onContent: (text: string) => {
+        capturedContent += text;
+      },
+    });
+    dispatcher.resetSession('session-1');
+
+    dispatcher.dispatch(
+      sseEvent('message.part.updated', {
+        part: { id: 'text-1', type: 'text', text: 'Merhaba' },
+      }),
+      'session-1',
+    );
+    dispatcher.dispatch(
+      sseEvent('message.part.updated', {
+        part: { id: 'text-1', type: 'text', text: 'Merhaba, nasılsın?' },
+      }),
+      'session-1',
+    );
+
+    expect(capturedContent).toBe('Merhaba, nasılsın?');
+  });
+
   it('should call onReasoning for reasoning delta', () => {
     let capturedReasoning = '';
     const dispatcher = createDispatcher({
@@ -189,6 +214,74 @@ describe('EventDispatcher', () => {
     const sessionPartTypes = (dispatcher as unknown as { sessionPartTypes: Map<string, Map<string, string>> })
       .sessionPartTypes;
     expect(sessionPartTypes.has('session-idle')).toBe(false);
+  });
+});
+
+describe('EventDispatcher final JSON message', () => {
+  it('emits assistant text from the POST body parts', () => {
+    let content = '';
+    const dispatcher = new EventDispatcher({ onContent: (text) => (content += text) });
+    dispatcher.resetSession('session-1');
+
+    dispatcher.applyFinalMessage([
+      { id: 'prt-1', type: 'step-start' },
+      { id: 'prt-2', type: 'reasoning', text: 'thinking hard' },
+      { id: 'prt-3', type: 'text', text: 'merhaba', messageID: 'msg-a' },
+      { id: 'prt-4', type: 'step-finish' },
+    ]);
+
+    expect(content).toBe('merhaba');
+  });
+
+  it('does not repeat text already streamed as deltas', () => {
+    let content = '';
+    const dispatcher = new EventDispatcher({ onContent: (text) => (content += text) });
+    dispatcher.resetSession('session-1');
+
+    dispatcher.dispatch(
+      sseEvent('message.part.delta', { partID: 'prt-3', messageID: 'msg-a', delta: 'mer' }),
+      'session-1',
+    );
+    dispatcher.applyFinalMessage([{ id: 'prt-3', type: 'text', text: 'merhaba', messageID: 'msg-a' }]);
+
+    expect(content).toBe('merhaba');
+  });
+
+  it('skips the user message part echoed in the event stream', () => {
+    let content = '';
+    const dispatcher = new EventDispatcher({ onContent: (text) => (content += text) });
+    dispatcher.resetSession('session-1');
+
+    dispatcher.dispatch(sseEvent('message.updated', { info: { id: 'msg-user', role: 'user' } }), 'session-1');
+    dispatcher.dispatch(
+      sseEvent('message.part.updated', {
+        part: { id: 'prt-user', type: 'text', text: 'Reply with exactly: merhaba', messageID: 'msg-user' },
+      }),
+      'session-1',
+    );
+    dispatcher.dispatch(
+      sseEvent('message.part.delta', { partID: 'prt-user', messageID: 'msg-user', delta: 'leak' }),
+      'session-1',
+    );
+
+    expect(content).toBe('');
+  });
+
+  it('still emits assistant parts after the user message is seen', () => {
+    let content = '';
+    const dispatcher = new EventDispatcher({ onContent: (text) => (content += text) });
+    dispatcher.resetSession('session-1');
+
+    dispatcher.dispatch(sseEvent('message.updated', { info: { id: 'msg-user', role: 'user' } }), 'session-1');
+    dispatcher.dispatch(sseEvent('message.updated', { info: { id: 'msg-a', role: 'assistant' } }), 'session-1');
+    dispatcher.dispatch(
+      sseEvent('message.part.updated', {
+        part: { id: 'prt-a', type: 'text', text: 'ok', messageID: 'msg-a' },
+      }),
+      'session-1',
+    );
+
+    expect(content).toBe('ok');
   });
 });
 

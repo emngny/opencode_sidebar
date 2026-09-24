@@ -42,7 +42,24 @@ describe('pickAutoSelectModel', () => {
     expect(pickAutoSelectModel(models, '', {})).toBe('a/model');
   });
 
-  it('does not replace an existing model', () => {
-    expect(pickAutoSelectModel([{ id: 'a/model', name: 'A', providerId: 'a' }], 'current', {})).toBeNull();
+  it('keeps an existing model that the server still offers', () => {
+    const models = [
+      { id: 'a/model', name: 'A', providerId: 'a' },
+      { id: 'b/model', name: 'B', providerId: 'b' },
+    ];
+    expect(pickAutoSelectModel(models, 'b/model', {})).toBeNull();
+  });
+
+  it('replaces a saved model the server no longer offers', () => {
+    const models = [{ id: 'a/model', name: 'A', providerId: 'a' }];
+    expect(pickAutoSelectModel(models, 'a/removed-model', {})).toBe('a/model');
+  });
+
+  it('skips hidden models when replacing a stale selection', () => {
+    const models = [
+      { id: 'a/model', name: 'A', providerId: 'a' },
+      { id: 'b/model', name: 'B', providerId: 'b' },
+    ];
+    expect(pickAutoSelectModel(models, 'gone/model', { 'a/model': true })).toBe('b/model');
   });
 });

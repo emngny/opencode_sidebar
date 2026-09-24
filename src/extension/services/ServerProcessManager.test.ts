@@ -57,6 +57,32 @@ describe('ServerProcessManager.resolveBinaryCandidates', () => {
 
     expect(candidates).toContain('opencode');
   });
+  it('resolves the installed CLI through PATH instead of bundling it', async () => {
+    vi.stubEnv('PATH', process.platform === 'win32' ? String.raw`C:\tools\npm` : '/opt/tools/npm');
+    vi.mocked(access).mockResolvedValue(undefined);
+    const mgr = new ServerProcessManager() as unknown as TestableManager;
+
+    const candidates = await mgr.resolveBinaryCandidates();
+
+    const expected = process.platform === 'win32' ? String.raw`C:\tools\npm\opencode.exe` : '/opt/tools/npm/opencode';
+    expect(candidates).toContain(expected);
+    expect(candidates.at(-1)).toBe('opencode');
+  });
+
+  it('resolves the global npm opencode-ai layout from the npm prefix', async () => {
+    const prefix = process.platform === 'win32' ? String.raw`C:\Users\test\AppData\Roaming\npm` : '/home/test/.npm';
+    vi.stubEnv('npm_config_prefix', prefix);
+    vi.mocked(access).mockResolvedValue(undefined);
+    const mgr = new ServerProcessManager() as unknown as TestableManager;
+
+    const candidates = await mgr.resolveBinaryCandidates();
+
+    const expected =
+      process.platform === 'win32'
+        ? String.raw`C:\Users\test\AppData\Roaming\npm\node_modules\opencode-ai\bin\opencode.exe`
+        : '/home/test/.npm/node_modules/opencode-ai/bin/opencode';
+    expect(candidates).toContain(expected);
+  });
 });
 
 describe('ServerProcessManager.tryStart', () => {

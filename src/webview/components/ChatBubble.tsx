@@ -67,6 +67,7 @@ function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
         gap: 4,
         minHeight: message.role === 'assistant' && message.isStreaming && !message.content ? 24 : undefined,
         position: 'relative',
+        animation: 'message-rise 180ms ease-out',
         borderLeft: agentColor ? `3px solid ${agentColor.text}` : undefined,
         paddingLeft: agentColor ? 11 : 14,
       }}

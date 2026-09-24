@@ -8,7 +8,7 @@ import {
   isRecord,
 } from '../../shared/types';
 import { onMessage } from '../vscode-api';
-import { ModelItem } from './useModelManager';
+import { ModelItem, buildModelItems } from './modelUtils';
 import { genId } from './useChatState';
 
 interface MessageHandlerState {
@@ -45,7 +45,7 @@ interface MessageHandlerState {
   >;
   setAgents: React.Dispatch<React.SetStateAction<string[]>>;
   processProviderList: (result: ProviderListResult) => void;
-  tryAutoSelectModel: (models: ModelItem[], currentModel: string, hidden: Record<string, boolean>) => void;
+  tryAutoSelectModel: (models: ModelItem[]) => void;
 }
 
 export function useMessageHandler(state: MessageHandlerState): void {
@@ -209,17 +209,20 @@ export function useMessageHandler(state: MessageHandlerState): void {
         case 'error': {
           const { requestId, sessionId } = msg.payload;
           if (!isCurrentRequest(requestId, sessionId)) break;
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'assistant',
-              content: `❌ ${msg.payload.message}`,
-              timestamp: Date.now(),
-              id: genId(),
-              requestId,
-              sessionId,
-            },
-          ]);
+          cleanupStreaming(requestId);
+          const content = `❌ ${msg.payload.message}`;
+          setMessages((prev) => {
+            const index = requestId
+              ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === requestId)
+              : prev.reduce((found, message, index) => (message.role === 'assistant' ? index : found), -1);
+            // Reuse the empty streaming bubble so a failed turn never renders blank.
+            if (index >= 0 && !prev[index].content) {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], content, isStreaming: false };
+              return updated;
+            }
+            return [...prev, { role: 'assistant', content, timestamp: Date.now(), id: genId(), requestId, sessionId }];
+          });
           setBusy(false);
           break;
         }
@@ -376,30 +379,8 @@ export function useMessageHandler(state: MessageHandlerState): void {
         case 'providerList': {
           const pl = processProviderListRef.current;
           pl(msg.payload);
-          // Auto-select first model if none selected
-          const all = msg.payload.all || [];
-          const conn = msg.payload.connected || [];
-          const ta = tryAutoSelectRef.current;
-          setModel((currentModel) => {
-            setHiddenModels((hidden) => {
-              const models: ModelItem[] = [];
-              for (const provider of all) {
-                if (conn.includes(provider.id)) {
-                  for (const [modelId, modelInfo] of Object.entries(provider.models || {})) {
-                    const info = modelInfo as ProviderModel;
-                    models.push({
-                      id: `${provider.id}/${modelId}`,
-                      name: info.name || modelId,
-                      providerId: provider.id,
-                    });
-                  }
-                }
-              }
-              ta(models, currentModel, hidden);
-              return hidden; // unchanged
-            });
-            return currentModel; // unchanged
-          });
+          // Select a valid model, replacing a saved model the server no longer offers.
+          tryAutoSelectRef.current(buildModelItems(msg.payload));
           break;
         }
         case 'readFilePrompt': {

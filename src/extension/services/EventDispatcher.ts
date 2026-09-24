@@ -67,17 +67,66 @@ function extractReadPaths(tool: string, args: unknown): string[] {
 export class EventDispatcher {
   private readonly callbacks: EventCallbacks;
   private readonly sessionPartTypes: Map<string, Map<string, string>> = new Map();
+  private readonly sessionTextByPart: Map<string, Map<string, string>> = new Map();
+  private readonly sessionReasoningByPart: Map<string, Map<string, string>> = new Map();
+  private readonly sessionMessageRoles: Map<string, Map<string, string>> = new Map();
+  private activeSessionId = '';
 
   constructor(callbacks: EventCallbacks) {
     this.callbacks = callbacks;
   }
 
   resetSession(sessionId: string): void {
+    this.activeSessionId = sessionId;
     this.sessionPartTypes.set(sessionId, new Map());
+    this.sessionTextByPart.set(sessionId, new Map());
+    this.sessionReasoningByPart.set(sessionId, new Map());
+    this.sessionMessageRoles.set(sessionId, new Map());
   }
 
   clearSession(sessionId: string): void {
     this.sessionPartTypes.delete(sessionId);
+    this.sessionTextByPart.delete(sessionId);
+    this.sessionReasoningByPart.delete(sessionId);
+    this.sessionMessageRoles.delete(sessionId);
+  }
+
+  /**
+   * Chat text and reasoning parts are only rendered for assistant messages.
+   * The event stream also carries the user's own prompt as a text part, which
+   * must not be echoed into the assistant bubble.
+   */
+  private isAssistantMessage(sessionId: string, messageId: unknown): boolean {
+    if (typeof messageId !== 'string') return true;
+    const role = this.sessionMessageRoles.get(sessionId)?.get(messageId);
+    return role !== 'user';
+  }
+
+  /**
+   * Applies the final message `{ info, parts }` body returned by
+   * POST /session/:id/message. Newer opencode versions answer that route with
+   * JSON instead of an SSE stream, so this is the only place the assistant
+   * text may arrive. Text already forwarded through deltas is not repeated.
+   */
+  applyFinalMessage(parts: unknown, info?: unknown): void {
+    if (isRecord(info)) this.handleMessageMeta({ id: '', type: 'message.updated', properties: { info } });
+    if (!Array.isArray(parts)) return;
+    const cb = this.callbacks;
+    for (const raw of parts) {
+      if (!isRecord(raw)) continue;
+      if (!this.isAssistantMessage(this.activeSessionId, raw['messageID'])) continue;
+      const type = typeof raw['type'] === 'string' ? (raw['type'] as string) : undefined;
+      const id = typeof raw['id'] === 'string' ? (raw['id'] as string) : undefined;
+      if (type === 'text' && id && typeof raw['text'] === 'string') {
+        this.emitSuffix(this.sessionTextByPart, this.activeSessionId, id, raw['text'] as string, cb.onContent);
+      } else if (type === 'reasoning' && id && typeof raw['text'] === 'string') {
+        this.emitSuffix(this.sessionReasoningByPart, this.activeSessionId, id, raw['text'] as string, cb.onReasoning);
+      } else if (type === 'tool_call' && raw) {
+        this.handleToolCallEvent(cb, raw as unknown as ToolPart);
+      } else if (type === 'tool') {
+        this.handleToolStateEvent(cb, raw as unknown as ToolPart);
+      }
+    }
   }
 
   dispatch(event: SSEMessage, sessionId: string): void {
@@ -114,11 +163,16 @@ export class EventDispatcher {
     }
   }
 
-  /** Extracts agent, model, and timing metadata from message events. */
+  /** Records message roles and extracts agent, model, and timing metadata. */
   private handleMessageMeta(event: SSEMessage): void {
     const cb = this.callbacks;
     const infoRaw = (event.properties as Record<string, unknown>)['info'];
-    if (!isRecord(infoRaw) || typeof infoRaw['id'] !== 'string' || !cb.onMessageMeta) return;
+    if (!isRecord(infoRaw) || typeof infoRaw['id'] !== 'string') return;
+    if (typeof infoRaw['role'] === 'string') {
+      const sessionId = this.activeSessionId;
+      this.sessionMessageRoles.get(sessionId)?.set(infoRaw['id'], infoRaw['role']);
+    }
+    if (!cb.onMessageMeta) return;
     const agent = typeof infoRaw['agent'] === 'string' ? (infoRaw['agent'] as string) : undefined;
     const modelRaw = isRecord(infoRaw['model']) ? (infoRaw['model'] as Record<string, unknown>) : undefined;
     const modelId =
@@ -147,6 +201,22 @@ export class EventDispatcher {
       types?.set(part['id'] as string, part['type'] as string);
     }
     const partType = part && typeof part['type'] === 'string' ? (part['type'] as string) : undefined;
+    if (partType === 'text' && part && typeof part['id'] === 'string' && typeof part['text'] === 'string') {
+      if (!this.isAssistantMessage(sessionId, part['messageID'])) return;
+      this.emitSuffix(this.sessionTextByPart, sessionId, part['id'] as string, part['text'] as string, cb.onContent);
+      return;
+    }
+    if (partType === 'reasoning' && part && typeof part['id'] === 'string' && typeof part['text'] === 'string') {
+      if (!this.isAssistantMessage(sessionId, part['messageID'])) return;
+      this.emitSuffix(
+        this.sessionReasoningByPart,
+        sessionId,
+        part['id'] as string,
+        part['text'] as string,
+        cb.onReasoning,
+      );
+      return;
+    }
     if (partType === 'text' || partType === 'reasoning') return;
     if (partType === 'compaction') {
       const state = isRecord(part?.['state']) ? (part?.['state'] as Record<string, unknown>) : undefined;
@@ -303,15 +373,43 @@ export class EventDispatcher {
     const props = event.properties as Record<string, unknown>;
     const delta = typeof props['delta'] === 'string' ? (props['delta'] as string) : undefined;
     if (delta) {
+      if (!this.isAssistantMessage(sessionId, props['messageID'])) return;
       const types = this.sessionPartTypes.get(sessionId);
       const partID = typeof props['partID'] === 'string' ? (props['partID'] as string) : undefined;
       const partType = partID ? types?.get(partID) : undefined;
       if (partType === 'reasoning') {
+        if (partID) {
+          const byPart = this.sessionReasoningByPart.get(sessionId);
+          byPart?.set(partID, (byPart.get(partID) ?? '') + delta);
+        }
         cb.onReasoning?.(delta);
         return;
       }
+      if (partID) {
+        const textByPart = this.sessionTextByPart.get(sessionId);
+        textByPart?.set(partID, (textByPart.get(partID) ?? '') + delta);
+      }
       cb.onContent?.(delta);
     }
+  }
+
+  /** Emits only text not already forwarded through deltas or a full-part update. */
+  private emitSuffix(
+    store: Map<string, Map<string, string>>,
+    sessionId: string,
+    partId: string,
+    text: string,
+    emit?: (text: string) => void,
+  ): void {
+    if (!text) return;
+    const byPart = store.get(sessionId);
+    if (!byPart) return;
+    const emitted = byPart.get(partId) ?? '';
+    if (text === emitted) return;
+    const suffix = text.startsWith(emitted) ? text.slice(emitted.length) : text;
+    if (!suffix) return;
+    byPart.set(partId, text);
+    emit?.(suffix);
   }
 
   /** Forwards server-reported session errors to the error callback. */

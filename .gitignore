@@ -21,3 +21,6 @@ GEMINI.md
 .omo/
 .kilo/plans/
 docs/COMPREHENSIVE_REVIEW.md
+docs/COMPREHENSIVE_REVIEW_FULL_*.md
+docs/SECURITY_ASSESSMENT_*.md
+_cov.txt

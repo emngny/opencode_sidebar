@@ -140,36 +140,44 @@ export class ServerProcessManager {
         console.warn('[opencode] Binary path check failed:', err);
       }
     }
-    const candidates: string[] = [];
+
+    // Prefer an opencode CLI already installed on the machine — do not bundle it.
     const platform = process.platform;
+    const win = platform === 'win32';
     const home = process.env.HOME || process.env.USERPROFILE;
     const npmPrefix = process.env.npm_config_prefix;
-    if (platform === 'win32') {
-      const appData = process.env.APPDATA;
-      if (appData)
-        candidates.push(
-          String.raw`${appData}\npm\node_modules\opencode-ai\node_modules\opencode-windows-x64\bin\opencode.exe`,
-        );
-      if (appData)
-        candidates.push(
-          String.raw`${appData}\npm\node_modules\opencode-ai\node_modules\opencode-windows-x64-baseline\bin\opencode.exe`,
-        );
-    } else if (platform === 'darwin') {
-      if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
-      if (home) candidates.push(`${home}/.npm-global/bin/opencode`);
-      if (home) candidates.push(`${home}/.local/bin/opencode`);
-      candidates.push(
-        '/usr/local/bin/opencode',
-        '/opt/homebrew/bin/opencode',
-        '/opt/local/bin/opencode',
-        '/usr/bin/opencode',
-      );
-    } else {
-      if (npmPrefix) candidates.push(`${npmPrefix}/bin/opencode`);
-      if (home) candidates.push(`${home}/.local/bin/opencode`);
-      if (home) candidates.push(`${home}/.local/share/opencode/bin/opencode`);
-      candidates.push('/usr/local/bin/opencode', '/snap/bin/opencode', '/usr/bin/opencode', '/bin/opencode');
+    const appData = process.env.APPDATA;
+    const localAppData = process.env.LOCALAPPDATA;
+    const exe = win ? 'opencode.exe' : 'opencode';
+    const candidates: string[] = [];
+
+    const npmRoots = [npmPrefix, appData ? `${appData}\\npm` : undefined].filter((root): root is string => !!root);
+    const installDirs = [
+      localAppData ? `${localAppData}\\Programs\\opencode` : undefined,
+      home ? `${home}\\.opencode\\bin` : undefined,
+      home ? `${home}\\.local\\bin` : undefined,
+    ].filter((dir): dir is string => !!dir);
+
+    for (const root of [...npmRoots, ...installDirs, ...npmRoots.map((root) => `${root}\\node_modules`)]) {
+      candidates.push(win ? `${root}\\${exe}` : `${root}/${exe}`, win ? `${root}\\bin\\${exe}` : `${root}/bin/${exe}`);
     }
+    // Global npm layout: <prefix>/node_modules/opencode-ai/bin/opencode(.exe)
+    for (const root of npmRoots) {
+      candidates.push(
+        win ? `${root}\\node_modules\\opencode-ai\\bin\\opencode.exe` : `${root}/node_modules/opencode-ai/bin/opencode`,
+      );
+    }
+
+    // Resolve the CLI through PATH, including npm shim folders that only ship a wrapper.
+    const pathEntries = (process.env.PATH || '').split(win ? ';' : ':');
+    for (const dir of pathEntries) {
+      if (!dir) continue;
+      candidates.push(
+        win ? `${dir}\\${exe}` : `${dir}/${exe}`,
+        win ? `${dir}\\node_modules\\opencode-ai\\bin\\opencode.exe` : `${dir}/node_modules/opencode-ai/bin/opencode`,
+      );
+    }
+
     for (const candidate of candidates) {
       if (!candidate) continue;
       try {
@@ -185,19 +193,17 @@ export class ServerProcessManager {
 
   private tryStart(binary: string, password: string, timeoutMs: number, epoch = this.epoch): Promise<void> {
     return new Promise((resolveStart, reject) => {
-      const systemPath =
-        process.platform === 'win32'
-          ? [
-              process.env.SystemRoot || String.raw`C:\Windows`,
-              process.env.SystemRoot || String.raw`C:\Windows`,
-              'System32',
-              'Windows',
-              String.raw`System32\Wbem`,
-            ].join(';')
-          : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':');
+      const win = process.platform === 'win32';
+      const sep = win ? ';' : ':';
+      const systemRoot = process.env.SystemRoot || String.raw`C:\Windows`;
+      const systemPath = win
+        ? [`${systemRoot}\\System32`, systemRoot, `${systemRoot}\\System32\\Wbem`].join(sep)
+        : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(sep);
+      // Keep the inherited PATH so the server can locate git, ripgrep, language tools, etc.
+      const childPath = [systemPath, process.env.PATH].filter(Boolean).join(sep);
       const minimalEnv: Record<string, string | undefined> = {
         OPENCODE_SERVER_PASSWORD: password,
-        PATH: systemPath,
+        PATH: childPath,
         USERPROFILE: process.env.USERPROFILE,
         APPDATA: process.env.APPDATA,
         LOCALAPPDATA: process.env.LOCALAPPDATA,

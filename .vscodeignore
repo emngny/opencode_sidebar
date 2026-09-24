@@ -2,6 +2,7 @@
 node_modules/
 *.vsix
 src/
+scripts/
 tsconfig*.json
 esbuild.config.js
 package-lock.json

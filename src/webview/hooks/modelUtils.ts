@@ -36,6 +36,10 @@ export function pickAutoSelectModel(
   currentModel: string,
   hidden: Record<string, boolean>,
 ): string | null {
-  if (currentModel) return null;
-  return models.find((model) => !hidden[model.id])?.id ?? null;
+  const visible = models.filter((model) => !hidden[model.id]);
+  if (visible.length === 0) return null;
+  // A saved model can disappear when the server refreshes its catalog.
+  if (currentModel && visible.some((model) => model.id === currentModel)) return null;
+  const next = visible[0].id;
+  return next === currentModel ? null : next;
 }

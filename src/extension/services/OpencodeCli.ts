@@ -228,9 +228,10 @@ export class OpencodeCli {
     const parts: SendPromptPart[] = [...(extraParts || []), { type: 'text', text: prompt }];
     const body: SendPromptBody = { parts };
 
+    // Provider model IDs may contain slashes, so only the first one separates provider from model.
     if (model?.includes('/')) {
-      const [providerID, modelID] = model.split('/');
-      body.model = { providerID, modelID };
+      const separator = model.indexOf('/');
+      body.model = { providerID: model.slice(0, separator), modelID: model.slice(separator + 1) };
     } else if (model) {
       body.model = { providerID: 'opencode', modelID: model };
     }
@@ -277,30 +278,37 @@ export class OpencodeCli {
       finishRequest = finish;
       controller.signal.addEventListener('abort', onAbort, { once: true });
 
+      const isOwnEvent = (event: SSEMessage): boolean => {
+        const props = event.properties as Record<string, unknown>;
+        const raw = props['sessionID'] ?? props['sessionId'];
+        const eventSessionId = typeof raw === 'string' ? raw : undefined;
+        return !eventSessionId || eventSessionId === sessionId;
+      };
+
       const dispatchEvent = (event: SSEMessage) => {
         if (settled) return;
         if (event.id) {
           if (seenEventIds.has(event.id)) return;
           seenEventIds.add(event.id);
         }
-        const props = event.properties;
-        const sessionIdFromSessionID = typeof props['sessionID'] === 'string' ? props['sessionID'] : undefined;
-        const sessionIdFromSessionId = typeof props['sessionId'] === 'string' ? props['sessionId'] : undefined;
-        const eventSessionId = sessionIdFromSessionID ?? sessionIdFromSessionId;
-        if (eventSessionId && eventSessionId !== sessionId) return;
+        if (!isOwnEvent(event)) return;
 
         dispatcher.dispatch(event, sessionId);
+        const props = event.properties as Record<string, unknown>;
         const info = props['info'];
         const infoId =
           info && typeof info === 'object' && typeof (info as Record<string, unknown>)['id'] === 'string'
             ? ((info as Record<string, unknown>)['id'] as string)
             : undefined;
         if (!messageId && infoId) messageId = infoId;
-
-        const status = props['status'];
-        const statusType = status && typeof status === 'object' ? (status as Record<string, unknown>)['type'] : status;
-        if (event.type === 'session.status' && statusType === 'idle') finish();
       };
+
+      // Subscribe to the server event stream to render deltas and tool events
+      // live. The POST request itself is the completion signal, so this stream
+      // never ends the prompt — it is aborted with it.
+      void this.sseStream
+        .connect(`${this.url!}/event`, { ...this.authHeader }, dispatchEvent, controller.signal)
+        .catch(() => undefined);
 
       const postUrl = `${this.url!}/session/${sessionId}/message`;
       void fetch(postUrl, {
@@ -311,7 +319,21 @@ export class OpencodeCli {
       })
         .then(async (response) => {
           if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-          await this.sseStream.parse(response, dispatchEvent, controller.signal);
+          const contentType = response.headers.get('content-type') ?? '';
+          if (contentType.includes('text/event-stream')) {
+            // Older opencode versions streamed the assistant reply from the POST itself.
+            await this.sseStream.parse(response, dispatchEvent, controller.signal);
+          } else {
+            // Current opencode versions answer with the finished message as JSON,
+            // which is the only place the assistant text arrives in that mode.
+            const payload: unknown = await response.json().catch(() => null);
+            const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+            const info = record['info'];
+            if (info && typeof info === 'object' && typeof (info as Record<string, unknown>)['id'] === 'string') {
+              messageId = (info as Record<string, unknown>)['id'] as string;
+            }
+            dispatcher.applyFinalMessage(record['parts'], info);
+          }
           finish();
         })
         .catch((error: unknown) => {

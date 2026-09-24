@@ -2,7 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.1.9] - 2026-09-24
+
+### Fixed
+
+- Assistant replies were blank on opencode 1.18+: `POST /session/:id/message` now returns `application/json` instead of an SSE stream, so the response was parsed as an empty stream. `OpencodeCli.sendPrompt` now branches on the response content type and applies the JSON message body
+- Live assistant text, reasoning, and tool events now stream from the server `GET /event` endpoint while a prompt runs
+- The user's own prompt text was echoed into the assistant bubble; event parts are now filtered by message role
+- The opencode CLI is resolved from the machine (env override, npm prefix, native install location, `PATH`) instead of being bundled, so opencode updates do not require an extension update
+- A saved model that the server no longer offers caused `HTTP 500 ProviderModelNotFoundError` and a blank bubble; stale selections are now repaired
+- Model IDs containing slashes are split on the first separator only
+- Failed turns render the error in the chat instead of leaving an empty bubble
 
 ## [0.1.8] - 2026-09-24
 

@@ -30,9 +30,16 @@ export function useModelManager() {
   const [showSessions, setShowSessions] = useState(false);
 
   const pendingRevertRef = useRef<string | null>(null);
+  const hiddenModelsRef = useRef<Record<string, boolean>>({});
+  const modelRef = useRef('');
+
+  useEffect(() => {
+    hiddenModelsRef.current = hiddenModels;
+  }, [hiddenModels]);
 
   useEffect(() => {
     if (model) {
+      modelRef.current = model;
       postMessage({ type: 'saveModel', payload: { model } });
     }
   }, [model]);
@@ -62,13 +69,14 @@ export function useModelManager() {
     setProvidersLoaded(true);
   }, []);
 
-  const tryAutoSelectModel = useCallback(
-    (models: ModelItem[], currentModel: string, hidden: Record<string, boolean>) => {
-      const next = pickAutoSelectModel(models, currentModel, hidden);
-      if (next) setModel(next);
-    },
-    [],
-  );
+  /**
+   * Picks a usable model from a freshly loaded catalog. Replaces a saved model
+   * that the server no longer exposes, otherwise leaves the current one alone.
+   */
+  const tryAutoSelectModel = useCallback((models: ModelItem[]) => {
+    const next = pickAutoSelectModel(models, modelRef.current, hiddenModelsRef.current);
+    if (next) setModel(next);
+  }, []);
 
   return {
     model,
@@ -100,6 +108,7 @@ export function useModelManager() {
     showSessions,
     setShowSessions,
     pendingRevertRef,
+    hiddenModelsRef,
     toggleModelVisibility,
     handleToggleAllModels,
     processProviderList,

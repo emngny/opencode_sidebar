@@ -70,7 +70,7 @@ export function ChatContainer({
   const allDone = contextEvents?.every((e) => e.status === 'completed' || e.status === 'failed');
 
   return (
-    <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div ref={containerRef} style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
       {hasMore && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '4px 0' }}>
           <span style={{ fontSize: 11, color: '#6c7086' }}>{hiddenCount} older messages hidden</span>

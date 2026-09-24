@@ -299,7 +299,7 @@ function AppContent() {
             lastCommitTime={gitInfo.lastCommitTime}
           />
         ) : (
-          <div style={{ flex: 1, padding: '16px 12px' }}>
+          <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', padding: '16px 12px' }}>
             <ChatContainer
               messages={messages}
               onRevert={handleRevert}
