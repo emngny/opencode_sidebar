@@ -1,7 +1,8 @@
 import {
   ProviderListResult,
   AgentRaw,
-  normalizeAgentId,
+  AgentSummary,
+  mapAgentSummaries,
   ProviderAuthMap,
   RawSessionMessage,
   SendPromptBody,
@@ -102,14 +103,14 @@ export class ApiClient {
     await this.fetch(`/session/${sessionId}`, { method: 'DELETE' });
   }
 
-  async getAgents(): Promise<string[]> {
+  async getAgents(): Promise<AgentSummary[]> {
     try {
       const result = await this.fetch<unknown>('/agent');
       if (Array.isArray(result)) {
-        return (result as AgentRaw[]).map(normalizeAgentId).filter(Boolean);
+        return mapAgentSummaries(result as AgentRaw[]);
       }
       if (isRecord(result) && Array.isArray(result['agents'])) {
-        return (result['agents'] as AgentRaw[]).map(normalizeAgentId).filter(Boolean);
+        return mapAgentSummaries(result['agents'] as AgentRaw[]);
       }
       return [];
     } catch {

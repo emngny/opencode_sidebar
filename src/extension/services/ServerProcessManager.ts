@@ -149,23 +149,24 @@ export class ServerProcessManager {
     const appData = process.env.APPDATA;
     const localAppData = process.env.LOCALAPPDATA;
     const exe = win ? 'opencode.exe' : 'opencode';
+    const pathSep = win ? '\\' : '/';
     const candidates: string[] = [];
 
-    const npmRoots = [npmPrefix, appData ? `${appData}\\npm` : undefined].filter((root): root is string => !!root);
+    const npmRoots = [npmPrefix, appData ? String.raw`${appData}\npm` : undefined].filter(
+      (root): root is string => !!root,
+    );
     const installDirs = [
-      localAppData ? `${localAppData}\\Programs\\opencode` : undefined,
-      home ? `${home}\\.opencode\\bin` : undefined,
-      home ? `${home}\\.local\\bin` : undefined,
+      localAppData ? String.raw`${localAppData}\Programs\opencode` : undefined,
+      home ? String.raw`${home}\.opencode\bin` : undefined,
+      home ? String.raw`${home}\.local\bin` : undefined,
     ].filter((dir): dir is string => !!dir);
 
-    for (const root of [...npmRoots, ...installDirs, ...npmRoots.map((root) => `${root}\\node_modules`)]) {
-      candidates.push(win ? `${root}\\${exe}` : `${root}/${exe}`, win ? `${root}\\bin\\${exe}` : `${root}/bin/${exe}`);
+    for (const root of [...npmRoots, ...installDirs, ...npmRoots.map((root) => String.raw`${root}\node_modules`)]) {
+      candidates.push(`${root}${pathSep}${exe}`, `${root}${pathSep}bin${pathSep}${exe}`);
     }
     // Global npm layout: <prefix>/node_modules/opencode-ai/bin/opencode(.exe)
     for (const root of npmRoots) {
-      candidates.push(
-        win ? `${root}\\node_modules\\opencode-ai\\bin\\opencode.exe` : `${root}/node_modules/opencode-ai/bin/opencode`,
-      );
+      candidates.push(`${root}${pathSep}node_modules${pathSep}opencode-ai${pathSep}bin${pathSep}${exe}`);
     }
 
     // Resolve the CLI through PATH, including npm shim folders that only ship a wrapper.
@@ -173,8 +174,8 @@ export class ServerProcessManager {
     for (const dir of pathEntries) {
       if (!dir) continue;
       candidates.push(
-        win ? `${dir}\\${exe}` : `${dir}/${exe}`,
-        win ? `${dir}\\node_modules\\opencode-ai\\bin\\opencode.exe` : `${dir}/node_modules/opencode-ai/bin/opencode`,
+        `${dir}${pathSep}${exe}`,
+        `${dir}${pathSep}node_modules${pathSep}opencode-ai${pathSep}bin${pathSep}${exe}`,
       );
     }
 
@@ -197,7 +198,7 @@ export class ServerProcessManager {
       const sep = win ? ';' : ':';
       const systemRoot = process.env.SystemRoot || String.raw`C:\Windows`;
       const systemPath = win
-        ? [`${systemRoot}\\System32`, systemRoot, `${systemRoot}\\System32\\Wbem`].join(sep)
+        ? [String.raw`${systemRoot}\System32`, systemRoot, String.raw`${systemRoot}\System32\Wbem`].join(sep)
         : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(sep);
       // Keep the inherited PATH so the server can locate git, ripgrep, language tools, etc.
       const childPath = [systemPath, process.env.PATH].filter(Boolean).join(sep);
@@ -221,6 +222,7 @@ export class ServerProcessManager {
           stdio: ['ignore', 'pipe', 'pipe'],
           cwd: this.cwd,
           env: minimalEnv,
+          windowsHide: true,
         });
       } catch (err: unknown) {
         reject(err instanceof Error ? err : new Error(getErrorMessage(err)));

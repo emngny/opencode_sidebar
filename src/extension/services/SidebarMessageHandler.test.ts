@@ -36,6 +36,48 @@ describe('SidebarMessageHandler', () => {
     expect(sessions.abort).toHaveBeenCalledOnce();
   });
 
+  it('offers only session-owning agents as chat modes', async () => {
+    const post = vi.fn();
+    const opencode = {
+      start: vi.fn(),
+      getCurrentProject: vi.fn().mockResolvedValue(null),
+      getPath: vi.fn().mockResolvedValue(null),
+      getVcsInfo: vi.fn().mockResolvedValue(null),
+      listProviders: vi.fn().mockResolvedValue({ all: [], connected: [], default: {} }),
+      getAgents: vi.fn().mockResolvedValue([
+        { id: 'Prometheus - Plan Builder', mode: 'primary', model: 'omniroute/pro-models' },
+        { id: 'Atlas - Plan Executor', mode: 'primary' },
+        { id: 'plan', mode: 'subagent', model: 'omniroute/pro-models' },
+        { id: 'title', mode: 'primary' },
+      ]),
+    };
+    const handler = new SidebarMessageHandler(
+      opencode as never,
+      {} as never,
+      {} as never,
+      { restoreApiKeys: vi.fn() } as never,
+      { list: vi.fn().mockReturnValue([]) } as never,
+      {} as never,
+      { get: vi.fn(), update: vi.fn() } as never,
+      post,
+      {} as never,
+    );
+
+    await handler.dispatch({ type: 'webviewReady' });
+
+    // Subagents and opencode's internal agents must not become chat modes, and
+    // only agents that pin a model contribute to the agent -> model map.
+    await vi.waitFor(() =>
+      expect(post).toHaveBeenCalledWith({
+        type: 'agentList',
+        payload: {
+          agents: ['Prometheus - Plan Builder', 'Atlas - Plan Executor'],
+          agentModels: { 'Prometheus - Plan Builder': 'omniroute/pro-models' },
+        },
+      }),
+    );
+  });
+
   it('rejects openDiff paths outside workspace', async () => {
     const handler = createHandler();
     await handler.dispatch({ type: 'openDiff', payload: { filePath: '../secret.txt' } });

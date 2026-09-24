@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-09-25
+
+### Added
+
+- Chat mode list is built from the server's agent catalog: only agents that can own a session are offered, and opencode's internal agents (`compaction`, `summary`, `title`) are excluded
+- Selecting a mode that pins its own model seeds the model picker with that model, so the shown model matches what the server will run
+- A turn that finishes without any text now renders a `No response text` marker instead of a bare badge, so an empty reply is distinguishable from a rendering glitch
+- The chat footer flags a model substitution with `⚠ asked for <model>` when the server ran a model other than the requested one, with both ids available as a tooltip
+- System notices when the extension changes something on the user's behalf: a mode that is not offered by the server, and a saved model that the refreshed catalog no longer exposes
+
+### Changed
+
+- File-edit and tool-result cards start collapsed; failed events still expand so the error stays visible
+- Provider, model, and agent identifiers are shown as the picker displays them, instead of raw `providerId/modelId` values
+- The model picker is the single source of truth for the active mode: a manual change always wins, and an agent's pinned model is only used for a mode that was not selected through the picker
+- Sending is refused while no model is selected, instead of letting the server fall back to the agent's own model
+
+### Fixed
+
+- Windows: child processes (`opencode serve`, git commands) no longer open a console window
+- Provider failures now surface the real message. opencode wraps errors as `{ name, data }`, so reading a flat `message` reported "Unknown error" for explicit failures such as a `403`
+- Errors carried by the `POST /session/:id/message` response body are reported when the event stream did not deliver them, and the same failure is reported only once per turn
+- Model pinning by an agent could silently override the selected model, because the extension could send a prompt before the model catalog had loaded
+
+### Security
+
+- The published VSIX now contains the compiled runtime and its assets only. `.vscodeignore` is an allow list, so development-only files (skill libraries, coverage reports, review and security documents, local tool configuration, and server logs) are no longer packaged
+
 ## [0.1.9] - 2026-09-24
 
 ### Fixed

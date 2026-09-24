@@ -8,7 +8,7 @@ import {
   isRecord,
 } from '../../shared/types';
 import { onMessage } from '../vscode-api';
-import { ModelItem, buildModelItems } from './modelUtils';
+import { ModelItem, ModelSwitch, buildModelItems } from './modelUtils';
 import { genId } from './useChatState';
 
 interface MessageHandlerState {
@@ -32,6 +32,7 @@ interface MessageHandlerState {
   setMode: React.Dispatch<React.SetStateAction<string>>;
   setGitInfo: React.Dispatch<React.SetStateAction<{ branch: string; lastCommitTime: string; projectPath: string }>>;
   setAvailableModels: React.Dispatch<React.SetStateAction<ModelItem[]>>;
+  setAgentModels: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setHiddenModels: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setProvidersLoaded: React.Dispatch<React.SetStateAction<boolean>>;
   setSkills: React.Dispatch<React.SetStateAction<Array<{ name: string; description?: string }>>>;
@@ -45,7 +46,7 @@ interface MessageHandlerState {
   >;
   setAgents: React.Dispatch<React.SetStateAction<string[]>>;
   processProviderList: (result: ProviderListResult) => void;
-  tryAutoSelectModel: (models: ModelItem[]) => void;
+  tryAutoSelectModel: (models: ModelItem[]) => ModelSwitch | null;
 }
 
 export function useMessageHandler(state: MessageHandlerState): void {
@@ -63,6 +64,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     setMode,
     setGitInfo,
     setAvailableModels,
+    setAgentModels,
     setHiddenModels,
     setProvidersLoaded,
     setSkills,
@@ -351,7 +353,13 @@ export function useMessageHandler(state: MessageHandlerState): void {
               meta.time?.completed && meta.time?.created
                 ? Math.round((meta.time.completed - meta.time.created) / 1000)
                 : undefined;
-            updated[index] = { ...updated[index], agent: meta.agent, modelId: meta.modelId, duration };
+            updated[index] = {
+              ...updated[index],
+              agent: meta.agent,
+              modelId: meta.modelId,
+              requestedModelId: meta.requestedModel,
+              duration,
+            };
             return updated;
           });
           break;
@@ -380,7 +388,21 @@ export function useMessageHandler(state: MessageHandlerState): void {
           const pl = processProviderListRef.current;
           pl(msg.payload);
           // Select a valid model, replacing a saved model the server no longer offers.
-          tryAutoSelectRef.current(buildModelItems(msg.payload));
+          const models = buildModelItems(msg.payload);
+          const switched = tryAutoSelectRef.current(models);
+          // Only report replacements. The very first pick has nothing to replace.
+          if (switched?.from) {
+            const label = (id: string) => models.find((model) => model.id === id)?.name || id || 'none';
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: 'system',
+                content: `Model "${label(switched.from)}" is no longer available. Switched to "${label(switched.to)}".`,
+                timestamp: Date.now(),
+                id: genId(),
+              },
+            ]);
+          }
           break;
         }
         case 'readFilePrompt': {
@@ -396,6 +418,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
           if (Array.isArray(agentArray) && agentArray.length > 0) {
             setAgents(agentArray);
           }
+          setAgentModels(msg.payload.agentModels ?? {});
           break;
         }
       }
@@ -420,6 +443,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     setMode,
     setGitInfo,
     setAvailableModels,
+    setAgentModels,
     setHiddenModels,
     setProvidersLoaded,
     setSkills,

@@ -6,6 +6,12 @@ export interface ModelItem {
   providerId: string;
 }
 
+/** A model change applied automatically because the saved model is gone. */
+export interface ModelSwitch {
+  from: string;
+  to: string;
+}
+
 export function buildModelItems(result: ProviderListResult): ModelItem[] {
   const connected = new Set(result.connected || []);
   const models: ModelItem[] = [];
@@ -42,4 +48,22 @@ export function pickAutoSelectModel(
   if (currentModel && visible.some((model) => model.id === currentModel)) return null;
   const next = visible[0].id;
   return next === currentModel ? null : next;
+}
+
+/**
+ * Model to send for a turn.
+ *
+ * Selecting an agent seeds the picker with the agent's pinned model, so a mode
+ * that differs from the active one has not reached the picker yet and its pin is
+ * authoritative. For the active mode the picker wins: opencode prefers the
+ * request model over the agent's pin, so a manual change must survive.
+ */
+export function resolvePromptModel(
+  mode: string,
+  activeMode: string,
+  pickedModel: string,
+  agentModels: Record<string, string>,
+): string {
+  if (mode === activeMode) return pickedModel;
+  return agentModels[mode] ?? pickedModel;
 }

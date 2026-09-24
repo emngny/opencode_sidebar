@@ -34,6 +34,8 @@ export interface ChatMessage {
   };
   agent?: string;
   modelId?: string;
+  /** Model the client asked for. Differs from modelId when an agent config pins its own model. */
+  requestedModelId?: string;
   duration?: number;
   interrupted?: boolean;
   reasoning?: string;
@@ -85,7 +87,16 @@ export interface RawSessionMessage {
 }
 
 /** Agent as returned by GET /agent — string or object with id/name/slug/key */
-export type AgentRaw = string | { id?: string; name?: string; slug?: string; key?: string; [key: string]: unknown };
+export type AgentRaw =
+  | string
+  | {
+      id?: string;
+      name?: string;
+      slug?: string;
+      key?: string;
+      mode?: string;
+      [key: string]: unknown;
+    };
 
 export function normalizeAgentId(raw: AgentRaw): string {
   if (typeof raw === 'string') return raw;
@@ -94,6 +105,48 @@ export function normalizeAgentId(raw: AgentRaw): string {
     return typeof id === 'string' ? id : '';
   }
   return '';
+}
+
+/** Agent identity plus the mode opencode reports for it. */
+export interface AgentSummary {
+  id: string;
+  /** `primary`/`all` can own a session; `subagent` is reachable only through the task tool. */
+  mode?: string;
+  /** Model the agent pins as `provider/model`. Without a pin the request's model is used. */
+  model?: string;
+}
+
+/**
+ * Agents opencode drives on its own behalf. GET /agent reports them as primary,
+ * but they are not modes a user should start a chat with.
+ */
+const INTERNAL_AGENT_IDS = new Set(['compaction', 'summary', 'title']);
+
+export function mapAgentSummaries(rawList: AgentRaw[]): AgentSummary[] {
+  return rawList
+    .map((raw) => {
+      const record = isRecord(raw) ? raw : undefined;
+      const model = record && isRecord(record['model']) ? (record['model'] as Record<string, unknown>) : undefined;
+      const providerID = model && typeof model['providerID'] === 'string' ? (model['providerID'] as string) : '';
+      const modelID = model && typeof model['modelID'] === 'string' ? (model['modelID'] as string) : '';
+      return {
+        id: normalizeAgentId(raw),
+        mode: record && typeof record['mode'] === 'string' ? (record['mode'] as string) : undefined,
+        model: providerID && modelID ? `${providerID}/${modelID}` : undefined,
+      };
+    })
+    .filter((agent) => Boolean(agent.id));
+}
+
+/**
+ * Keeps only agents that can own a session. Running a subagent as the chat mode
+ * makes opencode use the subagent definition, which can pin its own model and
+ * silently ignore the model chosen in the picker.
+ */
+export function filterChatModeAgents(agents: AgentSummary[]): AgentSummary[] {
+  return agents.filter(
+    (agent) => !INTERNAL_AGENT_IDS.has(agent.id) && (!agent.mode || agent.mode === 'primary' || agent.mode === 'all'),
+  );
 }
 
 export interface ProviderAuthPrompt {
@@ -471,6 +524,8 @@ interface MessageMetaPayload {
   messageId?: string;
   agent?: string;
   modelId?: string;
+  /** Model the client requested for this turn, echoed back for override detection. */
+  requestedModel?: string;
   time?: { created?: number; completed?: number };
   reason?: string;
   filePath?: string;
@@ -517,7 +572,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'sessionList'; payload: SessionListPayload[] }
   | { type: 'sessionLoaded'; payload: SessionLoadedPayload }
   | { type: 'sessionDeleted'; payload: SessionDeletedPayload }
-  | { type: 'agentList'; payload: { agents: string[] } }
+  | { type: 'agentList'; payload: { agents: string[]; agentModels?: Record<string, string> } }
   | { type: 'error'; payload: ErrorPayload }
   | { type: 'providerList'; payload: ProviderListPayload }
   | { type: 'providerUpdated'; payload: ProviderUpdatedPayload }

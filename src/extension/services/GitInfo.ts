@@ -29,6 +29,7 @@ export function getGitInfo(): GitInfo {
       cwd: projectPath,
       encoding: 'utf8',
       shell: false,
+      windowsHide: true,
     }).trim();
   } catch {
     // not a git repo or git not available
@@ -39,6 +40,7 @@ export function getGitInfo(): GitInfo {
       cwd: projectPath,
       encoding: 'utf8',
       shell: false,
+      windowsHide: true,
     }).trim();
     lastCommitTime = output;
   } catch {

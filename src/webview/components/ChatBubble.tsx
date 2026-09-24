@@ -8,6 +8,8 @@ import { COLORS, flexRow } from '../styles';
 interface Props {
   message: ChatMessage;
   onRevert?: (id: string) => void;
+  /** Model catalog, used to show the same display name as the model picker. */
+  availableModels?: Array<{ id: string; name: string }>;
 }
 
 function highlightMentions(text: string): React.ReactNode {
@@ -35,11 +37,32 @@ function collapseWhitespace(text: string): string {
   return text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
+/**
+ * Resolves a raw `provider/model` id to the catalog display name so the
+ * transcript and the model picker label the same model the same way.
+ */
+export function resolveModelLabel(modelId: string, models?: Array<{ id: string; name: string }>): string {
+  return models?.find((model) => model.id === modelId)?.name || modelId;
+}
+
+function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Props>) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = React.useState(false);
   const [showReasoning, setShowReasoning] = React.useState(false);
   const agentColor = !isUser ? getAgentColor(message.agent) : null;
+  const hasBody = Boolean(message.content || message.reasoning);
+  const modelLabel = message.modelId ? resolveModelLabel(message.modelId, availableModels) : undefined;
+  // A selected agent can pin its own model server-side, which silently overrides
+  // the model picker. Surface that instead of showing an unexplained model name.
+  const modelOverridden = Boolean(
+    message.modelId && message.requestedModelId && message.requestedModelId !== message.modelId,
+  );
+  const requestedLabel = message.requestedModelId
+    ? resolveModelLabel(message.requestedModelId, availableModels)
+    : undefined;
+  // A turn can end with no text at all (tool-only or empty response).
+  // Without an explicit marker the bubble renders as a bare badge with no content.
+  const showEmptyOutput = message.role === 'assistant' && !message.isStreaming && !hasBody;
   const handleCopy = () => {
     navigator.clipboard
       .writeText(message.content)
@@ -142,6 +165,9 @@ function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
             {message.role === 'user' ? highlightMentions(message.content) : collapseWhitespace(message.content)}
           </span>
         ))}
+      {showEmptyOutput && (
+        <span style={{ fontSize: 11, color: COLORS.textDim, fontStyle: 'italic' }}>No response text</span>
+      )}
       {!message.isStreaming && (message.agent || message.modelId || message.duration !== undefined) && (
         <div
           style={{
@@ -174,8 +200,19 @@ function ChatBubbleComponent({ message, onRevert }: Readonly<Props>) {
             })()}
           {message.agent && message.modelId && <span>·</span>}
           {message.modelId && (
-            <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {message.modelId}
+            <span
+              title={message.modelId}
+              style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {modelLabel}
+            </span>
+          )}
+          {modelOverridden && (
+            <span
+              title={`Requested ${message.requestedModelId}, but agent "${message.agent ?? 'unknown'}" pins ${message.modelId}`}
+              style={{ color: '#f9e2af' }}
+            >
+              ⚠ asked for {requestedLabel}
             </span>
           )}
           {message.modelId && message.duration !== undefined && <span>·</span>}

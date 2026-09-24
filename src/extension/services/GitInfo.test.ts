@@ -43,10 +43,10 @@ describe('getGitInfo', () => {
     const logArgs = vi.mocked(execFileSync).mock.calls[1];
     expect(gitArgs[0]).toMatch(/git(?:\.exe)?$/);
     expect(gitArgs[1]).toEqual(['branch', '--show-current']);
-    expect(gitArgs[2]).toEqual({ cwd: '/workspace/project', encoding: 'utf8', shell: false });
+    expect(gitArgs[2]).toEqual({ cwd: '/workspace/project', encoding: 'utf8', shell: false, windowsHide: true });
     expect(logArgs[0]).toMatch(/git(?:\.exe)?$/);
     expect(logArgs[1]).toEqual(['log', '-1', '--format=%cd', '--date=relative']);
-    expect(logArgs[2]).toEqual({ cwd: '/workspace/project', encoding: 'utf8', shell: false });
+    expect(logArgs[2]).toEqual({ cwd: '/workspace/project', encoding: 'utf8', shell: false, windowsHide: true });
   });
 
   it('keeps successful values when one git command fails', () => {

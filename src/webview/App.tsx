@@ -10,8 +10,9 @@ import { ContextPart } from '../shared/types';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { postMessage } from './vscode-api';
 import { CommandItem } from './slashCommands';
-import { useChatState } from './hooks/useChatState';
+import { useChatState, genId } from './hooks/useChatState';
 import { useModelManager } from './hooks/useModelManager';
+import { resolvePromptModel } from './hooks/modelUtils';
 import { useMessageHandler } from './hooks/useMessageHandler';
 import { COLORS, flexRow, overlay, card, btnIcon, textSmall, textHeader } from './styles';
 
@@ -91,6 +92,8 @@ function AppContent() {
     setGitInfo,
     availableModels,
     setAvailableModels,
+    agentModels,
+    setAgentModels,
     hiddenModels,
     setHiddenModels,
     providersLoaded,
@@ -138,6 +141,7 @@ function AppContent() {
     setMode,
     setGitInfo,
     setAvailableModels,
+    setAgentModels,
     setHiddenModels,
     setProvidersLoaded,
     setSkills,
@@ -152,6 +156,38 @@ function AppContent() {
     tryAutoSelectModel,
   });
 
+  /**
+   * Agents may pin their own model. Selecting one seeds the picker with that
+   * model so the shown value matches what the server will run; the user can then
+   * change it and the picker wins, because the request model beats the agent pin.
+   */
+  const selectMode = useCallback(
+    (next: string) => {
+      setMode(next);
+      const pinned = agentModels[next];
+      if (pinned) setModel(pinned);
+    },
+    [agentModels, setMode, setModel],
+  );
+
+  useEffect(() => {
+    // The server only offers session-owning agents as modes, so the active mode
+    // can disappear (e.g. it is a subagent on this machine). Move to a usable one
+    // and say so, instead of leaving the picker on a value it cannot show.
+    if (agents.length === 0 || !mode || agents.includes(mode)) return;
+    const next = agents[0]!;
+    selectMode(next);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'system',
+        content: `Mode "${mode}" is not available on this server. Switched to "${next}".`,
+        timestamp: Date.now(),
+        id: genId(),
+      },
+    ]);
+  }, [agents, mode, selectMode, setMessages]);
+
   useEffect(() => {
     if (!nearBottomRef.current) return;
     const container = chatScrollRef.current;
@@ -165,6 +201,29 @@ function AppContent() {
 
   const handleSend = useCallback(
     (prompt: string, context?: ContextPart[]) => {
+      /**
+       * Sends for a given agent. A mode other than the active one has not been
+       * through the picker yet, so it contributes its own pin. A send with no
+       * model at all would let the server fall back to the agent's default, so
+       * it is refused instead of quietly running on something else.
+       */
+      const send = (promptText: string, modeName: string) => {
+        const target = resolvePromptModel(modeName, mode, model, agentModels);
+        if (!target) {
+          setBusy(false);
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'system',
+              content: 'No model selected yet. Pick a model before sending.',
+              timestamp: Date.now(),
+              id: genId(),
+            },
+          ]);
+          return;
+        }
+        postMessage({ type: 'sendMessage', payload: { prompt: promptText, model: target, mode: modeName, context } });
+      };
       nearBottomRef.current = true;
       setBusy(true);
       setContextEvents([]);
@@ -183,26 +242,26 @@ function AppContent() {
         }
         if (cmdName === 'review') {
           if (rest) {
-            setMode('review');
-            postMessage({ type: 'sendMessage', payload: { prompt: rest, model, mode: 'review', context } });
+            selectMode('review');
+            send(rest, 'review');
             return;
           }
           postMessage({ type: 'runCommand', payload: { command: cmdName, args: '' } });
           return;
         }
         if (agents.includes(cmdName)) {
-          setMode(cmdName);
+          selectMode(cmdName);
           if (rest) {
-            postMessage({ type: 'sendMessage', payload: { prompt: rest, model, mode: cmdName, context } });
+            send(rest, cmdName);
             return;
           }
           setBusy(false);
           return;
         }
       }
-      postMessage({ type: 'sendMessage', payload: { prompt, model, mode, context } });
+      send(prompt, mode);
     },
-    [model, mode, skills, agents, setBusy, setContextEvents, setMode],
+    [agentModels, model, mode, skills, agents, setBusy, setContextEvents, selectMode, setMessages],
   );
 
   const handleOpenDiff = useCallback((filePath: string) => {
@@ -238,10 +297,10 @@ function AppContent() {
       if (cmd.command === 'init' || cmd.command === 'review') {
         postMessage({ type: 'runCommand', payload: { command: cmd.command, args: '' } });
       } else if (cmd.agent && agents.includes(cmd.agent)) {
-        setMode(cmd.agent);
+        selectMode(cmd.agent);
       }
     },
-    [agents, setMode],
+    [agents, selectMode],
   );
 
   const handleRespondPermission = useCallback(
@@ -309,6 +368,7 @@ function AppContent() {
               onLoadSession={handleLoadSession}
               onRespondPermission={handleRespondPermission}
               onOpenDiff={handleOpenDiff}
+              availableModels={availableModels}
             />
           </div>
         )}
@@ -379,7 +439,7 @@ function AppContent() {
             borderTop: '1px solid #313244',
           }}
         >
-          <ModeSelector mode={mode} onChange={setMode} agents={agents} />
+          <ModeSelector mode={mode} onChange={selectMode} agents={agents} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
               onClick={() => setShowSessions(true)}

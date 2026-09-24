@@ -58,6 +58,7 @@ export class GitService {
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024,
       shell: false,
+      windowsHide: true,
     });
     await this._processPrompt(this.createReviewPrompt(diff), 'review');
   }

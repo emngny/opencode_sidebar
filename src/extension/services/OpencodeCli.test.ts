@@ -9,6 +9,8 @@ interface TestableOpencodeCli {
     options?: {
       onContent?: (text: string) => void;
       onError?: (message: string) => void;
+      onMessageMeta?: (meta: { id: string; agent?: string; modelId?: string; requestedModel?: string }) => void;
+      model?: string;
       requestId?: string;
       extraParts?: Array<{ type: string; data?: string; mimeType?: string }>;
     },
@@ -165,6 +167,59 @@ describe('OpencodeCli.sendPrompt', () => {
 
     expect(onContent).not.toHaveBeenCalledWith('prompt');
     expect(onContent).toHaveBeenCalledWith('ok');
+  });
+
+  it('echoes the requested model next to the model the server used', async () => {
+    const cli = createRunningCli();
+    const testable = cli as unknown as TestableOpencodeCli;
+    let eventHandler: ((event: any) => void) | undefined;
+    testable.sseStream = {
+      connect: vi.fn((_url, _headers, handler) => {
+        eventHandler = handler;
+        return new Promise<void>(() => undefined);
+      }),
+      parse: vi.fn(),
+    };
+    let resolveFetch!: (value: unknown) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveFetch = resolve;
+          }),
+      ),
+    );
+    const onMessageMeta = vi.fn();
+
+    const pending = testable.sendPrompt('session-1', 'prompt', {
+      model: 'opencode/mimo-v2.6-flash-free',
+      onMessageMeta,
+    });
+    await vi.waitFor(() => expect(testable.sseStream.connect).toHaveBeenCalledOnce());
+    eventHandler?.({
+      id: 'evt-meta',
+      type: 'message.updated',
+      properties: {
+        sessionID: 'session-1',
+        info: {
+          id: 'msg-a',
+          role: 'assistant',
+          agent: 'plan',
+          model: { providerID: 'omniroute', modelID: 'pro-models' },
+        },
+      },
+    });
+    resolveFetch(jsonResponse({ info: { id: 'msg-a', role: 'assistant' }, parts: [] }));
+    await pending;
+
+    expect(onMessageMeta).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: 'plan',
+        modelId: 'omniroute/pro-models',
+        requestedModel: 'opencode/mimo-v2.6-flash-free',
+      }),
+    );
   });
 
   it('still parses a legacy SSE POST response', async () => {

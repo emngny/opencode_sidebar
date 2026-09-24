@@ -1,0 +1,548 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`shared/types.ts contract lock > locks the shape of every exported declaration 1`] = `
+"export interface ChatMessage {
+    role: 'user' | 'assistant' | 'system' | 'tool' | 'event';
+    content: string;
+    timestamp: number;
+    id?: string;
+    requestId?: string;
+    sessionId?: string;
+    isStreaming?: boolean;
+    eventType?: 'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
+    eventStatus?: 'running' | 'completed' | 'failed';
+    eventCount?: number;
+    eventMeta?: {
+        path?: string;
+        added?: number;
+        deleted?: number;
+        name?: string;
+        args?: unknown;
+        result?: unknown;
+        error?: string;
+        sessionId?: string;
+        description?: string;
+        subagentType?: string;
+        permId?: string;
+        permSessionId?: string;
+        patterns?: string[];
+        permType?: string;
+        content?: string;
+    };
+    agent?: string;
+    modelId?: string;
+    requestedModelId?: string;
+    duration?: number;
+    interrupted?: boolean;
+    reasoning?: string;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function getErrorMessage(err: unknown): string {
+    if (err instanceof Error)
+        return err.message;
+    if (typeof err === 'string')
+        return err;
+    try {
+        return String(err);
+    }
+    catch {
+        return 'Unknown error';
+    }
+}
+
+export interface SessionMessagePart {
+    id?: string;
+    type?: string;
+    text?: string;
+    content?: string;
+    [key: string]: unknown;
+}
+
+export interface SessionMessageInfo {
+    id?: string;
+    role?: string;
+    content?: string;
+    time?: {
+        created?: number;
+        completed?: number;
+    };
+    agent?: string;
+    model?: {
+        providerID?: string;
+        modelID?: string;
+    };
+    [key: string]: unknown;
+}
+
+export interface RawSessionMessage {
+    info?: SessionMessageInfo;
+    parts?: SessionMessagePart[];
+    [key: string]: unknown;
+}
+
+export type AgentRaw = string | {
+    id?: string;
+    name?: string;
+    slug?: string;
+    key?: string;
+    mode?: string;
+    [key: string]: unknown;
+};
+
+export function normalizeAgentId(raw: AgentRaw): string {
+    if (typeof raw === 'string')
+        return raw;
+    if (isRecord(raw)) {
+        const id = raw['id'] ?? raw['name'] ?? raw['slug'] ?? raw['key'];
+        return typeof id === 'string' ? id : '';
+    }
+    return '';
+}
+
+export interface AgentSummary {
+    id: string;
+    mode?: string;
+    model?: string;
+}
+
+export function mapAgentSummaries(rawList: AgentRaw[]): AgentSummary[] {
+    return rawList
+        .map((raw) => {
+        const record = isRecord(raw) ? raw : undefined;
+        const model = record && isRecord(record['model']) ? (record['model'] as Record<string, unknown>) : undefined;
+        const providerID = model && typeof model['providerID'] === 'string' ? (model['providerID'] as string) : '';
+        const modelID = model && typeof model['modelID'] === 'string' ? (model['modelID'] as string) : '';
+        return {
+            id: normalizeAgentId(raw),
+            mode: record && typeof record['mode'] === 'string' ? (record['mode'] as string) : undefined,
+            model: providerID && modelID ? \`\${providerID}/\${modelID}\` : undefined,
+        };
+    })
+        .filter((agent) => Boolean(agent.id));
+}
+
+export function filterChatModeAgents(agents: AgentSummary[]): AgentSummary[] {
+    return agents.filter((agent) => !INTERNAL_AGENT_IDS.has(agent.id) && (!agent.mode || agent.mode === 'primary' || agent.mode === 'all'));
+}
+
+export interface ProviderAuthPrompt {
+    type?: string;
+    label?: string;
+    [key: string]: unknown;
+}
+
+export interface ProviderAuthEntry {
+    type: string;
+    label: string;
+    prompts?: ProviderAuthPrompt[];
+    [key: string]: unknown;
+}
+
+export type ProviderAuthMap = Record<string, ProviderAuthEntry[]>;
+
+export interface SendPromptPart {
+    type: string;
+    text?: string;
+    data?: string;
+    mimeType?: string;
+}
+
+export interface SendPromptBody {
+    parts: SendPromptPart[];
+    model?: {
+        providerID: string;
+        modelID: string;
+    };
+    agent?: string;
+}
+
+export interface RawDiff {
+    path?: string;
+    file?: string;
+    content?: string;
+    patch?: string;
+    added?: number;
+    deleted?: number;
+    [key: string]: unknown;
+}
+
+export interface SessionListItem {
+    id: string;
+    name?: string;
+    title?: string;
+    updated?: string;
+    time?: {
+        created?: number;
+        completed?: number;
+    };
+    messageCount?: number;
+    [key: string]: unknown;
+}
+
+export interface ToolCallPart {
+    id?: string;
+    type: 'tool_call';
+    name?: string;
+    args?: unknown;
+    [key: string]: unknown;
+}
+
+export interface ToolStatePart {
+    id?: string;
+    type: 'tool';
+    tool?: string;
+    state?: {
+        status?: string;
+        result?: unknown;
+        error?: string;
+        reason?: string;
+        input?: {
+            args?: unknown;
+            description?: string;
+            subagent_type?: string;
+            [key: string]: unknown;
+        };
+        metadata?: {
+            sessionId?: string;
+            [key: string]: unknown;
+        };
+        [key: string]: unknown;
+    };
+    result?: unknown;
+    args?: unknown;
+    [key: string]: unknown;
+}
+
+export type ToolPart = ToolCallPart | ToolStatePart | {
+    id?: string;
+    type: string;
+    [key: string]: unknown;
+};
+
+export function mapRawMessagesToChatMessages(raw: RawSessionMessage[], genId: () => string): ChatMessage[] {
+    return raw.map((m) => {
+        const content = m.parts
+            ?.map((p) => {
+            if (typeof p.text === 'string')
+                return p.text;
+            if (typeof p.content === 'string')
+                return p.content;
+            return '';
+        })
+            .join('\\n') ||
+            m.info?.content ||
+            '';
+        return {
+            role: m.info?.role === 'user' ? 'user' : 'assistant',
+            content,
+            timestamp: m.info?.time?.created || Date.now(),
+            id: m.info?.id || genId(),
+        };
+    });
+}
+
+export interface GitInfo {
+    branch: string;
+    lastCommitTime: string;
+    projectPath: string;
+}
+
+export interface ProviderModel {
+    id: string;
+    name: string;
+    providerID?: string;
+    capabilities?: {
+        temperature?: boolean;
+        reasoning?: boolean;
+        attachment?: boolean;
+        toolcall?: boolean;
+    };
+    cost?: {
+        input?: number;
+        output?: number;
+    };
+    limit?: {
+        context?: number;
+        input?: number;
+        output?: number;
+    };
+    status?: string;
+}
+
+export interface ProviderInfo {
+    id: string;
+    name: string;
+    source?: string;
+    env?: string[];
+    key?: string;
+    models?: Record<string, ProviderModel>;
+}
+
+export interface ProviderListResult {
+    all: ProviderInfo[];
+    connected: string[];
+    default: Record<string, string>;
+}
+
+export interface FileAttachment {
+    type: 'file';
+    name: string;
+    path: string;
+}
+
+export interface ImageAttachment {
+    type: 'image';
+    name: string;
+    data: string;
+    mimeType: string;
+}
+
+export type ContextPart = FileAttachment | ImageAttachment;
+
+export type WebviewToExtensionMessage = {
+    type: 'sendMessage';
+    payload: SendMessagePayload;
+} | {
+    type: 'acceptReview';
+    payload: AcceptReviewPayload;
+} | {
+    type: 'rejectReview';
+    payload: AcceptReviewPayload;
+} | {
+    type: 'clearChat';
+    payload?: ClearChatPayload;
+} | {
+    type: 'abort';
+    payload?: undefined;
+} | {
+    type: 'getSessions';
+    payload?: undefined;
+} | {
+    type: 'loadSession';
+    payload: LoadSessionPayload;
+} | {
+    type: 'deleteSession';
+    payload: DeleteSessionPayload;
+} | {
+    type: 'switchAgent';
+    payload: SwitchAgentPayload;
+} | {
+    type: 'listProviders';
+    payload?: undefined;
+} | {
+    type: 'setApiKey';
+    payload: SetApiKeyPayload;
+} | {
+    type: 'removeApiKey';
+    payload: RemoveApiKeyPayload;
+} | {
+    type: 'searchFiles';
+    payload: SearchFilesPayload;
+} | {
+    type: 'getSavedModel';
+    payload?: undefined;
+} | {
+    type: 'saveModel';
+    payload: SaveModelPayload;
+} | {
+    type: 'revertMessage';
+    payload: RevertMessagePayload;
+} | {
+    type: 'unrevert';
+    payload?: UnrevertPayload;
+} | {
+    type: 'respondPermission';
+    payload: RespondPermissionPayload;
+} | {
+    type: 'respondReadPermission';
+    payload: RespondReadPermissionPayload;
+} | {
+    type: 'openDiff';
+    payload: OpenDiffPayload;
+} | {
+    type: 'runCommand';
+    payload: RunCommandPayload;
+} | {
+    type: 'loadSkills';
+    payload?: undefined;
+} | {
+    type: 'webviewReady';
+    payload?: undefined;
+};
+
+export interface SavedModelPayload {
+    model?: string;
+}
+
+export type ExtensionToWebviewMessage = {
+    type: 'receiveMessage';
+    payload: ReceiveMessagePayload;
+} | {
+    type: 'receiveChunk';
+    payload: ReceiveChunkPayload;
+} | {
+    type: 'streamEnd';
+    payload: StreamEndPayload;
+} | {
+    type: 'reviewReady';
+    payload: {
+        diff: string;
+    };
+} | {
+    type: 'reviewResolved';
+    payload: {
+        accepted: boolean;
+    };
+} | {
+    type: 'status';
+    payload: StatusPayload;
+} | {
+    type: 'gitInfo';
+    payload: GitInfoPayload;
+} | {
+    type: 'projectInfo';
+    payload: ProjectInfoPayload;
+} | {
+    type: 'sessionList';
+    payload: SessionListPayload[];
+} | {
+    type: 'sessionLoaded';
+    payload: SessionLoadedPayload;
+} | {
+    type: 'sessionDeleted';
+    payload: SessionDeletedPayload;
+} | {
+    type: 'agentList';
+    payload: {
+        agents: string[];
+        agentModels?: Record<string, string>;
+    };
+} | {
+    type: 'error';
+    payload: ErrorPayload;
+} | {
+    type: 'providerList';
+    payload: ProviderListPayload;
+} | {
+    type: 'providerUpdated';
+    payload: ProviderUpdatedPayload;
+} | {
+    type: 'fileSearchResults';
+    payload: FileSearchResultsPayload;
+} | {
+    type: 'savedModel';
+    payload: string | SavedModelPayload;
+} | {
+    type: 'toolEvent';
+    payload: ToolEventPayload;
+} | {
+    type: 'revertResult';
+    payload: RevertResultPayload;
+} | {
+    type: 'messageMeta';
+    payload: MessageMetaPayload;
+} | {
+    type: 'reasoningContent';
+    payload: string | ReasoningContentPayload;
+} | {
+    type: 'readFilePrompt';
+    payload: ReadFilePromptPayload;
+} | {
+    type: 'skillList';
+    payload: SkillListPayload;
+};
+
+export interface SessionDiffFile {
+    path: string;
+    added: number;
+    deleted: number;
+    content: string;
+}
+
+export interface SessionDiff {
+    sessionID: string;
+    files: SessionDiffFile[];
+}
+
+export interface ProjectInfo {
+    name?: string;
+    path?: string;
+    project?: string;
+    agent?: string;
+    vcs?: Record<string, unknown>;
+}
+
+export interface ProjectInfoPayload {
+    project: ProjectInfo | null;
+    path: PathInfo | null;
+    vcs: VcsInfo | null;
+}
+
+export interface VcsInfo {
+    branch?: string;
+    commit?: string;
+    message?: string;
+    dirty?: boolean;
+}
+
+export interface PathInfo {
+    path: string;
+    project?: string;
+}
+
+export const WEBVIEW_TO_EXTENSION_TYPES = [
+    'sendMessage',
+    'acceptReview',
+    'rejectReview',
+    'clearChat',
+    'abort',
+    'getSessions',
+    'loadSession',
+    'deleteSession',
+    'switchAgent',
+    'listProviders',
+    'setApiKey',
+    'removeApiKey',
+    'searchFiles',
+    'getSavedModel',
+    'saveModel',
+    'revertMessage',
+    'unrevert',
+    'respondPermission',
+    'respondReadPermission',
+    'openDiff',
+    'runCommand',
+    'loadSkills',
+    'webviewReady',
+] as const;
+
+export const EXTENSION_TO_WEBVIEW_TYPES = [
+    'receiveMessage',
+    'receiveChunk',
+    'streamEnd',
+    'reviewReady',
+    'reviewResolved',
+    'status',
+    'gitInfo',
+    'projectInfo',
+    'sessionList',
+    'sessionLoaded',
+    'sessionDeleted',
+    'agentList',
+    'error',
+    'providerList',
+    'providerUpdated',
+    'fileSearchResults',
+    'savedModel',
+    'toolEvent',
+    'revertResult',
+    'messageMeta',
+    'reasoningContent',
+    'readFilePrompt',
+    'skillList',
+] as const;"
+`;

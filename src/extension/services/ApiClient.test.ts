@@ -33,4 +33,28 @@ describe('ApiClient', () => {
 
     await expect(client.getSessionMessagesStrict('session-1')).rejects.toThrow('HTTP 503');
   });
+
+  it('reads each agent mode from GET /agent', async () => {
+    // Shape observed on opencode 1.18: every entry carries the mode opencode
+    // resolves for it, which decides whether it can own a session.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => [
+          { name: 'build', mode: 'subagent' },
+          { name: 'Prometheus - Plan Builder', mode: 'primary' },
+          { name: 'plan', mode: 'subagent' },
+        ],
+      }),
+    );
+    const client = new ApiClient({ baseUrl: 'http://localhost:1234', authHeader: {} });
+
+    await expect(client.getAgents()).resolves.toEqual([
+      { id: 'build', mode: 'subagent' },
+      { id: 'Prometheus - Plan Builder', mode: 'primary' },
+      { id: 'plan', mode: 'subagent' },
+    ]);
+  });
 });

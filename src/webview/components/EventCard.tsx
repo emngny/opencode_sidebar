@@ -43,7 +43,10 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
   const eventType = message.eventType;
   const status = message.eventStatus;
   const meta = message.eventMeta;
-  const [expanded, setExpanded] = React.useState(eventType !== 'tool_result' || status === 'failed');
+  // Collapsed by default for file edits and tool results; failures auto-expand so the error is visible.
+  const [expanded, setExpanded] = React.useState(
+    status === 'failed' || (eventType !== 'tool_result' && eventType !== 'file_edit'),
+  );
 
   let icon = '🔧';
   let titleColor = '#cdd6f4';
@@ -357,6 +360,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
       <button
         type="button"
         disabled={!hasDetail}
+        aria-expanded={hasDetail ? expanded : undefined}
         onClick={() => hasDetail && setExpanded((current) => !current)}
         style={{
           display: 'flex',

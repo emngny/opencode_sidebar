@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildModelItems, pickAutoSelectModel } from './modelUtils';
+import { buildModelItems, pickAutoSelectModel, resolvePromptModel } from './modelUtils';
 
 describe('buildModelItems', () => {
   it('includes only connected provider models and formats IDs', () => {
@@ -61,5 +61,25 @@ describe('pickAutoSelectModel', () => {
       { id: 'b/model', name: 'B', providerId: 'b' },
     ];
     expect(pickAutoSelectModel(models, 'gone/model', { 'a/model': true })).toBe('b/model');
+  });
+});
+
+describe('resolvePromptModel', () => {
+  const agentModels = { Prometheus: 'omniroute/pro-models' };
+
+  it('uses the picker for the active mode so a manual change wins', () => {
+    expect(resolvePromptModel('Prometheus', 'Prometheus', 'opencode/mimo', agentModels)).toBe('opencode/mimo');
+  });
+
+  it('uses the pinned model when switching to an agent that pins one', () => {
+    expect(resolvePromptModel('Prometheus', 'build', 'opencode/mimo', agentModels)).toBe('omniroute/pro-models');
+  });
+
+  it('falls back to the picked model for agents without a pin', () => {
+    expect(resolvePromptModel('build', 'prometheus', 'opencode/mimo', agentModels)).toBe('opencode/mimo');
+  });
+
+  it('stays empty when nothing is picked and no agent pins a model', () => {
+    expect(resolvePromptModel('build', 'build', '', {})).toBe('');
   });
 });

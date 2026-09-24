@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 import {
   getErrorMessage,
-  normalizeAgentId,
-  AgentRaw,
+  filterChatModeAgents,
   type ContextPart,
   type ExtensionToWebviewMessage,
   type WebviewToExtensionMessage,
@@ -109,11 +108,20 @@ export class SidebarMessageHandler {
     void this._opencode
       .getAgents()
       .then((agents) => {
-        if (Array.isArray(agents) && agents.length)
+        // Only session-owning agents are offered as modes. Subagent-only entries
+        // (and opencode's internal agents) belong to the task tool, not the chat
+        // mode picker, and they can pin a model that overrides the picker.
+        const modes = filterChatModeAgents(agents);
+        if (modes.length)
           this._post({
             type: 'agentList',
             payload: {
-              agents: agents.map((agent) => normalizeAgentId(agent as AgentRaw).toLowerCase()).filter(Boolean),
+              agents: modes.map((agent) => agent.id),
+              // Agents that pin a model size the picker, so the webview can show
+              // what the server will really run when one of them is selected.
+              agentModels: Object.fromEntries(
+                modes.filter((agent) => agent.model).map((agent) => [agent.id, agent.model as string]),
+              ),
             },
           });
       })

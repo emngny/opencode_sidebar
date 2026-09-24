@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EventDispatcher } from './EventDispatcher';
+import { EventDispatcher, extractSessionErrorMessage } from './EventDispatcher';
 
 const sseEvent = (type: string, properties: Record<string, unknown>) => ({
   id: `event-${type}`,
@@ -358,5 +358,83 @@ describe('EventDispatcher - tool events', () => {
     );
 
     expect(event.status).toBe('failed');
+  });
+});
+
+describe('extractSessionErrorMessage', () => {
+  const providerMessage = "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode";
+
+  it('reads the message opencode nests under data', () => {
+    // Captured from a real 403: POST answered 200 and the message carried
+    // { name: 'APIError', data: { message, statusCode, responseBody } }.
+    expect(extractSessionErrorMessage({ name: 'APIError', data: { message: providerMessage, statusCode: 403 } })).toBe(
+      providerMessage,
+    );
+  });
+
+  it('reads a flat message', () => {
+    expect(extractSessionErrorMessage({ message: 'boom' })).toBe('boom');
+  });
+
+  it('parses a JSON responseBody when no message is exposed', () => {
+    expect(
+      extractSessionErrorMessage({
+        data: { responseBody: '{"type":"error","error":{"type":"FreeTierError","message":"free tier"}}' },
+      }),
+    ).toBe('free tier');
+  });
+
+  it('falls back to the error name before giving up', () => {
+    expect(extractSessionErrorMessage({ name: 'MessageAbortedError', data: {} })).toBe('MessageAbortedError');
+  });
+
+  it('reports unknown only when nothing usable is present', () => {
+    expect(extractSessionErrorMessage(undefined)).toBe('Unknown error');
+    expect(extractSessionErrorMessage({ data: {} })).toBe('Unknown error');
+    expect(extractSessionErrorMessage({ message: '   ' })).toBe('Unknown error');
+  });
+});
+
+describe('EventDispatcher session.error', () => {
+  it('forwards the nested provider message instead of Unknown error', () => {
+    const errors: string[] = [];
+    const dispatcher = new EventDispatcher({ onError: (message: string) => errors.push(message) });
+
+    dispatcher.dispatch(
+      sseEvent('session.error', {
+        sessionID: 'session-1',
+        error: { name: 'APIError', data: { message: 'provider said no', statusCode: 403 } },
+      }),
+      'session-1',
+    );
+
+    expect(errors).toEqual(['provider said no']);
+  });
+
+  it('reports a failure carried by the final message body', () => {
+    const errors: string[] = [];
+    const dispatcher = new EventDispatcher({ onError: (message: string) => errors.push(message) });
+    dispatcher.resetSession('session-1');
+
+    dispatcher.applyFinalMessage([{ id: 'p-1', type: 'text', text: '' }], {
+      id: 'msg-1',
+      role: 'assistant',
+      error: { name: 'APIError', data: { message: 'body said no' } },
+    });
+
+    expect(errors).toEqual(['body said no']);
+  });
+
+  it('does not report the same failure twice for one prompt', () => {
+    // opencode sends the failure through both the SSE stream and the POST body.
+    const errors: string[] = [];
+    const dispatcher = new EventDispatcher({ onError: (message: string) => errors.push(message) });
+    dispatcher.resetSession('session-1');
+    const error = { name: 'APIError', data: { message: 'provider said no' } };
+
+    dispatcher.dispatch(sseEvent('session.error', { sessionID: 'session-1', error }), 'session-1');
+    dispatcher.applyFinalMessage([], { id: 'msg-1', role: 'assistant', error });
+
+    expect(errors).toEqual(['provider said no']);
   });
 });

@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { GitInfo, ProviderListResult } from '../../shared/types';
 import { postMessage } from '../vscode-api';
-import { buildModelItems, ModelItem, pickAutoSelectModel } from './modelUtils';
+import { buildModelItems, ModelItem, ModelSwitch, pickAutoSelectModel } from './modelUtils';
 
-export type { ModelItem } from './modelUtils';
+export type { ModelItem, ModelSwitch } from './modelUtils';
 
 export function useModelManager() {
   const [model, setModel] = useState('');
@@ -14,6 +14,7 @@ export function useModelManager() {
     projectPath: 'C:/Projects/opencode_sidebar',
   });
   const [availableModels, setAvailableModels] = useState<ModelItem[]>([]);
+  const [agentModels, setAgentModels] = useState<Record<string, string>>({});
   const [hiddenModels, setHiddenModels] = useState<Record<string, boolean>>({});
   const [providersLoaded, setProvidersLoaded] = useState(false);
   const [skills, setSkills] = useState<Array<{ name: string; description?: string }>>([]);
@@ -72,10 +73,14 @@ export function useModelManager() {
   /**
    * Picks a usable model from a freshly loaded catalog. Replaces a saved model
    * that the server no longer exposes, otherwise leaves the current one alone.
+   * Returns the switch so callers can surface it instead of silently swapping.
    */
-  const tryAutoSelectModel = useCallback((models: ModelItem[]) => {
-    const next = pickAutoSelectModel(models, modelRef.current, hiddenModelsRef.current);
-    if (next) setModel(next);
+  const tryAutoSelectModel = useCallback((models: ModelItem[]): ModelSwitch | null => {
+    const from = modelRef.current;
+    const next = pickAutoSelectModel(models, from, hiddenModelsRef.current);
+    if (!next) return null;
+    setModel(next);
+    return { from, to: next };
   }, []);
 
   return {
@@ -87,6 +92,8 @@ export function useModelManager() {
     setGitInfo,
     availableModels,
     setAvailableModels,
+    agentModels,
+    setAgentModels,
     hiddenModels,
     setHiddenModels,
     providersLoaded,

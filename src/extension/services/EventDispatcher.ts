@@ -34,6 +34,56 @@ export interface EventCallbacks {
 
 const READ_TOOLS = new Set(['read', 'grep', 'glob', 'list', 'webfetch']);
 
+/** Keys that may wrap opencode's error object. */
+const ERROR_WRAPPER_KEYS = ['data', 'error', 'cause'] as const;
+
+function parseJsonRecord(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Finds the first human-readable message inside an opencode error value.
+ *
+ * opencode pipes provider failures through as `{ name, data: { message,
+ * statusCode, responseBody } }`, where `responseBody` is itself JSON such as
+ * `{"error":{"type":"FreeTierError","message":"..."}}`. Reading only a
+ * top-level `message` loses all of it, which is how an explicit 403 ended up
+ * rendered as "Unknown error".
+ */
+function findErrorMessage(value: unknown, depth = 0): string | undefined {
+  if (depth > 4 || !isRecord(value)) return undefined;
+  const direct = value['message'];
+  if (typeof direct === 'string' && direct.trim()) return direct;
+  const responseBody = value['responseBody'];
+  if (typeof responseBody === 'string') {
+    const nested = findErrorMessage(parseJsonRecord(responseBody), depth + 1);
+    if (nested) return nested;
+  }
+  for (const key of ERROR_WRAPPER_KEYS) {
+    const nested = findErrorMessage(value[key], depth + 1);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+/**
+ * Message shown for a `session.error` event. Falls back to the error name so a
+ * shaped error never degrades to a label that hides what actually failed.
+ */
+export function extractSessionErrorMessage(error: unknown): string {
+  const message = findErrorMessage(error);
+  if (message) return message;
+  if (isRecord(error)) {
+    const name = error['name'];
+    if (typeof name === 'string' && name.trim()) return name;
+  }
+  return 'Unknown error';
+}
+
 function extractReadPaths(tool: string, args: unknown): string[] {
   if (!args) return [];
   let a: unknown = args;
@@ -71,6 +121,8 @@ export class EventDispatcher {
   private readonly sessionReasoningByPart: Map<string, Map<string, string>> = new Map();
   private readonly sessionMessageRoles: Map<string, Map<string, string>> = new Map();
   private activeSessionId = '';
+  /** Last error text reported for this dispatcher, which lives for one prompt. */
+  private reportedError: string | null = null;
 
   constructor(callbacks: EventCallbacks) {
     this.callbacks = callbacks;
@@ -109,7 +161,12 @@ export class EventDispatcher {
    * text may arrive. Text already forwarded through deltas is not repeated.
    */
   applyFinalMessage(parts: unknown, info?: unknown): void {
-    if (isRecord(info)) this.handleMessageMeta({ id: '', type: 'message.updated', properties: { info } });
+    if (isRecord(info)) {
+      this.handleMessageMeta({ id: '', type: 'message.updated', properties: { info } });
+      // The POST body also carries the failure, so a prompt whose SSE stream
+      // missed session.error still reports why it failed.
+      if (info['error']) this.reportError(info['error']);
+    }
     if (!Array.isArray(parts)) return;
     const cb = this.callbacks;
     for (const raw of parts) {
@@ -412,12 +469,21 @@ export class EventDispatcher {
     emit?.(suffix);
   }
 
+  /**
+   * Reports a failure once per prompt. opencode sends the same error through
+   * both the SSE stream and the POST body, and a duplicate would render a second
+   * error bubble for a single failed turn.
+   */
+  private reportError(error: unknown): void {
+    const message = extractSessionErrorMessage(error);
+    if (message === this.reportedError) return;
+    this.reportedError = message;
+    this.callbacks.onError?.(message);
+  }
+
   /** Forwards server-reported session errors to the error callback. */
   private handleSessionError(event: SSEMessage): void {
-    const errRaw = (event.properties as Record<string, unknown>)['error'];
-    const msg =
-      isRecord(errRaw) && typeof errRaw['message'] === 'string' ? (errRaw['message'] as string) : 'Unknown error';
-    this.callbacks.onError?.(msg);
+    this.reportError((event.properties as Record<string, unknown>)['error']);
   }
 
   /** Releases per-session stream state when server reports idle status. */

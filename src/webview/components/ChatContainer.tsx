@@ -16,6 +16,7 @@ interface Props {
   onLoadSession?: (sessionId: string) => void;
   onRespondPermission?: (permId: string, sessionId: string, response: 'allow' | 'deny', remember?: boolean) => void;
   onOpenDiff?: (filePath: string) => void;
+  availableModels?: Array<{ id: string; name: string }>;
 }
 
 export function getMessageKey(message: ChatMessage, index: number): string {
@@ -31,6 +32,7 @@ export function ChatContainer({
   onLoadSession,
   onRespondPermission,
   onOpenDiff,
+  availableModels,
 }: Readonly<Props>) {
   const [visibleCount, setVisibleCount] = useState(DEFAULT_VISIBLE_MESSAGE_COUNT);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -112,7 +114,7 @@ export function ChatContainer({
         } else if (msg.role === 'tool') {
           content = <ToolMessage content={msg.content} />;
         } else {
-          content = <ChatBubble message={msg} onRevert={onRevert} />;
+          content = <ChatBubble message={msg} onRevert={onRevert} availableModels={availableModels} />;
         }
         return (
           <div data-testid="chat-message" key={getMessageKey(msg, messages.length - visibleMessages.length + index)}>

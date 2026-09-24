@@ -1,8 +1,11 @@
-.vscode-test/
-node_modules/
-*.vsix
-src/
-scripts/
-tsconfig*.json
-esbuild.config.js
-package-lock.json
+# Ship the compiled runtime and its assets only. Everything else in the repo is
+# development-only: editor/agent config, skill libraries, coverage reports,
+# review + security documents, and local logs. Deny everything, then re-include.
+
+**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE.md
+!out/**
+!resources/**

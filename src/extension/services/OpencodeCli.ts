@@ -8,11 +8,12 @@ import {
   RawSessionMessage,
   SendPromptBody,
   SendPromptPart,
+  AgentSummary,
   getErrorMessage,
 } from '../../shared/types';
 import { ApiClient } from './ApiClient';
 import { SseStream, SSEMessage } from './SseStream';
-import { EventDispatcher, EventCallbacks } from './EventDispatcher';
+import { EventDispatcher, EventCallbacks, MessageMeta } from './EventDispatcher';
 import { NormalizedDiff } from '../utils/diffUtils';
 import { ServerProcessManager } from './ServerProcessManager';
 
@@ -132,7 +133,7 @@ export class OpencodeCli {
     await this.ensureApiClient().deleteSession(sessionId);
   }
 
-  async getAgents(): Promise<string[]> {
+  async getAgents(): Promise<AgentSummary[]> {
     await this.start();
     return this.ensureApiClient().getAgents();
   }
@@ -199,12 +200,7 @@ export class OpencodeCli {
         content: string;
         meta?: Record<string, unknown>;
       }) => void;
-      onMessageMeta?: (meta: {
-        id: string;
-        agent?: string;
-        modelId?: string;
-        time?: { created?: number; completed?: number };
-      }) => void;
+      onMessageMeta?: (meta: MessageMeta & { requestedModel?: string }) => void;
       onReasoning?: (text: string) => void;
       onDiffs?: (diffs: NormalizedDiff[]) => void;
       requestId?: string;
@@ -240,12 +236,17 @@ export class OpencodeCli {
     const controller = new AbortController();
     let finishRequest = () => {};
 
+    // An agent config can pin its own model, which wins over the requested one.
+    // Echo the request back so the webview can flag the substitution.
+    const emitMessageMeta = onMessageMeta
+      ? (meta: MessageMeta) => onMessageMeta({ ...meta, requestedModel: model })
+      : undefined;
     const callbacks: EventCallbacks = {
       onContent,
       onToolCall,
       onError,
       onToolEvent,
-      onMessageMeta,
+      onMessageMeta: emitMessageMeta,
       onReasoning,
       onDiffs,
     };
