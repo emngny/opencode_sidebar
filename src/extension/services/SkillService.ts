@@ -35,8 +35,21 @@ export class SkillService {
 
   load(name: string): string | null {
     const skillsDir = this._skillsDir();
-    if (!skillsDir) return null;
-    const skillMdPath = path.join(skillsDir, name, 'SKILL.md');
+    if (!skillsDir || !/^[A-Za-z0-9._-]+$/.test(name)) return null;
+
+    let skillDirectory: string;
+    try {
+      const entry = readdirSync(skillsDir, { withFileTypes: true }).find(
+        (candidate) => candidate.name === name && candidate.isDirectory(),
+      );
+      if (!entry) return null;
+      skillDirectory = path.join(skillsDir, entry.name);
+    } catch (error) {
+      console.warn('[opencode] Load skill content failed:', error);
+      return null;
+    }
+
+    const skillMdPath = path.join(skillDirectory, 'SKILL.md');
     if (!existsSync(skillMdPath)) return null;
     try {
       return readFileSync(skillMdPath, 'utf-8');

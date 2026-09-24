@@ -15,6 +15,7 @@ import type { PermissionService } from './PermissionService';
 import type { SessionService } from './SessionService';
 import type { SkillService } from './SkillService';
 import { getGitInfo } from './GitInfo';
+import { resolveWorkspacePath } from '../utils/workspacePath';
 
 export class SidebarMessageHandler {
   constructor(
@@ -238,8 +239,13 @@ export class SidebarMessageHandler {
   private async openDiff(filePath: string): Promise<void> {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder || !filePath) return;
+    const resolved = resolveWorkspacePath(folder.uri.fsPath, filePath);
+    if (!resolved.ok) {
+      this._post({ type: 'error', payload: { message: 'Access denied: path outside workspace' } });
+      return;
+    }
     try {
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, filePath));
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(resolved.resolvedPath));
       await vscode.window.showTextDocument(document);
     } catch (error) {
       console.error('[opencode] Open diff error:', getErrorMessage(error));

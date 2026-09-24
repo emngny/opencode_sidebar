@@ -1,14 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { ContextService } from './ContextService';
 import type { PermissionService } from './PermissionService';
 
 vi.mock('vscode', () => ({
   workspace: { workspaceFolders: [{ uri: { fsPath: '/workspace' } }], fs: { readFile: vi.fn() } },
-  Uri: { joinPath: vi.fn((_root, file) => ({ fsPath: `/workspace/${file}` })) },
+  Uri: { file: vi.fn((fsPath) => ({ fsPath })) },
 }));
 
 describe('ContextService', () => {
+  beforeEach(() => {
+    vi.mocked(vscode.workspace.fs.readFile).mockReset();
+  });
+
   it('returns prompt unchanged without context', async () => {
     const permissions = { isReadAllowed: vi.fn(), waitForReadPermission: vi.fn() } as unknown as PermissionService;
     const result = await new ContextService(permissions, vi.fn()).process('hello', undefined);
@@ -45,6 +49,25 @@ describe('ContextService', () => {
     expect(result.userContent).toContain('binary file');
     expect(result.extraParts).toHaveLength(0);
   });
+
+  it.each(['../secret.txt', 'a\\..\\..\\secret.txt', '/etc/passwd', 'C:\\Windows\\secret.txt'])(
+    'skips path outside workspace: %s',
+    async (filePath) => {
+      const permissions = {
+        isReadAllowed: vi.fn().mockReturnValue({ allowed: true }),
+        waitForReadPermission: vi.fn(),
+      } as unknown as PermissionService;
+      const readFile = vi.mocked(vscode.workspace.fs.readFile);
+
+      const result = await new ContextService(permissions, vi.fn()).process('hello', [
+        { type: 'file', name: 'secret.txt', path: filePath },
+      ]);
+
+      expect(result.userContent).toContain('outside workspace');
+      expect(readFile).not.toHaveBeenCalled();
+      expect(permissions.isReadAllowed).not.toHaveBeenCalled();
+    },
+  );
 
   it('caps extra context parts at 100', async () => {
     const permissions = {

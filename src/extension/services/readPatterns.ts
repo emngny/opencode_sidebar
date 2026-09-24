@@ -50,16 +50,16 @@ function patternToRegex(pattern: string): RegExp {
   if (regex) return regex;
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, String.raw`\$&`)
-    .replace(/\*\*/g, '___DOUBLESTAR___')
-    .replace(/\*/g, '[^/]*')
-    .replace(/___DOUBLESTAR___/g, '.*');
+    .replaceAll('**', '___DOUBLESTAR___')
+    .replaceAll('*', '[^/]*')
+    .replaceAll('___DOUBLESTAR___', '.*');
   regex = new RegExp(`^${escaped}$`, 'i');
   regexCache.set(pattern, regex);
   return regex;
 }
 
 export function isReadDenied(filePath: string): string | null {
-  const normalized = filePath.replace(/\\/g, '/');
+  const normalized = filePath.replaceAll('\\', '/');
   for (const pattern of READ_DENY_PATTERNS) {
     const regex = patternToRegex(pattern);
     if (regex.test(normalized)) {

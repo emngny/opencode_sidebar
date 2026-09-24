@@ -13,19 +13,19 @@ const RATIO_THRESHOLD = 4;
 const SMALL_ADD_LIMIT = 5;
 const SMALL_ADD_LIMIT_2 = 10;
 
-export function DiffChanges({ additions, deletions, variant = 'default' }: Props) {
+export function DiffChanges({ additions, deletions, variant = 'default' }: Readonly<Props>) {
   const total = additions + deletions;
 
   const blocks = useMemo(() => {
-    if (additions === 0 && deletions === 0) return Array(TOTAL_BLOCKS).fill('neutral');
+    if (additions === 0 && deletions === 0) return new Array(TOTAL_BLOCKS).fill('neutral');
 
     if (total < SMALL_DIFF_THRESHOLD) {
       const added = additions > 0 ? 1 : 0;
       const deleted = deletions > 0 ? 1 : 0;
       return [
-        ...Array(added).fill('added'),
-        ...Array(deleted).fill('deleted'),
-        ...Array(TOTAL_BLOCKS - added - deleted).fill('neutral'),
+        ...new Array(added).fill('added'),
+        ...new Array(deleted).fill('deleted'),
+        ...new Array(TOTAL_BLOCKS - added - deleted).fill('neutral'),
       ];
     }
 
@@ -52,7 +52,11 @@ export function DiffChanges({ additions, deletions, variant = 'default' }: Props
     }
 
     const neutral = Math.max(0, TOTAL_BLOCKS - totalAlloc);
-    return [...Array(added).fill('added'), ...Array(deleted).fill('deleted'), ...Array(neutral).fill('neutral')];
+    return [
+      ...new Array(added).fill('added'),
+      ...new Array(deleted).fill('deleted'),
+      ...new Array(neutral).fill('neutral'),
+    ];
   }, [additions, deletions, total]);
 
   const colors = { added: '#a6e3a1', deleted: '#f38ba8', neutral: '#585b70' };

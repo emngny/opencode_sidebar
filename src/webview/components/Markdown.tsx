@@ -6,7 +6,7 @@ interface Props {
   content: string;
 }
 
-export function Markdown({ content }: Props) {
+export function Markdown({ content }: Readonly<Props>) {
   const rootRef = useRef<HTMLDivElement>(null);
 
   const html = useMemo(() => {
@@ -15,7 +15,7 @@ export function Markdown({ content }: Props) {
       ADD_ATTR: ['class'],
       ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i,
     });
-    return sanitized.replace(/<pre>/g, '<pre><button class="copy-btn">Copy</button>');
+    return sanitized.replaceAll('<pre>', '<pre><button class="copy-btn">Copy</button>');
   }, [content]);
 
   useEffect(() => {

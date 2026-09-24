@@ -12,7 +12,7 @@ interface SessionItem {
   time?: { created?: number };
 }
 
-export function SessionListPopup({ onClose, onSelect }: Props) {
+export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);

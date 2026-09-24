@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { ContextPart, ExtensionToWebviewMessage } from '../../shared/types';
 import type { PermissionService } from './PermissionService';
+import { resolveWorkspacePath } from '../utils/workspacePath';
 
 export interface ProcessedContext {
   userContent: string;
@@ -27,7 +28,24 @@ export class ContextService {
     for (const item of context) {
       if (item.type !== 'file') continue;
       const filePath = item.path;
-      const { allowed, deniedPattern } = this._permissions.isReadAllowed(filePath);
+      const resolved = resolveWorkspacePath(folder.uri.fsPath, filePath);
+      if (!resolved.ok) {
+        userContent += `\n\n[Skipped: ${filePath} — outside workspace]`;
+        this._postMessage({
+          type: 'toolEvent',
+          payload: {
+            id: `file_read_${filePath}`,
+            type: 'file_read',
+            name: 'read',
+            status: 'failed',
+            content: `Read denied: ${filePath}`,
+            meta: { path: filePath, error: 'Path outside workspace' },
+          },
+        });
+        continue;
+      }
+
+      const { allowed, deniedPattern } = this._permissions.isReadAllowed(resolved.relativePath);
       if (!allowed && deniedPattern) {
         this._postMessage({
           type: 'readFilePrompt',
@@ -55,7 +73,7 @@ export class ContextService {
       }
 
       try {
-        const content = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(folder.uri, filePath));
+        const content = await vscode.workspace.fs.readFile(vscode.Uri.file(resolved.resolvedPath));
         if (content.byteLength > MAX_CONTEXT_FILE_BYTES) {
           userContent += `\n\n[Skipped: ${filePath} — exceeds 1 MB context limit]`;
           continue;

@@ -6,7 +6,7 @@ interface Props {
   onCancel: () => void;
 }
 
-export function ConfirmDialog({ message, onConfirm, onCancel }: Props) {
+export function ConfirmDialog({ message, onConfirm, onCancel }: Readonly<Props>) {
   return (
     <div
       style={{
