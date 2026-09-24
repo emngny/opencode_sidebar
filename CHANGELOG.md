@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-09-24
+
 ### Added
 
 - Contributor setup, validation, commit, and pull request guidance
@@ -14,17 +16,20 @@ All notable changes to this project will be documented in this file.
 - Prettier, Husky pre-commit, and lint-staged quality tooling
 - GitHub Actions CI for formatting, lint, typecheck, tests, build, high-severity audit, and VSIX packaging
 - Dependabot dependency updates and CodeQL security analysis
+- Regression coverage for workspace symlink containment, malformed webview messages, request ordering, timeout cleanup, and session mutation failures
 
 ### Changed
 
 - Server lifecycle, shared types, and application services further separated from `OpencodeCli`
 - Chat message rendering and scrolling now use windowing to reduce React work on long sessions
 - Development baseline synchronized to Node.js 20 and VS Code 1.85
+- Webview messages now require a trusted `vscode-webview:` origin
 
 ### Fixed
 
 - Provider credentials and permission behavior hardened across extracted services
 - Concurrent server startup requests now share one process and stale exits cannot corrupt live server state, preventing orphan processes and incorrect URL/auth data
+- Untrusted-origin webview messages are ignored before payload handling
 
 ## [0.1.7] - 2026-09-22
 

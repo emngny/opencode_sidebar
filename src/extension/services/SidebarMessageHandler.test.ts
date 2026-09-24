@@ -11,7 +11,10 @@ vi.mock('vscode', () => ({
   Uri: { file: vi.fn((fsPath) => ({ fsPath })) },
 }));
 
-function createHandler(sessions = { abort: vi.fn() }, post = vi.fn()) {
+function createHandler(
+  sessions: { abort?: ReturnType<typeof vi.fn>; [key: string]: ReturnType<typeof vi.fn> } = { abort: vi.fn() },
+  post = vi.fn(),
+) {
   return new SidebarMessageHandler(
     {} as never,
     sessions as never,

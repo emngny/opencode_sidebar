@@ -16,7 +16,7 @@ describe('webview message boundary', () => {
         listener = callback;
       }),
       removeEventListener: vi.fn((_event: string, callback: (event: MessageEvent) => void) => {
-        removeListener(callback);
+        removeListener('message', callback);
       }),
     });
     vi.stubGlobal(

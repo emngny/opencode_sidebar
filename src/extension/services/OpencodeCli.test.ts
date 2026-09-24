@@ -6,10 +6,15 @@ interface TestableOpencodeCli {
   sendPrompt(
     sessionId: string,
     prompt: string,
-    options?: { onContent?: (text: string) => void; requestId?: string },
+    options?: {
+      onContent?: (text: string) => void;
+      requestId?: string;
+      extraParts?: Array<{ type: string; data?: string; mimeType?: string }>;
+    },
   ): Promise<string>;
   activePrompts: Map<string, { requestId: string; sessionId: string; controller: AbortController; finish: () => void }>;
   apiClient: { abortSession: ReturnType<typeof vi.fn>; updateAuth: ReturnType<typeof vi.fn> } | null;
+  abortSession(sessionId: string): Promise<void>;
   sseStream: { connect: ReturnType<typeof vi.fn>; parse: ReturnType<typeof vi.fn> };
   serverManager: { isRunning: boolean; url: string | null; authHeader: Record<string, string> };
 }
