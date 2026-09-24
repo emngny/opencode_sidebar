@@ -34,7 +34,7 @@
   "bugs": {
     "url": "https://github.com/emngny/opencode_sidebar/issues"
   },
-  "main": "./out/extension.js",
+  "main": "./out/extension/extension.js",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
