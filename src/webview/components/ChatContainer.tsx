@@ -75,7 +75,7 @@ export function ChatContainer({
     <div ref={containerRef} style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
       {hasMore && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-          <span style={{ fontSize: 11, color: '#6c7086' }}>{hiddenCount} older messages hidden</span>
+          <span style={{ fontSize: 11, color: '#a6adc8' }}>{hiddenCount} older messages hidden</span>
           <button
             onClick={() => loadOlder()}
             style={{

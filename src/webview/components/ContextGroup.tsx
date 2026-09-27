@@ -60,10 +60,10 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
       >
         <span style={{ fontSize: 14 }}>{headerIcon}</span>
         <span style={{ flex: 1 }}>{anyRunning ? 'Gathering context...' : 'Gathered context'}</span>
-        <span style={{ color: '#6c7086', fontSize: 11 }}>{label}</span>
+        <span style={{ color: '#a6adc8', fontSize: 11 }}>{label}</span>
         <span
           style={{
-            color: '#585b70',
+            color: '#9ca2b8',
             fontSize: 10,
             transition: 'transform 0.2s',
             transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
@@ -89,7 +89,7 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
                   gap: 6,
                   padding: '3px 0',
                   fontSize: 11,
-                  color: '#6c7086',
+                  color: '#a6adc8',
                 }}
               >
                 <span>{statusIcon}</span>
@@ -101,7 +101,7 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
                       maxWidth: 150,
-                      color: '#585b70',
+                      color: '#9ca2b8',
                     }}
                   >
                     {typeof e.meta.args === 'string' ? e.meta.args : JSON.stringify(e.meta.args)}

@@ -12,9 +12,9 @@ interface Props {
 }
 
 function formatArgs(args: unknown): React.ReactNode {
-  if (typeof args === 'string') return <span style={{ fontSize: 11, color: '#6c7086' }}>{args}</span>;
+  if (typeof args === 'string') return <span style={{ fontSize: 11, color: '#a6adc8' }}>{args}</span>;
   if (typeof args !== 'object' || args === null)
-    return <span style={{ fontSize: 11, color: '#6c7086' }}>{String(args)}</span>;
+    return <span style={{ fontSize: 11, color: '#a6adc8' }}>{String(args)}</span>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}>
@@ -54,7 +54,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
   let bgColor = '#181825';
 
   if (eventType === 'thinking') {
-    borderColor = '#585b70';
+    borderColor = '#9ca2b8';
     return (
       <div
         style={{
@@ -190,7 +190,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
     titleColor = '#89b4fa';
   } else if (status === 'running') {
     icon = '⏳';
-    borderColor = '#585b70';
+    borderColor = '#9ca2b8';
     titleColor = '#89b4fa';
   } else if (status === 'completed') {
     icon = '✅';
@@ -244,14 +244,14 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
   if (eventType === 'tool_result' && meta?.result) {
     if (typeof meta.result === 'string') {
       resultContent = (
-        <pre style={{ margin: 0, fontSize: 10, color: '#6c7086', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        <pre style={{ margin: 0, fontSize: 10, color: '#a6adc8', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {meta.result.slice(0, 500)}
           {meta.result.length > 500 ? '...' : ''}
         </pre>
       );
     } else {
       resultContent = (
-        <pre style={{ margin: 0, fontSize: 10, color: '#6c7086', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        <pre style={{ margin: 0, fontSize: 10, color: '#a6adc8', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {JSON.stringify(meta.result, null, 2).slice(0, 500)}
           {JSON.stringify(meta.result).length > 500 ? '...' : ''}
         </pre>
@@ -393,7 +393,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
         {hasDetail && (
           <span
             style={{
-              color: '#585b70',
+              color: '#9ca2b8',
               fontSize: 10,
               transition: 'transform 0.2s',
               transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',

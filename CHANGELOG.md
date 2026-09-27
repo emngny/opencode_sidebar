@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-09-27
+
+### Added
+
+- A shared `Popup` primitive for every webview overlay. It owns the behaviour only — `role="dialog"`, `aria-modal`, Tab confinement, Escape, and returning focus to the opener — while the caller keeps its visuals through `style` / `backdropStyle`. Backed by `useFocusTrap` and `useEscapeToClose` in `src/webview/hooks/useFocusTrap.ts`; Escape is bound on the capture phase and skipped once another handler has claimed the key, so only the topmost layer closes
+- `src/webview/contrast.ts` with `parseCssColor`, `relativeLuminance`, and `contrastRatio`, so palette rules can be asserted instead of re-derived per test file
+- `styles.test.ts` fails the build if a text token drops below WCAG AA on any surface, or if a hard-coded copy of a retired colour creeps back in. It also asserts the source walk actually inspected the tree, so the scan cannot pass vacuously
+
+### Changed
+
+- Icon-only buttons in the webview now expose an accessible name through `aria-label`: Session History, Provider Settings, Add file, and Send message. `title` is kept as a hover hint only, because a `title` attribute is not a reliable accessible name
+- The `ModelSelector` trigger is a real `<button>` carrying `aria-haspopup="dialog"` and `aria-expanded`. It was a `<div onClick>`, so keyboard users could not open the model picker at all and no focus target existed to restore to on close
+- `SlashCommandPopup` is a `role="listbox"` with `role="option"` / `aria-selected` items, and the textarea is wired as a `role="combobox"` with `aria-activedescendant`. It is deliberately not a dialog: focus has to stay in the field the user is typing into, so it gets no `aria-modal` and no focus trap
+- `COLORS.textMuted` and `COLORS.textDim` were raised to `#9ca2b8` and `#a6adc8` so every text token clears WCAG AA (4.5:1) on all three surfaces. The previous values measured 1.88-3.59:1 and were used at 10-11px. The old values were hard-coded into 14 components, so every copy was updated too — the token fix alone would have left most of the UI unchanged
+
+### Fixed
+
+- Keyboard focus had no visible ring: interactive controls in the webview set `outline: none` inline, which no stylesheet rule can override, so the global `:focus-visible` outline was dead on arrival. The outline now survives for keyboard users, and it is suppressed only for `:focus:not(:focus-visible)` so mouse clicks stay quiet while Tab navigation is clearly highlighted
+- The message action buttons (Revert, Copy) and the markdown Copy button were revealed by mouse hover handlers, so they stayed invisible when reached by keyboard. Visibility is now driven by `:hover`, `:focus-within`, and `:focus-visible` in the stylesheet instead of inline opacity, and `:focus-within` keeps the button visible for as long as focus is inside the message
+- Hovering a message and then triggering a React re-render could make its buttons disappear, because the re-render restored the inline `opacity: 0` the hover handler had overwritten
+- No overlay exposed dialog semantics. `ConfirmDialog`, `ProviderPopup`, and `SessionListPopup` had no `role="dialog"` or `aria-modal`, none responded to Escape, and none trapped Tab or returned focus on close. `ConfirmDialog` also now focuses **Cancel** rather than the destructive Revert action, so a stray Enter cannot revert a message
+- Session rows in `SessionListPopup` nested the delete `<button>` inside the row `<button>`, which is invalid HTML and left the delete control out of the accessibility tree entirely. The row is now a wrapper with two sibling buttons, and the trash control has an `aria-label` instead of relying on the 🗑 emoji
+- Streaming assistant text was never announced. The reply body now renders inside an `aria-live="polite"` region with `aria-atomic={false}`, and the blinking streaming cursor is `aria-hidden` so it does not re-announce on every frame
+- The user message bubble drew `#cdd6f4` on the purple fill, a 3.94:1 contrast ratio — below AA for its 13px text. It is now white, at 5.70:1
+
 ## [0.2.0] - 2026-09-25
 
 ### Added

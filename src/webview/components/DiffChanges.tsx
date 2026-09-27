@@ -59,7 +59,7 @@ export function DiffChanges({ additions, deletions, variant = 'default' }: Reado
     ];
   }, [additions, deletions, total]);
 
-  const colors = { added: '#a6e3a1', deleted: '#f38ba8', neutral: '#585b70' };
+  const colors = { added: '#a6e3a1', deleted: '#f38ba8', neutral: '#9ca2b8' };
 
   if (variant === 'bars') {
     return (
@@ -88,7 +88,7 @@ export function DiffChanges({ additions, deletions, variant = 'default' }: Reado
   return (
     <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
       <span style={{ color: '#a6e3a1' }}>+{additions}</span>
-      <span style={{ color: '#585b70', margin: '0 4px' }}>/</span>
+      <span style={{ color: '#9ca2b8', margin: '0 4px' }}>/</span>
       <span style={{ color: '#f38ba8' }}>-{deletions}</span>
     </span>
   );

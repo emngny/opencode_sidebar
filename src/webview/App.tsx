@@ -443,6 +443,7 @@ function AppContent() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
               onClick={() => setShowSessions(true)}
+              aria-label="Session History"
               style={btnIcon}
               onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
               onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textMuted)}
@@ -473,6 +474,7 @@ function AppContent() {
             )}
             <button
               onClick={() => setShowProviders(true)}
+              aria-label="Provider Settings"
               style={{
                 ...btnIcon,
                 color: showProviders ? COLORS.accent : COLORS.textMuted,

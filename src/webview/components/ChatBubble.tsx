@@ -74,10 +74,12 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
   };
   return (
     <div
+      className="msg-bubble"
       style={{
         alignSelf: isUser ? 'flex-end' : 'flex-start',
         backgroundColor: isUser ? '#7c3aed' : '#313244',
-        color: '#cdd6f4',
+        // White is the only foreground that clears 4.5:1 on the purple bubble.
+        color: isUser ? '#ffffff' : '#cdd6f4',
         padding: '10px 14px',
         borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
         maxWidth: '85%',
@@ -93,14 +95,6 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
         animation: 'message-rise 180ms ease-out',
         borderLeft: agentColor ? `3px solid ${agentColor.text}` : undefined,
         paddingLeft: agentColor ? 11 : 14,
-      }}
-      onMouseEnter={(e) => {
-        const btns = e.currentTarget.querySelectorAll('.msg-action-btn') as NodeListOf<HTMLElement>;
-        btns.forEach((b) => (b.style.opacity = '1'));
-      }}
-      onMouseLeave={(e) => {
-        const btns = e.currentTarget.querySelectorAll('.msg-action-btn') as NodeListOf<HTMLElement>;
-        btns.forEach((b) => (b.style.opacity = '0'));
       }}
     >
       {message.role === 'assistant' && message.isStreaming && message.content.length < 20 && (
@@ -149,7 +143,10 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
             >
               {message.reasoning}
               {message.isStreaming && (
-                <span style={{ display: 'inline-block', animation: 'blink 1s step-end infinite', marginLeft: 2 }}>
+                <span
+                  aria-hidden="true"
+                  style={{ display: 'inline-block', animation: 'blink 1s step-end infinite', marginLeft: 2 }}
+                >
                   ▌
                 </span>
               )}
@@ -159,7 +156,9 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
       )}
       {message.content &&
         (message.role === 'assistant' ? (
-          <Markdown content={message.content} />
+          <div aria-live="polite" aria-atomic={false}>
+            <Markdown content={message.content} />
+          </div>
         ) : (
           <span style={{ whiteSpace: 'pre-wrap' }}>
             {message.role === 'user' ? highlightMentions(message.content) : collapseWhitespace(message.content)}
@@ -172,7 +171,7 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
         <div
           style={{
             fontSize: 10,
-            color: '#6c7086',
+            color: '#a6adc8',
             display: 'flex',
             gap: 6,
             alignItems: 'center',
@@ -190,7 +189,7 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
                     borderRadius: 4,
                     fontWeight: 500,
                     backgroundColor: c?.bg || 'transparent',
-                    color: c?.text || '#6c7086',
+                    color: c?.text || '#a6adc8',
                     border: `1px solid ${c?.border || 'transparent'}`,
                   }}
                 >
@@ -221,7 +220,10 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
         </div>
       )}
       {message.isStreaming && message.content && (
-        <span style={{ display: 'inline-block', animation: 'blink 1s step-end infinite', fontSize: 16, lineHeight: 1 }}>
+        <span
+          aria-hidden="true"
+          style={{ display: 'inline-block', animation: 'blink 1s step-end infinite', fontSize: 16, lineHeight: 1 }}
+        >
           ▌
         </span>
       )}
@@ -242,8 +244,6 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
                 background: '#313244',
                 color: '#f38ba8',
                 cursor: 'pointer',
-                opacity: 0,
-                transition: 'opacity 0.15s',
               }}
               title="Revert to this point"
             >
@@ -261,8 +261,6 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
               background: '#313244',
               color: copied ? '#a6e3a1' : '#a6adc8',
               cursor: 'pointer',
-              opacity: 0,
-              transition: 'opacity 0.15s',
             }}
           >
             {copied ? 'Copied!' : 'Copy'}

@@ -31,7 +31,7 @@ export function DiffPreview({ patch }: Readonly<Props>) {
         } else if (line.startsWith('@@')) {
           color = '#89b4fa';
         } else if (line.startsWith('Index:') || line.startsWith('===')) {
-          color = '#6c7086';
+          color = '#a6adc8';
         }
         return (
           <div key={i} style={{ backgroundColor: bg, color, padding: '1px 8px', whiteSpace: 'pre' }}>

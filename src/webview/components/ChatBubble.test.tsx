@@ -3,6 +3,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { ChatMessage } from '../../shared/types';
+import { AA_TEXT, contrastRatio } from '../contrast';
 import { ChatBubble, resolveModelLabel } from './ChatBubble';
 
 function createMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -61,6 +62,41 @@ describe('ChatBubble model label', () => {
   });
 });
 
+describe('ChatBubble accessibility live region', () => {
+  it('places assistant content inside a polite live region while streaming', () => {
+    const { container } = render(
+      <ChatBubble message={createMessage({ content: 'partial answer', isStreaming: true })} />,
+    );
+
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).not.toBeNull();
+    expect(live?.textContent).toContain('partial answer');
+  });
+
+  it('places finished assistant content inside a polite live region', () => {
+    const { container } = render(<ChatBubble message={createMessage({ content: 'final answer' })} />);
+
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).not.toBeNull();
+    expect(live?.textContent).toContain('final answer');
+  });
+
+  it('does not put user-typed content in a live region', () => {
+    const { container } = render(<ChatBubble message={createMessage({ role: 'user', content: 'my question' })} />);
+
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).toBeNull();
+  });
+
+  it('hides the blinking streaming cursor from screen readers', () => {
+    render(<ChatBubble message={createMessage({ content: 'streaming', isStreaming: true })} />);
+
+    for (const cursor of screen.getAllByText('▌')) {
+      expect(cursor.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
+});
+
 describe('ChatBubble model override', () => {
   it('flags a model the selected agent substituted', () => {
     render(
@@ -93,5 +129,24 @@ describe('ChatBubble model override', () => {
     render(<ChatBubble message={createMessage({ modelId: 'opencode/mimo' })} />);
 
     expect(screen.queryByText(/asked for/)).toBeNull();
+  });
+});
+
+describe('ChatBubble contrast', () => {
+  function bubbleRatio(role: 'user' | 'assistant'): number {
+    const { container, unmount } = render(<ChatBubble message={createMessage({ role, content: 'hello' })} />);
+    const bubble = container.querySelector<HTMLElement>('.msg-bubble');
+    if (!bubble) throw new Error('bubble not rendered');
+    const ratio = contrastRatio(bubble.style.color, bubble.style.backgroundColor);
+    unmount();
+    return ratio;
+  }
+
+  it('keeps the user bubble legible on the purple fill', () => {
+    expect(bubbleRatio('user')).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+
+  it('keeps the assistant bubble legible', () => {
+    expect(bubbleRatio('assistant')).toBeGreaterThanOrEqual(AA_TEXT);
   });
 });

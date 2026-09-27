@@ -10,5 +10,6 @@
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "bundler"
   },
-  "include": ["src/webview/**/*", "src/shared/**/*"]
+  "include": ["src/webview/**/*", "src/shared/**/*"],
+  "exclude": ["node_modules", "out", "**/*.test.ts", "**/*.test.tsx"]
 }

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Popup } from './Popup';
 
 interface Props {
   model: string;
@@ -11,6 +12,12 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const handleClose = () => {
+    setIsOpen(false);
+    setSearch('');
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -21,12 +28,6 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    if (isOpen && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [isOpen]);
 
   const filteredModels = availableModels.filter(
     (m) =>
@@ -46,8 +47,13 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
 
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
-      <div
+      <button
+        type="button"
+        ref={triggerRef}
         onClick={() => setIsOpen(!isOpen)}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        aria-label={`Model: ${currentModel?.name || model}. Change model`}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -58,6 +64,8 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
           padding: '4px 8px',
           borderRadius: 6,
           backgroundColor: isOpen ? '#313244' : 'transparent',
+          border: 'none',
+          fontFamily: 'inherit',
         }}
       >
         <svg
@@ -88,10 +96,16 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
         >
           <polyline points="6 9 12 15 18 9" />
         </svg>
-      </div>
+      </button>
 
       {isOpen && (
-        <div
+        <Popup
+          label="Select model"
+          modal={false}
+          onClose={handleClose}
+          backdrop={false}
+          initialFocus={inputRef}
+          triggerRef={triggerRef}
           style={{
             position: 'absolute',
             bottom: '100%',
@@ -125,7 +139,6 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
                 backgroundColor: '#313244',
                 color: '#cdd6f4',
                 fontSize: 13,
-                outline: 'none',
                 boxSizing: 'border-box',
               }}
             />
@@ -134,14 +147,14 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
           {/* Models List */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
             {Object.keys(grouped).length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 20, color: '#585b70', fontSize: 13 }}>Model not found</div>
+              <div style={{ textAlign: 'center', padding: 20, color: '#9ca2b8', fontSize: 13 }}>Model not found</div>
             ) : (
               Object.entries(grouped).map(([providerId, models]) => (
                 <div key={providerId}>
                   <div
                     style={{
                       fontSize: 11,
-                      color: '#585b70',
+                      color: '#9ca2b8',
                       fontWeight: 600,
                       padding: '8px 0 4px',
                       textTransform: 'uppercase',
@@ -155,8 +168,7 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
                       key={m.id}
                       onClick={() => {
                         onChange(m.id);
-                        setIsOpen(false);
-                        setSearch('');
+                        handleClose();
                       }}
                       style={{
                         display: 'flex',
@@ -195,7 +207,7 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
               ))
             )}
           </div>
-        </div>
+        </Popup>
       )}
     </div>
   );

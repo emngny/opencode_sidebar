@@ -1,14 +1,28 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CommandItem, BUILTIN_COMMANDS, getCommandColor } from '../slashCommands';
+import { useEscapeToClose } from '../hooks/useFocusTrap';
+
+/** Id of the listbox, referenced by the input's `aria-controls`. */
+export const SLASH_LISTBOX_ID = 'slash-command-listbox';
+
+/** Id of the option at `index`, referenced by the input's `aria-activedescendant`. */
+export function slashOptionId(index: number): string {
+  return `${SLASH_LISTBOX_ID}-option-${index}`;
+}
 
 interface Props {
   filter: string;
   skills: Array<{ name: string; description?: string }>;
   onSelect: (cmd: CommandItem) => void;
   onClose: () => void;
+  /**
+   * The focused text input. This list is anchored to it and must not steal
+   * focus, so the highlight is bridged with `aria-activedescendant` instead.
+   */
+  comboboxRef?: React.RefObject<HTMLTextAreaElement>;
 }
 
-export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonly<Props>) {
+export function SlashCommandPopup({ filter, skills, onSelect, onClose, comboboxRef }: Readonly<Props>) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [hoveredIndex, setHoveredIndex] = useState(-1);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -43,19 +57,30 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
         if (filtered[selectedIndex]) {
           onSelect(filtered[selectedIndex]);
         }
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
       }
     },
-    [filtered, selectedIndex, onSelect, onClose],
+    [filtered, selectedIndex, onSelect],
   );
+
+  useEscapeToClose(true, onClose);
 
   useEffect(() => {
     if (filtered.length === 0) return;
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown, filtered.length]);
+
+  // Point the input at the highlighted option so screen readers announce the
+  // highlight without moving focus out of the text field.
+  useEffect(() => {
+    const input = comboboxRef?.current;
+    if (!input) return;
+    if (filtered.length === 0) {
+      input.removeAttribute('aria-activedescendant');
+      return;
+    }
+    input.setAttribute('aria-activedescendant', slashOptionId(selectedIndex));
+  }, [comboboxRef, filtered.length, selectedIndex]);
 
   // Scroll selected into view
   useEffect(() => {
@@ -68,6 +93,9 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
   return (
     <div
       ref={popupRef}
+      id={SLASH_LISTBOX_ID}
+      role="listbox"
+      aria-label="Commands and skills"
       style={{
         position: 'absolute',
         bottom: '100%',
@@ -82,7 +110,7 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
         zIndex: 100,
       }}
     >
-      <div style={{ padding: '6px 12px', borderBottom: '1px solid #313244', fontSize: 11, color: '#6c7086' }}>
+      <div style={{ padding: '6px 12px', borderBottom: '1px solid #313244', fontSize: 11, color: '#a6adc8' }}>
         Commands &amp; Skills
       </div>
       {filtered.map((cmd, i) => {
@@ -91,7 +119,10 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
         return (
           <div
             key={`${cmd.type}_${cmd.command}`}
+            id={slashOptionId(i)}
             data-index={i}
+            role="option"
+            aria-selected={isSelected}
             onClick={() => onSelect(cmd)}
             onMouseEnter={() => {
               setSelectedIndex(i);
@@ -112,21 +143,21 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose }: Readonl
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                backgroundColor: color?.text || '#6c7086',
+                backgroundColor: color?.text || '#a6adc8',
                 flexShrink: 0,
               }}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, color: '#cdd6f4', fontWeight: 500 }}>
-                <span style={{ color: color?.text || '#6c7086' }}>/{cmd.command}</span>
+                <span style={{ color: color?.text || '#a6adc8' }}>/{cmd.command}</span>
                 {cmd.type === 'skill' && (
-                  <span style={{ fontSize: 10, color: '#6c7086', marginLeft: 6, fontWeight: 400 }}>skill</span>
+                  <span style={{ fontSize: 10, color: '#a6adc8', marginLeft: 6, fontWeight: 400 }}>skill</span>
                 )}
               </div>
               <div
                 style={{
                   fontSize: 11,
-                  color: '#6c7086',
+                  color: '#a6adc8',
                   marginTop: 1,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',

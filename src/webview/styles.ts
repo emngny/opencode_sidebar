@@ -7,8 +7,8 @@ export const COLORS = {
   bgHover: '#313244',
   border: '#45475a',
   text: '#cdd6f4',
-  textMuted: '#585b70',
-  textDim: '#6c7086',
+  textMuted: '#9ca2b8',
+  textDim: '#a6adc8',
   accent: '#89b4fa',
   green: '#a6e3a1',
   red: '#f38ba8',
@@ -56,7 +56,6 @@ export const inputBase: CSSProperties = {
   color: COLORS.text,
   fontSize: 12,
   fontFamily: 'monospace',
-  outline: 'none',
 };
 
 // Text

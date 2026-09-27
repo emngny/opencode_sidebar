@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ContextPart } from '../../shared/types';
 import { CommandItem } from '../slashCommands';
-import { SlashCommandPopup } from './SlashCommandPopup';
+import { SlashCommandPopup, SLASH_LISTBOX_ID } from './SlashCommandPopup';
 import { COLORS } from '../styles';
 
 interface FileResult {
@@ -226,6 +226,7 @@ export function BottomInput({
             skills={skills || []}
             onSelect={handleSlashSelect}
             onClose={() => setShowSlashPopup(false)}
+            comboboxRef={textareaRef}
           />
         </div>
       )}
@@ -264,13 +265,12 @@ export function BottomInput({
                 padding: '8px 12px',
                 color: COLORS.text,
                 fontSize: 13,
-                outline: 'none',
                 boxSizing: 'border-box',
               }}
             />
           </div>
           {fileSearchResults.length === 0 ? (
-            <div style={{ padding: '16px', textAlign: 'center', color: '#6c7086', fontSize: 12 }}>No results found</div>
+            <div style={{ padding: '16px', textAlign: 'center', color: '#a6adc8', fontSize: 12 }}>No results found</div>
           ) : (
             fileSearchResults.map((file) => (
               <button
@@ -296,7 +296,7 @@ export function BottomInput({
                   height="14"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#6c7086"
+                  stroke="#a6adc8"
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -316,7 +316,7 @@ export function BottomInput({
                   >
                     {file.name}
                   </div>
-                  <div style={{ fontSize: 11, color: '#6c7086' }}>{file.path}</div>
+                  <div style={{ fontSize: 11, color: '#a6adc8' }}>{file.path}</div>
                 </div>
               </button>
             ))
@@ -378,7 +378,7 @@ export function BottomInput({
                 style={{
                   backgroundColor: 'transparent',
                   border: 'none',
-                  color: '#6c7086',
+                  color: '#a6adc8',
                   cursor: 'pointer',
                   padding: 0,
                   display: 'flex',
@@ -412,6 +412,10 @@ export function BottomInput({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           disabled={disabled}
+          role="combobox"
+          aria-expanded={showSlashPopup}
+          aria-controls={showSlashPopup ? SLASH_LISTBOX_ID : undefined}
+          aria-autocomplete="list"
           placeholder="Ask something... (/ for commands, @ to search files, Ctrl+V to paste images)"
           style={{
             backgroundColor: 'transparent',
@@ -420,7 +424,6 @@ export function BottomInput({
             fontSize: 14,
             fontFamily: 'inherit',
             resize: 'none',
-            outline: 'none',
             width: '100%',
             minHeight: 22,
             maxHeight: 120,
@@ -433,6 +436,7 @@ export function BottomInput({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button
             onClick={handlePlusClick}
+            aria-label="Add file"
             disabled={disabled}
             style={{
               backgroundColor: 'transparent',
@@ -467,6 +471,7 @@ export function BottomInput({
 
           <button
             onClick={handleSend}
+            aria-label="Send message"
             disabled={disabled || !canSend}
             style={{
               backgroundColor: disabled || !canSend ? '#45475a' : '#7c3aed',

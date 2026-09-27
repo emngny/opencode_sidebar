@@ -25,7 +25,7 @@ export function ModeSelector({ mode, onChange, agents }: Props) {
           width: 8,
           height: 8,
           borderRadius: '50%',
-          backgroundColor: color?.text || '#585b70',
+          backgroundColor: color?.text || '#9ca2b8',
           flexShrink: 0,
         }}
       />
@@ -39,7 +39,6 @@ export function ModeSelector({ mode, onChange, agents }: Props) {
           fontSize: 12,
           fontFamily: 'inherit',
           cursor: 'pointer',
-          outline: 'none',
           fontWeight: 600,
         }}
       >
