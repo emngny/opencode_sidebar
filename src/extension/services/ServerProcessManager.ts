@@ -202,26 +202,37 @@ export class ServerProcessManager {
         : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(sep);
       // Keep the inherited PATH so the server can locate git, ripgrep, language tools, etc.
       const childPath = [systemPath, process.env.PATH].filter(Boolean).join(sep);
-      const minimalEnv: Record<string, string | undefined> = {
-        OPENCODE_SERVER_PASSWORD: password,
-        PATH: childPath,
-        USERPROFILE: process.env.USERPROFILE,
-        APPDATA: process.env.APPDATA,
-        LOCALAPPDATA: process.env.LOCALAPPDATA,
-        SYSTEMROOT: process.env.SYSTEMROOT,
-        OPENCODE_SERVER_USERNAME: process.env.OPENCODE_SERVER_USERNAME || 'opencode',
-        OPENCODE_CLIENT: process.env.OPENCODE_CLIENT,
-        OPENCODE_DISABLE_EMBEDDED_WEB_UI: process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI,
-        OPENCODE_EXPERIMENTAL_FILEWATCHER: process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER,
-        OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY,
-      };
-      for (const key of Object.keys(minimalEnv)) if (minimalEnv[key] === undefined) delete minimalEnv[key];
+      // Inherit the host environment rather than allow-listing a handful of
+      // variables. Tools the agent runs (bash, node, git, language servers)
+      // need the full Windows environment: without PATHEXT an extensionless
+      // command such as `node` cannot be resolved to `node.exe`, and without
+      // ComSpec/TEMP many shell-based tools fail outright. An allow-list here
+      // silently breaks tool execution, which is far worse than inheriting
+      // the environment the user already runs the extension in.
+      const childEnv: Record<string, string | undefined> = { ...process.env, PATH: childPath };
+      // Drop every OPENCODE_* override from the outer environment — it must not
+      // be able to re-point the binary, the config, or the permission set of the
+      // server we are about to start. The values below are re-added explicitly.
+      for (const key of Object.keys(childEnv)) {
+        if (key.toUpperCase().startsWith('OPENCODE_')) delete childEnv[key];
+      }
+      childEnv.OPENCODE_SERVER_PASSWORD = password;
+      childEnv.OPENCODE_SERVER_USERNAME = process.env.OPENCODE_SERVER_USERNAME || 'opencode';
+      for (const key of [
+        'OPENCODE_CLIENT',
+        'OPENCODE_DISABLE_EMBEDDED_WEB_UI',
+        'OPENCODE_EXPERIMENTAL_FILEWATCHER',
+        'OPENCODE_EXPERIMENTAL_ICON_DISCOVERY',
+      ]) {
+        const value = process.env[key];
+        if (value !== undefined) childEnv[key] = value;
+      }
       let proc: ChildProcess;
       try {
         proc = spawn(binary, ['serve', '--port', '0'], {
           stdio: ['ignore', 'pipe', 'pipe'],
           cwd: this.cwd,
-          env: minimalEnv,
+          env: childEnv,
           windowsHide: true,
         });
       } catch (err: unknown) {

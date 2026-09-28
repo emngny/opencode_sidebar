@@ -96,8 +96,59 @@ describe('ServerProcessManager.tryStart', () => {
     await expect(mgr.tryStart('opencode', 'secret', 1_000)).rejects.toThrow('stop after capture');
 
     const childEnv = vi.mocked(spawn).mock.calls[0][2]?.env as Record<string, string | undefined>;
-    expect(childEnv).not.toHaveProperty('OPENCODE_BIN_PATH');
-    expect(childEnv).toHaveProperty('OPENCODE_SERVER_PASSWORD', 'secret');
+    const envKeys = Object.keys(childEnv).map((k) => k.toUpperCase());
+    expect(envKeys).not.toContain('OPENCODE_BIN_PATH');
+    expect(envKeys).toContain('OPENCODE_SERVER_PASSWORD');
+  });
+
+  it('inherits host env so tools like bash/node can resolve commands', async () => {
+    vi.stubEnv('PATHEXT', '.COM;.EXE;.BAT;.CMD');
+    vi.stubEnv('ComSpec', 'C:\\Windows\\system32\\cmd.exe');
+    vi.stubEnv('TEMP', 'C:\\Users\\test\\AppData\\Local\\Temp');
+    vi.mocked(spawn).mockImplementation(() => {
+      throw new Error('stop after capture');
+    });
+    const mgr = new ServerProcessManager() as unknown as TestableManager;
+
+    await expect(mgr.tryStart('opencode', 'secret', 1_000)).rejects.toThrow('stop after capture');
+
+    const childEnv = vi.mocked(spawn).mock.calls[0][2]?.env as Record<string, string | undefined>;
+    // Windows env keys are case-insensitive, and vitest's stubEnv normalizes
+    // the casing it writes, so look the value up the same way.
+    const envValue = (name: string): string | undefined => {
+      const key = Object.keys(childEnv).find((k) => k.toUpperCase() === name.toUpperCase());
+      return key ? childEnv[key] : undefined;
+    };
+    // Without PATHEXT an extensionless command such as `node` cannot be
+    // resolved, and the agent's tool calls silently return empty output.
+    expect(envValue('PATHEXT')).toBe('.COM;.EXE;.BAT;.CMD');
+    expect(envValue('ComSpec')).toBe('C:\\Windows\\system32\\cmd.exe');
+    expect(envValue('TEMP')).toBe('C:\\Users\\test\\AppData\\Local\\Temp');
+    expect(envValue('PATH')).toContain(String.raw`${process.env.SystemRoot || 'C:\\Windows'}\System32`);
+  });
+
+  it('strips inherited OPENCODE_* overrides other than the explicit pass-through set', async () => {
+    vi.stubEnv('OPENCODE_CONFIG', 'C:\\evil\\opencode.json');
+    vi.stubEnv('OPENCODE_PERMISSION', 'allow-everything');
+    vi.stubEnv('OPENCODE_CLIENT', 'vscode-extension');
+    vi.mocked(spawn).mockImplementation(() => {
+      throw new Error('stop after capture');
+    });
+    const mgr = new ServerProcessManager() as unknown as TestableManager;
+
+    await expect(mgr.tryStart('opencode', 'secret', 1_000)).rejects.toThrow('stop after capture');
+
+    const childEnv = vi.mocked(spawn).mock.calls[0][2]?.env as Record<string, string | undefined>;
+    // An inherited override must not be able to re-point the config or widen
+    // the permission set of the server we are about to start. Compare
+    // case-insensitively: Windows treats these names case-insensitively, so a
+    // differently-cased key would still take effect on the child.
+    const envKeys = (): string[] => Object.keys(childEnv).map((k) => k.toUpperCase());
+    expect(envKeys()).not.toContain('OPENCODE_CONFIG');
+    expect(envKeys()).not.toContain('OPENCODE_PERMISSION');
+    expect(envKeys()).not.toContain('OPENCODE_BIN_PATH');
+    expect(envKeys()).toContain('OPENCODE_CLIENT');
+    expect(envKeys()).toContain('OPENCODE_SERVER_PASSWORD');
   });
 
   it('sets cachedAuthHeader on successful start', async () => {
