@@ -2,13 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.1] - 2026-09-27
+## [0.2.1] - 2026-09-28
 
 ### Added
 
 - A shared `Popup` primitive for every webview overlay. It owns the behaviour only — `role="dialog"`, `aria-modal`, Tab confinement, Escape, and returning focus to the opener — while the caller keeps its visuals through `style` / `backdropStyle`. Backed by `useFocusTrap` and `useEscapeToClose` in `src/webview/hooks/useFocusTrap.ts`; Escape is bound on the capture phase and skipped once another handler has claimed the key, so only the topmost layer closes
 - `src/webview/contrast.ts` with `parseCssColor`, `relativeLuminance`, and `contrastRatio`, so palette rules can be asserted instead of re-derived per test file
 - `styles.test.ts` fails the build if a text token drops below WCAG AA on any surface, or if a hard-coded copy of a retired colour creeps back in. It also asserts the source walk actually inspected the tree, so the scan cannot pass vacuously
+- Links in assistant markdown now open in the user's browser. A `openExternal` message carries the URL to the extension, which re-parses it and checks the protocol against an `http`/`https`/`mailto` allow-list before calling `vscode.env.openExternal`. The check is repeated on the extension side on purpose: a webview message is not a trust boundary, so a forged `file://` or custom-scheme request must not reach the OS handler
+- Design scales in `styles.ts` so the values stop being retyped per component: `RADIUS` (4/6/8/12/16), `SHADOW` (`sm`/`md`/`lg`/`sheet`), `FONT_SIZE` (11/12/13/14/16/20/24), and `SPACE` (2/4/6/8/12/16/24). A sixth colour family joins `COLORS`: `onAccent` (`#fff`) for text on saturated fills, `onBright` (`#11111b`) for text on light fills, `scrim` for the second-stage backdrop, and `success`/`accent`/`danger` `Tint`/`Border`/`Fill` triples that were being hand-copied at four different alpha values each
+- `withAlpha(hex, alpha)` in `styles.ts`, so a translucent wash is derived from its hue instead of re-typed as an `rgba()` literal. `agentColors.ts` uses it to derive all twelve of its chip washes from eight hues, and `slashCommands.ts` the same for the skill chip
+- `hoverable(enter, leave?)` in `src/webview/hover.ts`, the one sanctioned way to attach a hover state. `leave` restores only the keys `enter` set, and may be a function when the resting style depends on state — which is what the hand-rolled ternaries were working around
+- Shared popup chrome, so the model manager, session history, model picker, and slash list no longer each hand-write the same body/border/radius/shadow stack: `sheetPanel`, `sheetBackdrop`, `sheetHeader`, `sheetTabs`, and `popupPanel`. They now differ only in `maxHeight` and inset
+- More guard tests in `styles.test.ts`: no type size below the scale floor and none off a declared step, padding and gap on an even declared step, no dead export from `styles.ts`, no wholesale `cssText` clear, no hand-rolled `currentTarget.style` mutation, and no duplicated popup chrome outside `styles.ts`. `WebviewHtmlBuilder.test.ts` asserts the heading ladder keeps a real step between levels and that markdown tables scroll
 
 ### Changed
 
@@ -16,6 +22,12 @@ All notable changes to this project will be documented in this file.
 - The `ModelSelector` trigger is a real `<button>` carrying `aria-haspopup="dialog"` and `aria-expanded`. It was a `<div onClick>`, so keyboard users could not open the model picker at all and no focus target existed to restore to on close
 - `SlashCommandPopup` is a `role="listbox"` with `role="option"` / `aria-selected` items, and the textarea is wired as a `role="combobox"` with `aria-activedescendant`. It is deliberately not a dialog: focus has to stay in the field the user is typing into, so it gets no `aria-modal` and no focus trap
 - `COLORS.textMuted` and `COLORS.textDim` were raised to `#9ca2b8` and `#a6adc8` so every text token clears WCAG AA (4.5:1) on all three surfaces. The previous values measured 1.88-3.59:1 and were used at 10-11px. The old values were hard-coded into 14 components, so every copy was updated too — the token fix alone would have left most of the UI unchanged
+- Hard-coded colours are gone from the webview. Around 250 hex and `rgba()` literals across 20 components collapsed to five, all of them the deliberately off-palette agent hues in `agentColors.ts` and `slashCommands.ts` that keep `plan`, `code`, and `review` distinguishable in the transcript. Eighteen components now import from `styles.ts` instead of three
+- Touch targets in the webview meet WCAG 2.2 AA 2.5.8. The message action buttons, the markdown copy button, and the shared icon buttons were built from a 10-20px glyph plus padding and measured 16-22px, below the 24x24 floor; `btnBase` and the inline button styles now carry an explicit `minWidth`/`minHeight` rather than relying on padding arithmetic
+- 10px type is retired. It appeared in thirteen places — counters, badges, the compaction label, tool output — and is now `FONT_SIZE.xs` at 11px. The 11px floor is deliberate: 11px is also used in thirty places, and moving those to 12px is a visible change to the whole transcript that wants its own review rather than an audit sweep
+- Spacing is snapped to the `SPACE` scale. The UI already ran on a 2px sub-grid, so the only genuine violations were the odd values 3/5/7 — seven sites. The 4/8 grid the audit proposed was not applied: rounding 6/10/14 to 4/8/16 across sixty-plus sites would have been a redesign, not a fix
+- Every hover state goes through `hoverable()`. The eleven hand-written `onMouseEnter`/`onMouseLeave` pairs mutated `currentTarget.style` directly, with the enter and leave values duplicated and the resting value occasionally drifting from the element's own inline style. `SlashCommandPopup` keeps its state-driven highlight, which is the correct mechanism for a `listbox`
+- `agentColors.ts` stores one hue per agent instead of three hand-written colour objects. The four hues outside the app palette stay literal by design; what changed is that the surrounding chrome is derived from the hue and can no longer disagree with it
 
 ### Fixed
 
@@ -26,6 +38,14 @@ All notable changes to this project will be documented in this file.
 - Session rows in `SessionListPopup` nested the delete `<button>` inside the row `<button>`, which is invalid HTML and left the delete control out of the accessibility tree entirely. The row is now a wrapper with two sibling buttons, and the trash control has an `aria-label` instead of relying on the 🗑 emoji
 - Streaming assistant text was never announced. The reply body now renders inside an `aria-live="polite"` region with `aria-atomic={false}`, and the blinking streaming cursor is `aria-hidden` so it does not re-announce on every frame
 - The user message bubble drew `#cdd6f4` on the purple fill, a 3.94:1 contrast ratio — below AA for its 13px text. It is now white, at 5.70:1
+- Links in assistant markdown looked clickable and did nothing. Every non-anchor `href` called `e.preventDefault()` and stopped there, and no message anywhere in the codebase carried a URL to the extension
+- Wide markdown tables stretched the message bubble sideways. `pre` already scrolled horizontally; `table` had neither `overflow-x` nor a scroll container, and now behaves the same way
+- `h4` in assistant markdown rendered at 13px, identical to the 13px body it was meant to stand out from, and `h3` at 14px left almost no step above it. The ladder is now 20/16/14 with `h4` and below carrying no size rule at all — they separate by their existing 600 weight and block margins rather than by a size they do not have. A four-step ladder does not fit a 13px surface
+
+### Removed
+
+- `src/webview/hooks/useHoverStyles.ts`. It had no importers, and both of its reset helpers did `style.cssText = ''`, which clears React's own inline styles and not just the hover state — the component would have lost its styling for as long as the mouse rested on it. `hoverable()` replaces it with key-scoped resets
+- Eight dead exports from `styles.ts` (`flexBetween`, `flexCol`, `flexCenter`, `inputBase`, `textNormal`, `btnAccent`, `transitionColor`, `gap`). A dead export is worse than a missing one: it reads as an available option, so the next author reaches for the wrong primitive instead of writing the right thing. `styles.test.ts` now fails the build if one reappears
 
 ## [0.2.0] - 2026-09-25
 

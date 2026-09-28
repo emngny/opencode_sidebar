@@ -1,4 +1,5 @@
 import { getAgentColor } from './components/agentColors';
+import { withAlpha } from './styles';
 
 export interface CommandItem {
   type: 'command' | 'skill';
@@ -40,7 +41,8 @@ export const BUILTIN_COMMANDS: CommandItem[] = [
 
 export function getCommandColor(cmd: CommandItem): { bg: string; text: string; border: string } | null {
   if (cmd.type === 'skill') {
-    return { bg: 'rgba(203,166,247,0.1)', text: '#cba6f7', border: 'rgba(203,166,247,0.3)' };
+    const hue = '#cba6f7';
+    return { bg: withAlpha(hue, 0.1), text: hue, border: withAlpha(hue, 0.3) };
   }
   if (cmd.agent) {
     return getAgentColor(cmd.agent);

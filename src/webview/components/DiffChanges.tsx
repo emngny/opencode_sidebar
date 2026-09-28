@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { COLORS } from '../styles';
 
 interface Props {
   additions: number;
@@ -59,7 +60,7 @@ export function DiffChanges({ additions, deletions, variant = 'default' }: Reado
     ];
   }, [additions, deletions, total]);
 
-  const colors = { added: '#a6e3a1', deleted: '#f38ba8', neutral: '#9ca2b8' };
+  const colors = { added: COLORS.green, deleted: COLORS.red, neutral: COLORS.textMuted };
 
   if (variant === 'bars') {
     return (
@@ -87,9 +88,9 @@ export function DiffChanges({ additions, deletions, variant = 'default' }: Reado
 
   return (
     <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-      <span style={{ color: '#a6e3a1' }}>+{additions}</span>
-      <span style={{ color: '#9ca2b8', margin: '0 4px' }}>/</span>
-      <span style={{ color: '#f38ba8' }}>-{deletions}</span>
+      <span style={{ color: COLORS.green }}>+{additions}</span>
+      <span style={{ color: COLORS.textMuted, margin: '0 4px' }}>/</span>
+      <span style={{ color: COLORS.red }}>-{deletions}</span>
     </span>
   );
 }

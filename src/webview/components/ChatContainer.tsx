@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChatMessage } from '../../shared/types';
+import { COLORS, RADIUS } from '../styles';
 import { ChatBubble } from './ChatBubble';
 import { EventCard } from './EventCard';
 import { ContextGroup } from './ContextGroup';
@@ -75,23 +76,29 @@ export function ChatContainer({
     <div ref={containerRef} style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
       {hasMore && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-          <span style={{ fontSize: 11, color: '#a6adc8' }}>{hiddenCount} older messages hidden</span>
+          <span style={{ fontSize: 11, color: COLORS.textDim }}>{hiddenCount} older messages hidden</span>
           <button
             onClick={() => loadOlder()}
             style={{
-              border: '1px solid #45475a',
-              borderRadius: 6,
-              background: '#181825',
-              color: '#cdd6f4',
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: RADIUS.md,
+              background: COLORS.bgLight,
+              color: COLORS.text,
               cursor: 'pointer',
-              padding: '4px 10px',
+              padding: '4px 12px',
             }}
           >
             Load older
           </button>
           <button
             onClick={() => loadOlder(true)}
-            style={{ border: 0, background: 'transparent', color: '#89b4fa', cursor: 'pointer', fontSize: 11 }}
+            style={{
+              border: 0,
+              background: 'transparent',
+              color: COLORS.accent,
+              cursor: 'pointer',
+              fontSize: 11,
+            }}
           >
             Load all
           </button>
@@ -130,22 +137,22 @@ export function ChatContainer({
             justifyContent: 'center',
             gap: 8,
             padding: '8px 12px',
-            backgroundColor: 'rgba(137,180,250,0.08)',
-            border: '1px solid rgba(137,180,250,0.3)',
+            backgroundColor: COLORS.accentTint,
+            border: `1px solid ${COLORS.accentBorder}`,
             borderRadius: 10,
             fontSize: 12,
-            color: '#89b4fa',
+            color: COLORS.accent,
           }}
         >
           <span>⏪ Messages reverted</span>
           <button
             onClick={onUnrevert}
             style={{
-              padding: '4px 10px',
+              padding: '4px 12px',
               borderRadius: 6,
-              border: '1px solid rgba(137,180,250,0.3)',
-              background: 'rgba(137,180,250,0.1)',
-              color: '#89b4fa',
+              border: `1px solid ${COLORS.accentBorder}`,
+              background: COLORS.accentFill,
+              color: COLORS.accent,
               cursor: 'pointer',
               fontSize: 11,
             }}

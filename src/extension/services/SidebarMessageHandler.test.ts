@@ -8,7 +8,11 @@ vi.mock('vscode', () => ({
     openTextDocument: vi.fn(),
   },
   window: { showTextDocument: vi.fn() },
-  Uri: { file: vi.fn((fsPath) => ({ fsPath })) },
+  env: { openExternal: vi.fn().mockResolvedValue(true) },
+  Uri: {
+    file: vi.fn((fsPath) => ({ fsPath })),
+    parse: vi.fn((value: string) => ({ toString: () => value })),
+  },
 }));
 
 function createHandler(
@@ -82,6 +86,24 @@ describe('SidebarMessageHandler', () => {
     const handler = createHandler();
     await handler.dispatch({ type: 'openDiff', payload: { filePath: '../secret.txt' } });
     expect(vscode.workspace.openTextDocument).not.toHaveBeenCalled();
+  });
+
+  it('opens http(s) and mailto links in the OS browser', async () => {
+    vi.mocked(vscode.env.openExternal).mockClear();
+    const handler = createHandler();
+    await handler.dispatch({ type: 'openExternal', payload: { url: 'https://example.com/docs' } });
+    await handler.dispatch({ type: 'openExternal', payload: { url: 'mailto:dev@example.com' } });
+    expect(vscode.env.openExternal).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks link protocols the webview sanitizer already forbids', async () => {
+    vi.mocked(vscode.env.openExternal).mockClear();
+    const post = vi.fn();
+    const handler = createHandler({}, post);
+    await handler.dispatch({ type: 'openExternal', payload: { url: 'file:///etc/passwd' } });
+    await handler.dispatch({ type: 'openExternal', payload: { url: 'not-a-url' } });
+    expect(vscode.env.openExternal).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(2);
   });
 
   it('emits idle after init succeeds', async () => {

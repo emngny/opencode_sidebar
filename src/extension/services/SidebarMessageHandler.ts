@@ -62,6 +62,8 @@ export class SidebarMessageHandler {
         return this.sendMessage(message.payload);
       case 'openDiff':
         return this.openDiff(message.payload.filePath);
+      case 'openExternal':
+        return this.openExternal(message.payload.url);
       case 'listProviders':
         return this.listProviders();
       case 'setApiKey':
@@ -282,6 +284,28 @@ export class SidebarMessageHandler {
       await vscode.window.showTextDocument(document);
     } catch (error) {
       console.error('[opencode] Open diff error:', getErrorMessage(error));
+    }
+  }
+  private async openExternal(url: string): Promise<void> {
+    // The webview is not a trust boundary here — re-parse and re-check the
+    // scheme. This is what keeps a forged message away from `file://` and from
+    // handlers registered under any other scheme; it is not a network-level
+    // filter, so `http://localhost` still passes.
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      this._post({ type: 'error', payload: { message: 'Blocked link: not a valid URL' } });
+      return;
+    }
+    if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+      this._post({ type: 'error', payload: { message: 'Blocked link: unsupported protocol' } });
+      return;
+    }
+    try {
+      await vscode.env.openExternal(vscode.Uri.parse(parsed.toString()));
+    } catch (error) {
+      this._post({ type: 'error', payload: { message: `Failed to open link: ${getErrorMessage(error)}` } });
     }
   }
   private async listProviders(): Promise<void> {

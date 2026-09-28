@@ -1,4 +1,5 @@
 import React from 'react';
+import { COLORS } from '../styles';
 
 interface Props {
   projectPath: string;
@@ -16,7 +17,7 @@ export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Readonly<
         justifyContent: 'center',
         flex: 1,
         gap: 16,
-        padding: 20,
+        padding: 24,
       }}
     >
       {/* Logo */}
@@ -24,7 +25,7 @@ export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Readonly<
         style={{
           width: 56,
           height: 56,
-          background: 'linear-gradient(135deg, #7c3aed, #3b82f6)',
+          background: `linear-gradient(135deg, ${COLORS.purple}, ${COLORS.accent})`,
           borderRadius: 14,
           display: 'flex',
           alignItems: 'center',
@@ -52,7 +53,7 @@ export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Readonly<
         style={{
           fontSize: 24,
           fontWeight: 600,
-          color: '#cdd6f4',
+          color: COLORS.text,
           margin: 0,
           textAlign: 'center',
         }}
@@ -64,7 +65,7 @@ export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Readonly<
       <div
         style={{
           fontSize: 13,
-          color: '#89b4fa',
+          color: COLORS.accent,
           fontFamily: 'monospace',
           textAlign: 'center',
         }}
@@ -79,7 +80,7 @@ export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Readonly<
           alignItems: 'center',
           gap: 6,
           fontSize: 13,
-          color: '#a6adc8',
+          color: COLORS.textDim,
         }}
       >
         <svg
@@ -104,7 +105,7 @@ export function WelcomeScreen({ projectPath, branch, lastCommitTime }: Readonly<
       <div
         style={{
           fontSize: 13,
-          color: '#89b4fa',
+          color: COLORS.accent,
           textAlign: 'center',
         }}
       >

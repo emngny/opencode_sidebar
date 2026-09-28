@@ -364,6 +364,9 @@ export type WebviewToExtensionMessage = {
     type: 'openDiff';
     payload: OpenDiffPayload;
 } | {
+    type: 'openExternal';
+    payload: OpenExternalPayload;
+} | {
     type: 'runCommand';
     payload: RunCommandPayload;
 } | {
@@ -515,6 +518,7 @@ export const WEBVIEW_TO_EXTENSION_TYPES = [
     'respondPermission',
     'respondReadPermission',
     'openDiff',
+    'openExternal',
     'runCommand',
     'loadSkills',
     'webviewReady',

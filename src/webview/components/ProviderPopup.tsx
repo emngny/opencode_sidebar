@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ProviderInfo, ProviderModel } from '../../shared/types';
 import { postMessage, onMessage } from '../vscode-api';
+import { COLORS, FONT_SIZE, RADIUS, SHADOW, SPACE, sheetBackdrop, sheetHeader, sheetPanel, sheetTabs } from '../styles';
 import { Popup } from './Popup';
 
 interface Props {
@@ -91,7 +92,7 @@ export function ProviderPopup({
         width: 36,
         height: 20,
         borderRadius: 10,
-        backgroundColor: checked ? '#7c3aed' : '#45475a',
+        backgroundColor: checked ? COLORS.purple : COLORS.border,
         position: 'relative',
         cursor: 'pointer',
         transition: 'background-color 0.2s',
@@ -105,7 +106,7 @@ export function ProviderPopup({
           width: 16,
           height: 16,
           borderRadius: '50%',
-          backgroundColor: '#fff',
+          backgroundColor: COLORS.onAccent,
           transition: 'left 0.2s',
         }}
       />
@@ -117,47 +118,16 @@ export function ProviderPopup({
       labelledBy="manage-models-title"
       onClose={onClose}
       initialFocus={searchRef}
-      backdropStyle={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        zIndex: 200,
-        display: 'flex',
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-      }}
-      style={{
-        backgroundColor: '#1e1e2e',
-        border: '1px solid #313244',
-        borderBottom: 'none',
-        borderRadius: '16px 16px 0 0',
-        width: '100%',
-        maxHeight: '85vh',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
-      }}
+      backdropStyle={sheetBackdrop}
+      style={{ ...sheetPanel, maxHeight: '85vh' }}
     >
       {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '14px 16px',
-          borderBottom: '1px solid #313244',
-          flexShrink: 0,
-        }}
-      >
+      <div style={sheetHeader}>
         <div>
-          <div id="manage-models-title" style={{ fontSize: 16, fontWeight: 600, color: '#cdd6f4' }}>
+          <div id="manage-models-title" style={{ fontSize: 16, fontWeight: 600, color: COLORS.text }}>
             Manage Models
           </div>
-          <div style={{ fontSize: 11, color: '#9ca2b8', marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
             {availableModels.length - Object.keys(hiddenModels).length} / {availableModels.length} visible
           </div>
         </div>
@@ -166,7 +136,7 @@ export function ProviderPopup({
           style={{
             background: 'none',
             border: 'none',
-            color: '#a6adc8',
+            color: COLORS.textDim,
             cursor: 'pointer',
             fontSize: 20,
             padding: 4,
@@ -178,7 +148,7 @@ export function ProviderPopup({
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #313244', flexShrink: 0 }}>
+      <div style={sheetTabs}>
         <button
           onClick={() => setActiveTab('models')}
           style={{
@@ -186,11 +156,11 @@ export function ProviderPopup({
             padding: '12px 16px',
             backgroundColor: 'transparent',
             border: 'none',
-            color: activeTab === 'models' ? '#cdd6f4' : '#9ca2b8',
+            color: activeTab === 'models' ? COLORS.text : COLORS.textMuted,
             fontSize: 13,
             fontWeight: 600,
             cursor: 'pointer',
-            borderBottom: activeTab === 'models' ? '2px solid #7c3aed' : '2px solid transparent',
+            borderBottom: activeTab === 'models' ? `2px solid ${COLORS.purple}` : '2px solid transparent',
           }}
         >
           Models
@@ -202,11 +172,11 @@ export function ProviderPopup({
             padding: '12px 16px',
             backgroundColor: 'transparent',
             border: 'none',
-            color: activeTab === 'providers' ? '#cdd6f4' : '#9ca2b8',
+            color: activeTab === 'providers' ? COLORS.text : COLORS.textMuted,
             fontSize: 13,
             fontWeight: 600,
             cursor: 'pointer',
-            borderBottom: activeTab === 'providers' ? '2px solid #7c3aed' : '2px solid transparent',
+            borderBottom: activeTab === 'providers' ? `2px solid ${COLORS.purple}` : '2px solid transparent',
           }}
         >
           Providers
@@ -214,7 +184,7 @@ export function ProviderPopup({
       </div>
 
       {/* Search Bar */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #313244', flexShrink: 0 }}>
+      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${COLORS.bgHover}`, flexShrink: 0 }}>
         <input
           ref={searchRef}
           type="text"
@@ -224,10 +194,10 @@ export function ProviderPopup({
           style={{
             width: '100%',
             padding: '8px 12px',
-            borderRadius: 8,
-            border: '1px solid #45475a',
-            backgroundColor: '#313244',
-            color: '#cdd6f4',
+            borderRadius: RADIUS.lg,
+            border: `1px solid ${COLORS.border}`,
+            backgroundColor: COLORS.bgHover,
+            color: COLORS.text,
             fontSize: 13,
             boxSizing: 'border-box',
           }}
@@ -239,7 +209,9 @@ export function ProviderPopup({
         {activeTab === 'models' ? (
           /* Models Tab */
           Object.keys(groupedModels).length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 20, color: '#9ca2b8', fontSize: 13 }}>Model not found</div>
+            <div style={{ textAlign: 'center', padding: 24, color: COLORS.textMuted, fontSize: 13 }}>
+              Model not found
+            </div>
           ) : (
             Object.entries(groupedModels).map(([providerId, models]) => {
               const allVisible = models.every((m) => !hiddenModels[m.id]);
@@ -248,7 +220,7 @@ export function ProviderPopup({
                   <div
                     style={{
                       fontSize: 11,
-                      color: '#9ca2b8',
+                      color: COLORS.textMuted,
                       fontWeight: 600,
                       padding: '8px 0 4px',
                       textTransform: 'uppercase',
@@ -260,7 +232,7 @@ export function ProviderPopup({
                   >
                     <span>{providerId}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 10, color: '#a6adc8' }}>
+                      <span style={{ fontSize: FONT_SIZE.xs, color: COLORS.textDim }}>
                         {models.filter((m) => !hiddenModels[m.id]).length}/{models.length}
                       </span>
                       <ToggleSwitch
@@ -276,15 +248,15 @@ export function ProviderPopup({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '10px 12px',
-                        borderRadius: 8,
-                        backgroundColor: '#181825',
+                        padding: '12px',
+                        borderRadius: RADIUS.lg,
+                        backgroundColor: COLORS.bgLight,
                         marginBottom: 4,
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: 13, color: '#cdd6f4' }}>{m.name}</div>
-                        <div style={{ fontSize: 10, color: '#9ca2b8', marginTop: 2 }}>ID: {m.id}</div>
+                        <div style={{ fontSize: 13, color: COLORS.text }}>{m.name}</div>
+                        <div style={{ fontSize: FONT_SIZE.xs, color: COLORS.textMuted, marginTop: 2 }}>ID: {m.id}</div>
                       </div>
                       <ToggleSwitch checked={!hiddenModels[m.id]} onChange={() => onToggleModel(m.id)} />
                     </div>
@@ -295,7 +267,7 @@ export function ProviderPopup({
           )
         ) : /* Providers Tab */
         providers.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 20, color: '#9ca2b8', fontSize: 13 }}>
+          <div style={{ textAlign: 'center', padding: 24, color: COLORS.textMuted, fontSize: 13 }}>
             Provider not found. Make sure Opencode CLI is installed.
           </div>
         ) : (
@@ -305,9 +277,9 @@ export function ProviderPopup({
                 width: '100%',
                 padding: '12px 16px',
                 borderRadius: 10,
-                border: '1px dashed #45475a',
+                border: `1px dashed ${COLORS.border}`,
                 backgroundColor: 'transparent',
-                color: '#89b4fa',
+                color: COLORS.accent,
                 fontSize: 13,
                 fontWeight: 500,
                 cursor: 'pointer',
@@ -341,9 +313,9 @@ export function ProviderPopup({
                 <div
                   key={provider.id}
                   style={{
-                    backgroundColor: '#181825',
+                    backgroundColor: COLORS.bgLight,
                     borderRadius: 10,
-                    border: '1px solid #313244',
+                    border: `1px solid ${COLORS.bgHover}`,
                     marginBottom: 8,
                     overflow: 'hidden',
                   }}
@@ -353,7 +325,7 @@ export function ProviderPopup({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      padding: '12px 14px',
+                      padding: '12px 16px',
                       cursor: 'pointer',
                     }}
                   >
@@ -363,30 +335,30 @@ export function ProviderPopup({
                           width: 7,
                           height: 7,
                           borderRadius: '50%',
-                          backgroundColor: isConnected ? '#a6e3a1' : '#45475a',
+                          backgroundColor: isConnected ? COLORS.green : COLORS.border,
                           flexShrink: 0,
                         }}
                       />
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#cdd6f4' }}>{provider.name}</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: COLORS.text }}>{provider.name}</span>
                       {isConnected && (
                         <span
                           style={{
-                            fontSize: 10,
-                            color: '#a6e3a1',
-                            backgroundColor: 'rgba(166,227,161,0.1)',
+                            fontSize: FONT_SIZE.xs,
+                            color: COLORS.green,
+                            backgroundColor: COLORS.successFill,
                             padding: '1px 6px',
-                            borderRadius: 4,
+                            borderRadius: RADIUS.sm,
                           }}
                         >
                           CONNECTED
                         </span>
                       )}
                     </div>
-                    <span style={{ fontSize: 11, color: '#9ca2b8' }}>{models.length} model</span>
+                    <span style={{ fontSize: 11, color: COLORS.textMuted }}>{models.length} model</span>
                   </div>
 
                   {/* API Key Input */}
-                  <div style={{ padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <input
                         type="password"
@@ -397,11 +369,11 @@ export function ProviderPopup({
                         placeholder={isConnected ? 'New API key...' : `${provider.name} API key`}
                         style={{
                           flex: 1,
-                          padding: '7px 10px',
-                          borderRadius: 6,
-                          border: '1px solid #45475a',
-                          backgroundColor: '#313244',
-                          color: '#cdd6f4',
+                          padding: '6px 12px',
+                          borderRadius: RADIUS.md,
+                          border: `1px solid ${COLORS.border}`,
+                          backgroundColor: COLORS.bgHover,
+                          color: COLORS.text,
                           fontSize: 12,
                           fontFamily: 'monospace',
                         }}
@@ -410,11 +382,12 @@ export function ProviderPopup({
                         onClick={() => handleSave(provider.id)}
                         disabled={saving[provider.id] || !apiKeyInputs[provider.id]}
                         style={{
-                          padding: '7px 14px',
-                          borderRadius: 6,
+                          padding: '6px 16px',
+                          borderRadius: RADIUS.md,
                           border: 'none',
-                          backgroundColor: saving[provider.id] || !apiKeyInputs[provider.id] ? '#45475a' : '#7c3aed',
-                          color: '#fff',
+                          backgroundColor:
+                            saving[provider.id] || !apiKeyInputs[provider.id] ? COLORS.border : COLORS.purple,
+                          color: COLORS.onAccent,
                           cursor: saving[provider.id] || !apiKeyInputs[provider.id] ? 'not-allowed' : 'pointer',
                           fontWeight: 500,
                           fontSize: 12,
@@ -428,11 +401,11 @@ export function ProviderPopup({
                           onClick={() => handleRemove(provider.id)}
                           disabled={saving[provider.id]}
                           style={{
-                            padding: '7px 10px',
-                            borderRadius: 6,
-                            border: '1px solid #45475a',
+                            padding: '6px 12px',
+                            borderRadius: RADIUS.md,
+                            border: `1px solid ${COLORS.border}`,
                             backgroundColor: 'transparent',
-                            color: '#f38ba8',
+                            color: COLORS.red,
                             cursor: saving[provider.id] ? 'not-allowed' : 'pointer',
                             fontSize: 12,
                             whiteSpace: 'nowrap',
@@ -444,7 +417,10 @@ export function ProviderPopup({
                     </div>
                     {messages[provider.id] && (
                       <div
-                        style={{ fontSize: 11, color: messages[provider.id].startsWith('✓') ? '#a6e3a1' : '#f38ba8' }}
+                        style={{
+                          fontSize: 11,
+                          color: messages[provider.id].startsWith('✓') ? COLORS.green : COLORS.red,
+                        }}
                       >
                         {messages[provider.id]}
                       </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { COLORS } from '../styles';
 
 interface Props {
   small?: boolean;
@@ -7,13 +8,13 @@ interface Props {
 export function ThinkingDots({ small }: Readonly<Props>) {
   const size = small ? 4 : 6;
   return (
-    <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
       <div
         style={{
           width: size,
           height: size,
           borderRadius: '50%',
-          backgroundColor: '#89b4fa',
+          backgroundColor: COLORS.accent,
           animation: 'thinking 1.4s ease-in-out infinite',
         }}
       />
@@ -22,7 +23,7 @@ export function ThinkingDots({ small }: Readonly<Props>) {
           width: size,
           height: size,
           borderRadius: '50%',
-          backgroundColor: '#89b4fa',
+          backgroundColor: COLORS.accent,
           animation: 'thinking 1.4s ease-in-out infinite 0.2s',
         }}
       />
@@ -31,7 +32,7 @@ export function ThinkingDots({ small }: Readonly<Props>) {
           width: size,
           height: size,
           borderRadius: '50%',
-          backgroundColor: '#89b4fa',
+          backgroundColor: COLORS.accent,
           animation: 'thinking 1.4s ease-in-out infinite 0.4s',
         }}
       />

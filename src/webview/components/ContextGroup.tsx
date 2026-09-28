@@ -1,4 +1,5 @@
 import React from 'react';
+import { COLORS, FONT_SIZE, SPACE } from '../styles';
 
 interface ContextEvent {
   id: string;
@@ -32,9 +33,9 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
     <button
       type="button"
       style={{
-        border: `1px solid ${allDone ? 'rgba(166,227,161,0.3)' : '#45475a'}`,
+        border: `1px solid ${allDone ? COLORS.successBorder : COLORS.border}`,
         borderRadius: 10,
-        backgroundColor: allDone ? 'rgba(166,227,161,0.04)' : '#181825',
+        backgroundColor: allDone ? COLORS.successTint : COLORS.bgLight,
         overflow: 'hidden',
         cursor: 'pointer',
         transition: 'background-color 0.3s',
@@ -55,16 +56,16 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
           gap: 8,
           padding: '8px 12px',
           fontSize: 12,
-          color: allDone ? '#a6e3a1' : '#a6adc8',
+          color: allDone ? COLORS.green : COLORS.textDim,
         }}
       >
         <span style={{ fontSize: 14 }}>{headerIcon}</span>
         <span style={{ flex: 1 }}>{anyRunning ? 'Gathering context...' : 'Gathered context'}</span>
-        <span style={{ color: '#a6adc8', fontSize: 11 }}>{label}</span>
+        <span style={{ color: COLORS.textDim, fontSize: 11 }}>{label}</span>
         <span
           style={{
-            color: '#9ca2b8',
-            fontSize: 10,
+            color: COLORS.textMuted,
+            fontSize: FONT_SIZE.xs,
             transition: 'transform 0.2s',
             transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
           }}
@@ -87,13 +88,13 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
-                  padding: '3px 0',
+                  padding: `${SPACE.xs}px 0`,
                   fontSize: 11,
-                  color: '#a6adc8',
+                  color: COLORS.textDim,
                 }}
               >
                 <span>{statusIcon}</span>
-                <span style={{ color: '#a6adc8', fontWeight: 500 }}>{e.name}</span>
+                <span style={{ color: COLORS.textDim, fontWeight: 500 }}>{e.name}</span>
                 {e.meta?.args && (
                   <span
                     style={{
@@ -101,7 +102,7 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
                       maxWidth: 150,
-                      color: '#9ca2b8',
+                      color: COLORS.textMuted,
                     }}
                   >
                     {typeof e.meta.args === 'string' ? e.meta.args : JSON.stringify(e.meta.args)}
@@ -114,7 +115,7 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
                         width: 3,
                         height: 3,
                         borderRadius: '50%',
-                        backgroundColor: '#89b4fa',
+                        backgroundColor: COLORS.accent,
                         animation: 'thinking 1.4s ease-in-out infinite',
                       }}
                     />
@@ -123,7 +124,7 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
                         width: 3,
                         height: 3,
                         borderRadius: '50%',
-                        backgroundColor: '#89b4fa',
+                        backgroundColor: COLORS.accent,
                         animation: 'thinking 1.4s ease-in-out infinite 0.2s',
                       }}
                     />
@@ -132,7 +133,7 @@ function ContextGroupComponent({ events, allDone }: Readonly<Props>) {
                         width: 3,
                         height: 3,
                         borderRadius: '50%',
-                        backgroundColor: '#89b4fa',
+                        backgroundColor: COLORS.accent,
                         animation: 'thinking 1.4s ease-in-out infinite 0.4s',
                       }}
                     />

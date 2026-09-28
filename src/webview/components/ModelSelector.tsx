@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { COLORS, RADIUS, popupPanel } from '../styles';
+import { hoverable } from '../hover';
 import { Popup } from './Popup';
 
 interface Props {
@@ -7,7 +9,7 @@ interface Props {
   availableModels: Array<{ id: string; name: string; providerId: string }>;
 }
 
-export function ModelSelector({ model, onChange, availableModels }: Props) {
+export function ModelSelector({ model, onChange, availableModels }: Readonly<Props>) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -59,11 +61,11 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
           alignItems: 'center',
           gap: 6,
           fontSize: 12,
-          color: '#a6adc8',
+          color: COLORS.textDim,
           cursor: 'pointer',
           padding: '4px 8px',
-          borderRadius: 6,
-          backgroundColor: isOpen ? '#313244' : 'transparent',
+          borderRadius: RADIUS.md,
+          backgroundColor: isOpen ? COLORS.bgHover : 'transparent',
           border: 'none',
           fontFamily: 'inherit',
         }}
@@ -107,24 +109,18 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
           initialFocus={inputRef}
           triggerRef={triggerRef}
           style={{
-            position: 'absolute',
-            bottom: '100%',
+            ...popupPanel,
             left: 0,
             right: 0,
             marginBottom: 8,
-            backgroundColor: '#1e1e2e',
-            border: '1px solid #313244',
-            borderRadius: 12,
-            boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
             maxHeight: 320,
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
-            zIndex: 100,
           }}
         >
           {/* Search Bar */}
-          <div style={{ padding: 12, borderBottom: '1px solid #313244' }}>
+          <div style={{ padding: 12, borderBottom: `1px solid ${COLORS.bgHover}` }}>
             <input
               ref={inputRef}
               type="text"
@@ -134,10 +130,10 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                borderRadius: 8,
-                border: '1px solid #45475a',
-                backgroundColor: '#313244',
-                color: '#cdd6f4',
+                borderRadius: RADIUS.lg,
+                border: `1px solid ${COLORS.border}`,
+                backgroundColor: COLORS.bgHover,
+                color: COLORS.text,
                 fontSize: 13,
                 boxSizing: 'border-box',
               }}
@@ -147,14 +143,16 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
           {/* Models List */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
             {Object.keys(grouped).length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 20, color: '#9ca2b8', fontSize: 13 }}>Model not found</div>
+              <div style={{ textAlign: 'center', padding: 24, color: COLORS.textMuted, fontSize: 13 }}>
+                Model not found
+              </div>
             ) : (
               Object.entries(grouped).map(([providerId, models]) => (
                 <div key={providerId}>
                   <div
                     style={{
                       fontSize: 11,
-                      color: '#9ca2b8',
+                      color: COLORS.textMuted,
                       fontWeight: 600,
                       padding: '8px 0 4px',
                       textTransform: 'uppercase',
@@ -174,26 +172,26 @@ export function ModelSelector({ model, onChange, availableModels }: Props) {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '8px 10px',
-                        borderRadius: 8,
+                        padding: '8px 12px',
+                        borderRadius: RADIUS.lg,
                         cursor: 'pointer',
-                        backgroundColor: m.id === model ? '#313244' : 'transparent',
+                        backgroundColor: m.id === model ? COLORS.bgHover : 'transparent',
                       }}
-                      onMouseEnter={(e) => {
-                        if (m.id !== model) e.currentTarget.style.backgroundColor = '#181825';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (m.id !== model) e.currentTarget.style.backgroundColor = 'transparent';
-                      }}
+                      {...hoverable(
+                        { backgroundColor: COLORS.bgLight },
+                        // The selected row keeps its own fill; hovering it must
+                        // not flash the resting colour.
+                        () => ({ backgroundColor: m.id === model ? COLORS.bgHover : 'transparent' }),
+                      )}
                     >
-                      <span style={{ fontSize: 13, color: '#cdd6f4' }}>{m.name}</span>
+                      <span style={{ fontSize: 13, color: COLORS.text }}>{m.name}</span>
                       {m.id === model && (
                         <svg
                           width="14"
                           height="14"
                           viewBox="0 0 24 24"
                           fill="none"
-                          stroke="#a6e3a1"
+                          stroke={COLORS.green}
                           strokeWidth="3"
                           strokeLinecap="round"
                           strokeLinejoin="round"

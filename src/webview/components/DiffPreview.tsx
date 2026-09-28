@@ -1,4 +1,5 @@
 import React from 'react';
+import { COLORS, RADIUS } from '../styles';
 
 interface Props {
   patch: string;
@@ -13,25 +14,25 @@ export function DiffPreview({ patch }: Readonly<Props>) {
         lineHeight: 1.5,
         maxHeight: 300,
         overflow: 'auto',
-        borderRadius: 8,
-        backgroundColor: '#181825',
-        border: '1px solid #313244',
+        borderRadius: RADIUS.lg,
+        backgroundColor: COLORS.bgLight,
+        border: `1px solid ${COLORS.bgHover}`,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       }}
     >
       {patch.split('\n').map((line, i) => {
         let bg = 'transparent';
-        let color = '#cdd6f4';
+        let color = COLORS.text;
         if (line.startsWith('+') && !line.startsWith('+++')) {
-          bg = 'rgba(166,227,161,0.08)';
-          color = '#a6e3a1';
+          bg = COLORS.successRow;
+          color = COLORS.green;
         } else if (line.startsWith('-') && !line.startsWith('---')) {
-          bg = 'rgba(243,139,168,0.08)';
-          color = '#f38ba8';
+          bg = COLORS.dangerRow;
+          color = COLORS.red;
         } else if (line.startsWith('@@')) {
-          color = '#89b4fa';
+          color = COLORS.accent;
         } else if (line.startsWith('Index:') || line.startsWith('===')) {
-          color = '#a6adc8';
+          color = COLORS.textDim;
         }
         return (
           <div key={i} style={{ backgroundColor: bg, color, padding: '1px 8px', whiteSpace: 'pre' }}>

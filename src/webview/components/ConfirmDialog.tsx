@@ -1,4 +1,5 @@
 import React from 'react';
+import { COLORS, RADIUS, SHADOW } from '../styles';
 import { Popup } from './Popup';
 
 interface Props {
@@ -23,23 +24,23 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: Readonly<Props>)
         zIndex: 1000,
         width: '100%',
         height: '100%',
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: COLORS.scrim,
       }}
       style={{
-        backgroundColor: '#1e1e2e',
-        borderRadius: 12,
-        border: '1px solid #313244',
-        padding: '20px 24px',
+        backgroundColor: COLORS.bg,
+        borderRadius: RADIUS.xl,
+        border: `1px solid ${COLORS.bgHover}`,
+        padding: '24px',
         maxWidth: 320,
         width: '90%',
         margin: 'auto',
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+        boxShadow: SHADOW.lg,
       }}
     >
-      <div id="confirm-dialog-message" style={{ fontSize: 13, color: '#cdd6f4', lineHeight: 1.5 }}>
+      <div id="confirm-dialog-message" style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.5 }}>
         {message}
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -47,12 +48,12 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: Readonly<Props>)
           ref={cancelRef}
           onClick={onCancel}
           style={{
-            padding: '6px 14px',
+            padding: '6px 16px',
             fontSize: 12,
-            borderRadius: 6,
-            border: '1px solid #45475a',
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.border}`,
             background: 'transparent',
-            color: '#a6adc8',
+            color: COLORS.textDim,
             cursor: 'pointer',
           }}
         >
@@ -61,12 +62,12 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: Readonly<Props>)
         <button
           onClick={onConfirm}
           style={{
-            padding: '6px 14px',
+            padding: '6px 16px',
             fontSize: 12,
-            borderRadius: 6,
-            border: '1px solid #f38ba8',
-            background: '#f38ba8',
-            color: '#1e1e2e',
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.red}`,
+            background: COLORS.red,
+            color: COLORS.bg,
             cursor: 'pointer',
             fontWeight: 600,
           }}

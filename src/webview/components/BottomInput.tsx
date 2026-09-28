@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ContextPart } from '../../shared/types';
 import { CommandItem } from '../slashCommands';
 import { SlashCommandPopup, SLASH_LISTBOX_ID } from './SlashCommandPopup';
-import { COLORS } from '../styles';
+import { COLORS, RADIUS, SHADOW } from '../styles';
+import { hoverable } from '../hover';
 
 interface FileResult {
   name: string;
@@ -217,7 +218,7 @@ export function BottomInput({
   const canSend = text.trim().length > 0 || attachments.length > 0;
 
   return (
-    <div style={{ padding: '12px 16px', backgroundColor: '#181825', position: 'relative' }}>
+    <div style={{ padding: '12px 16px', backgroundColor: COLORS.bgLight, position: 'relative' }}>
       {/* Slash Command Popup */}
       {showSlashPopup && (
         <div ref={slashPopupRef}>
@@ -243,8 +244,8 @@ export function BottomInput({
             overflowY: 'auto',
             backgroundColor: COLORS.bg,
             border: `1px solid ${COLORS.border}`,
-            borderRadius: 12,
-            boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
+            borderRadius: RADIUS.xl,
+            boxShadow: SHADOW.sheet,
             zIndex: 100,
           }}
         >
@@ -270,7 +271,9 @@ export function BottomInput({
             />
           </div>
           {fileSearchResults.length === 0 ? (
-            <div style={{ padding: '16px', textAlign: 'center', color: '#a6adc8', fontSize: 12 }}>No results found</div>
+            <div style={{ padding: '16px', textAlign: 'center', color: COLORS.textDim, fontSize: 12 }}>
+              No results found
+            </div>
           ) : (
             fileSearchResults.map((file) => (
               <button
@@ -288,15 +291,14 @@ export function BottomInput({
                   border: 'none',
                   textAlign: 'left',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#313244')}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                {...hoverable({ backgroundColor: COLORS.bgHover }, { backgroundColor: 'transparent' })}
               >
                 <svg
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#a6adc8"
+                  stroke={COLORS.textDim}
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -308,7 +310,7 @@ export function BottomInput({
                   <div
                     style={{
                       fontSize: 13,
-                      color: '#cdd6f4',
+                      color: COLORS.text,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -316,7 +318,7 @@ export function BottomInput({
                   >
                     {file.name}
                   </div>
-                  <div style={{ fontSize: 11, color: '#a6adc8' }}>{file.path}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textDim }}>{file.path}</div>
                 </div>
               </button>
             ))
@@ -335,10 +337,10 @@ export function BottomInput({
                 alignItems: 'center',
                 gap: 6,
                 padding: '4px 8px',
-                backgroundColor: '#313244',
-                borderRadius: 8,
+                backgroundColor: COLORS.bgHover,
+                borderRadius: RADIUS.lg,
                 fontSize: 12,
-                color: '#cdd6f4',
+                color: COLORS.text,
                 maxWidth: '100%',
               }}
             >
@@ -360,7 +362,7 @@ export function BottomInput({
                     height="12"
                     viewBox="0 0 24 24"
                     fill="none"
-                    stroke="#89b4fa"
+                    stroke={COLORS.accent}
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -378,7 +380,7 @@ export function BottomInput({
                 style={{
                   backgroundColor: 'transparent',
                   border: 'none',
-                  color: '#a6adc8',
+                  color: COLORS.textDim,
                   cursor: 'pointer',
                   padding: 0,
                   display: 'flex',
@@ -396,10 +398,10 @@ export function BottomInput({
       {/* Input Container */}
       <div
         style={{
-          backgroundColor: '#313244',
-          borderRadius: 16,
-          border: '1px solid #45475a',
-          padding: '10px 14px',
+          backgroundColor: COLORS.bgHover,
+          borderRadius: RADIUS.pill,
+          border: `1px solid ${COLORS.border}`,
+          padding: '12px 16px',
           display: 'flex',
           flexDirection: 'column',
           gap: 8,
@@ -420,7 +422,7 @@ export function BottomInput({
           style={{
             backgroundColor: 'transparent',
             border: 'none',
-            color: '#cdd6f4',
+            color: COLORS.text,
             fontSize: 14,
             fontFamily: 'inherit',
             resize: 'none',
@@ -441,17 +443,18 @@ export function BottomInput({
             style={{
               backgroundColor: 'transparent',
               border: 'none',
-              color: showFileSearch ? '#89b4fa' : '#a6adc8',
+              color: showFileSearch ? COLORS.accent : COLORS.textDim,
               cursor: 'pointer',
               padding: 4,
-              borderRadius: 6,
+              minWidth: 28,
+              minHeight: 28,
+              borderRadius: RADIUS.md,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'color 0.2s',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#cdd6f4')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = showFileSearch ? '#89b4fa' : '#a6adc8')}
+            {...hoverable({ color: COLORS.text }, () => ({ color: showFileSearch ? COLORS.accent : COLORS.textDim }))}
             title="Add file"
           >
             <svg
@@ -474,12 +477,12 @@ export function BottomInput({
             aria-label="Send message"
             disabled={disabled || !canSend}
             style={{
-              backgroundColor: disabled || !canSend ? '#45475a' : '#7c3aed',
+              backgroundColor: disabled || !canSend ? COLORS.border : COLORS.purple,
               border: 'none',
-              color: '#fff',
+              color: COLORS.onAccent,
               cursor: disabled || !canSend ? 'not-allowed' : 'pointer',
-              padding: '6px 10px',
-              borderRadius: 8,
+              padding: '6px 12px',
+              borderRadius: RADIUS.lg,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

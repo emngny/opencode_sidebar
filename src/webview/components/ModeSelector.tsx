@@ -1,4 +1,5 @@
 import React from 'react';
+import { COLORS } from '../styles';
 import { getAgentColor } from './agentColors';
 
 interface Props {
@@ -7,7 +8,7 @@ interface Props {
   agents: string[];
 }
 
-export function ModeSelector({ mode, onChange, agents }: Props) {
+export function ModeSelector({ mode, onChange, agents }: Readonly<Props>) {
   const color = getAgentColor(mode);
   return (
     <div
@@ -16,7 +17,7 @@ export function ModeSelector({ mode, onChange, agents }: Props) {
         alignItems: 'center',
         gap: 6,
         fontSize: 12,
-        color: '#a6adc8',
+        color: COLORS.textDim,
         cursor: 'pointer',
       }}
     >
@@ -25,7 +26,7 @@ export function ModeSelector({ mode, onChange, agents }: Props) {
           width: 8,
           height: 8,
           borderRadius: '50%',
-          backgroundColor: color?.text || '#9ca2b8',
+          backgroundColor: color?.text || COLORS.textMuted,
           flexShrink: 0,
         }}
       />
@@ -35,7 +36,7 @@ export function ModeSelector({ mode, onChange, agents }: Props) {
         style={{
           backgroundColor: 'transparent',
           border: 'none',
-          color: '#a6adc8',
+          color: COLORS.textDim,
           fontSize: 12,
           fontFamily: 'inherit',
           cursor: 'pointer',
@@ -45,7 +46,7 @@ export function ModeSelector({ mode, onChange, agents }: Props) {
         {agents.map((a) => {
           const display = typeof a === 'string' ? a.charAt(0).toUpperCase() + a.slice(1) : String(a);
           return (
-            <option key={a} value={a} style={{ backgroundColor: '#181825', color: '#cdd6f4' }}>
+            <option key={a} value={a} style={{ backgroundColor: COLORS.bgLight, color: COLORS.text }}>
               {display}
             </option>
           );

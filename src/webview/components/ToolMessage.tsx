@@ -1,4 +1,5 @@
 import React from 'react';
+import { COLORS, RADIUS } from '../styles';
 
 interface Props {
   content: string;
@@ -10,29 +11,29 @@ function ToolMessageComponent({ content }: Readonly<Props>) {
   const isFailed = content.includes('failed') || content.includes('error');
 
   let icon = '🔧';
-  let bgColor = '#1e1e2e';
+  let bgColor = COLORS.bg;
   if (isRunning) {
     icon = '⏳';
-    bgColor = '#181825';
+    bgColor = COLORS.bgLight;
   }
   if (isCompleted) {
     icon = '✅';
-    bgColor = 'rgba(166,227,161,0.08)';
+    bgColor = COLORS.successTint;
   }
   if (isFailed) {
     icon = '❌';
-    bgColor = 'rgba(243,139,168,0.08)';
+    bgColor = COLORS.dangerTint;
   }
 
   return (
     <div
       style={{
         fontSize: 12,
-        color: '#a6adc8',
+        color: COLORS.textDim,
         padding: '6px 12px',
         textAlign: 'center',
         backgroundColor: bgColor,
-        borderRadius: 8,
+        borderRadius: RADIUS.lg,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

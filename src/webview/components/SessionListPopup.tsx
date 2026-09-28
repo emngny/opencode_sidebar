@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { postMessage, onMessage } from '../vscode-api';
+import { COLORS, RADIUS, SHADOW, sheetBackdrop, sheetHeader, sheetPanel } from '../styles';
+import { hoverable } from '../hover';
 import { Popup } from './Popup';
 
 interface Props {
@@ -73,47 +75,16 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
       labelledBy="session-list-title"
       onClose={onClose}
       initialFocus={closeRef}
-      backdropStyle={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        zIndex: 200,
-        display: 'flex',
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-      }}
-      style={{
-        backgroundColor: '#1e1e2e',
-        border: '1px solid #313244',
-        borderBottom: 'none',
-        borderRadius: '16px 16px 0 0',
-        width: '100%',
-        maxHeight: '75vh',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
-      }}
+      backdropStyle={sheetBackdrop}
+      style={{ ...sheetPanel, maxHeight: '75vh' }}
     >
       {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '14px 16px',
-          borderBottom: '1px solid #313244',
-          flexShrink: 0,
-        }}
-      >
+      <div style={sheetHeader}>
         <div>
-          <div id="session-list-title" style={{ fontSize: 16, fontWeight: 600, color: '#cdd6f4' }}>
+          <div id="session-list-title" style={{ fontSize: 16, fontWeight: 600, color: COLORS.text }}>
             Session History
           </div>
-          <div style={{ fontSize: 11, color: '#9ca2b8', marginTop: 2 }}>{sessionCountLabel}</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{sessionCountLabel}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {sessions.length > 0 && (
@@ -122,15 +93,14 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                 onClick={() => setShowDeleteMenu(!showDeleteMenu)}
                 style={{
                   background: 'none',
-                  border: '1px solid #313244',
-                  color: '#a6adc8',
+                  border: `1px solid ${COLORS.bgHover}`,
+                  color: COLORS.textDim,
                   cursor: 'pointer',
                   fontSize: 12,
-                  padding: '6px 10px',
-                  borderRadius: 6,
+                  padding: '6px 12px',
+                  borderRadius: RADIUS.md,
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#9ca2b8')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#313244')}
+                {...hoverable({ borderColor: COLORS.textMuted }, { borderColor: COLORS.bgHover })}
               >
                 Delete old ▼
               </button>
@@ -141,9 +111,9 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                     right: 0,
                     top: '100%',
                     marginTop: 4,
-                    backgroundColor: '#181825',
-                    border: '1px solid #313244',
-                    borderRadius: 8,
+                    backgroundColor: COLORS.bgLight,
+                    border: `1px solid ${COLORS.bgHover}`,
+                    borderRadius: RADIUS.lg,
                     padding: '4px 0',
                     minWidth: 140,
                     zIndex: 10,
@@ -162,10 +132,9 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                         padding: '8px 12px',
                         cursor: 'pointer',
                         fontSize: 12,
-                        color: '#cdd6f4',
+                        color: COLORS.text,
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#313244')}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      {...hoverable({ backgroundColor: COLORS.bgHover }, { backgroundColor: 'transparent' })}
                     >
                       {opt.label}
                     </button>
@@ -181,7 +150,7 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
             style={{
               background: 'none',
               border: 'none',
-              color: '#a6adc8',
+              color: COLORS.textDim,
               cursor: 'pointer',
               fontSize: 20,
               padding: 4,
@@ -196,7 +165,7 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
       {/* List */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
         {sessions.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 20, color: '#9ca2b8', fontSize: 13 }}>
+          <div style={{ textAlign: 'center', padding: 24, color: COLORS.textMuted, fontSize: 13 }}>
             {loading ? 'Loading...' : 'No sessions yet'}
           </div>
         ) : (
@@ -206,12 +175,11 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                backgroundColor: '#181825',
+                backgroundColor: COLORS.bgLight,
                 borderRadius: 10,
                 marginBottom: 6,
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#313244')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#181825')}
+              {...hoverable({ backgroundColor: COLORS.bgHover }, { backgroundColor: COLORS.bgLight })}
             >
               <button
                 onClick={() => onSelect(s.id)}
@@ -220,7 +188,7 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                   minWidth: 0,
                   display: 'flex',
                   alignItems: 'center',
-                  padding: '12px 14px',
+                  padding: '12px 16px',
                   background: 'none',
                   border: 'none',
                   textAlign: 'left',
@@ -233,7 +201,7 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                   <div
                     style={{
                       fontSize: 13,
-                      color: '#cdd6f4',
+                      color: COLORS.text,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -241,7 +209,7 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                   >
                     {s.title || `Session ${s.id.slice(0, 8)}`}
                   </div>
-                  <div style={{ fontSize: 11, color: '#9ca2b8', marginTop: 2 }}>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
                     {s.time?.created ? `${formatDate(s.time.created)} · ${getSessionAge(s.time.created)}` : ''}
                   </div>
                 </div>
@@ -251,17 +219,16 @@ export function SessionListPopup({ onClose, onSelect }: Readonly<Props>) {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#9ca2b8',
+                  color: COLORS.textMuted,
                   cursor: 'pointer',
                   padding: '4px 8px',
-                  borderRadius: 4,
+                  borderRadius: RADIUS.sm,
                   fontSize: 12,
                   marginLeft: 8,
                   marginRight: 6,
                   flexShrink: 0,
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = '#f38ba8')}
-                onMouseLeave={(e) => (e.currentTarget.style.color = '#9ca2b8')}
+                {...hoverable({ color: COLORS.red }, { color: COLORS.textMuted })}
                 aria-label={`Delete ${s.title || `session ${s.id.slice(0, 8)}`}`}
                 title="Delete"
               >

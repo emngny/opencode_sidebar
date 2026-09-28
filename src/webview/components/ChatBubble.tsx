@@ -3,7 +3,7 @@ import { ChatMessage } from '../../shared/types';
 import { Markdown } from './Markdown';
 import { getAgentColor } from './agentColors';
 import { ThinkingDots } from './ThinkingDots';
-import { COLORS, flexRow } from '../styles';
+import { COLORS, FONT_SIZE, RADIUS, SHADOW, flexRow } from '../styles';
 
 interface Props {
   message: ChatMessage;
@@ -26,7 +26,7 @@ function highlightMentions(text: string): React.ReactNode {
       );
     }
     return (
-      <span key={part} style={{ color: '#89b4fa' }}>
+      <span key={part} style={{ color: COLORS.accent }}>
         {part}
       </span>
     );
@@ -77,16 +77,16 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
       className="msg-bubble"
       style={{
         alignSelf: isUser ? 'flex-end' : 'flex-start',
-        backgroundColor: isUser ? '#7c3aed' : '#313244',
+        backgroundColor: isUser ? COLORS.purple : COLORS.bgHover,
         // White is the only foreground that clears 4.5:1 on the purple bubble.
-        color: isUser ? '#ffffff' : '#cdd6f4',
-        padding: '10px 14px',
+        color: isUser ? COLORS.onAccent : COLORS.text,
+        padding: '12px 16px',
         borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
         maxWidth: '85%',
         wordBreak: 'break-word',
         fontSize: 13,
         lineHeight: 1.5,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+        boxShadow: SHADOW.sm,
         display: 'flex',
         flexDirection: 'column',
         gap: 4,
@@ -94,7 +94,10 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
         position: 'relative',
         animation: 'message-rise 180ms ease-out',
         borderLeft: agentColor ? `3px solid ${agentColor.text}` : undefined,
-        paddingLeft: agentColor ? 11 : 14,
+        // The 3px agent border eats into the content box, so the bordered
+        // variant starts 4px tighter. The step is the border plus a pixel of
+        // optical slack, not an off-scale measurement.
+        paddingLeft: agentColor ? 12 : 16,
       }}
     >
       {message.role === 'assistant' && message.isStreaming && message.content.length < 20 && (
@@ -128,12 +131,12 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
             <div
               style={{
                 marginTop: 4,
-                padding: '8px 10px',
-                backgroundColor: 'rgba(137,180,250,0.06)',
-                border: '1px solid rgba(137,180,250,0.15)',
-                borderRadius: 8,
+                padding: '8px 12px',
+                backgroundColor: COLORS.accentTint,
+                border: `1px solid ${COLORS.accentBorder}`,
+                borderRadius: RADIUS.lg,
                 fontSize: 11,
-                color: '#a6adc8',
+                color: COLORS.textDim,
                 lineHeight: 1.5,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
@@ -170,8 +173,8 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
       {!message.isStreaming && (message.agent || message.modelId || message.duration !== undefined) && (
         <div
           style={{
-            fontSize: 10,
-            color: '#a6adc8',
+            fontSize: FONT_SIZE.xs,
+            color: COLORS.textDim,
             display: 'flex',
             gap: 6,
             alignItems: 'center',
@@ -186,10 +189,10 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
                 <span
                   style={{
                     padding: '1px 6px',
-                    borderRadius: 4,
+                    borderRadius: RADIUS.sm,
                     fontWeight: 500,
                     backgroundColor: c?.bg || 'transparent',
-                    color: c?.text || '#a6adc8',
+                    color: c?.text || COLORS.textDim,
                     border: `1px solid ${c?.border || 'transparent'}`,
                   }}
                 >
@@ -209,14 +212,14 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
           {modelOverridden && (
             <span
               title={`Requested ${message.requestedModelId}, but agent "${message.agent ?? 'unknown'}" pins ${message.modelId}`}
-              style={{ color: '#f9e2af' }}
+              style={{ color: COLORS.yellow }}
             >
               ⚠ asked for {requestedLabel}
             </span>
           )}
           {message.modelId && message.duration !== undefined && <span>·</span>}
           {message.duration !== undefined && <span>{message.duration}s</span>}
-          {message.interrupted && <span style={{ color: '#f38ba8' }}>· Interrupted</span>}
+          {message.interrupted && <span style={{ color: COLORS.red }}>· Interrupted</span>}
         </div>
       )}
       {message.isStreaming && message.content && (
@@ -238,11 +241,13 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
               }}
               style={{
                 padding: '2px 6px',
-                fontSize: 10,
-                border: '1px solid #45475a',
-                borderRadius: 4,
-                background: '#313244',
-                color: '#f38ba8',
+                minWidth: 24,
+                minHeight: 24,
+                fontSize: FONT_SIZE.xs,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: RADIUS.sm,
+                background: COLORS.bgHover,
+                color: COLORS.red,
                 cursor: 'pointer',
               }}
               title="Revert to this point"
@@ -255,11 +260,13 @@ function ChatBubbleComponent({ message, onRevert, availableModels }: Readonly<Pr
             onClick={handleCopy}
             style={{
               padding: '2px 6px',
-              fontSize: 10,
-              border: '1px solid #45475a',
-              borderRadius: 4,
-              background: '#313244',
-              color: copied ? '#a6e3a1' : '#a6adc8',
+              minWidth: 24,
+              minHeight: 24,
+              fontSize: FONT_SIZE.xs,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: RADIUS.sm,
+              background: COLORS.bgHover,
+              color: copied ? COLORS.green : COLORS.textDim,
               cursor: 'pointer',
             }}
           >

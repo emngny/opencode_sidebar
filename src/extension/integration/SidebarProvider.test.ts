@@ -118,6 +118,44 @@ describe('SidebarProvider Message Handling', () => {
       const isValid = provider.validatePayload('loadSession', { sessionId: 'sess-123' });
       expect(isValid).toBe(true);
     });
+
+    it('should validate respondPermission payload', () => {
+      expect(
+        provider.validatePayload('respondPermission', {
+          permId: 'perm-123',
+          permSessionId: 'sess-123',
+          response: 'allow',
+        }),
+      ).toBe(true);
+      expect(
+        provider.validatePayload('respondPermission', {
+          permId: 'perm-123',
+          permSessionId: 'sess-123',
+          response: 'deny',
+        }),
+      ).toBe(true);
+    });
+
+    it('should reject respondPermission with missing permSessionId or bad response', () => {
+      expect(provider.validatePayload('respondPermission', { permId: 'perm-123', response: 'allow' })).toBe(false);
+      expect(
+        provider.validatePayload('respondPermission', {
+          permId: 'perm-123',
+          permSessionId: 42,
+          response: 'allow',
+        }),
+      ).toBe(false);
+      expect(
+        provider.validatePayload('respondPermission', {
+          permId: 'perm-123',
+          permSessionId: 'sess-123',
+          response: 'maybe',
+        }),
+      ).toBe(false);
+      expect(provider.validatePayload('respondPermission', { permId: 'perm-123', permSessionId: 'sess-123' })).toBe(
+        false,
+      );
+    });
   });
 
   describe('Message Type Mapping', () => {
@@ -146,9 +184,10 @@ describe('SidebarProvider Message Handling', () => {
         'setApiKey',
         'removeApiKey',
         'openDiff',
+        'openExternal',
       ];
 
-      expect(handlers).toHaveLength(23);
+      expect(handlers).toHaveLength(24);
     });
   });
 });

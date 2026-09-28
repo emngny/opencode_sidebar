@@ -30,6 +30,7 @@ describe('Extension-Webview Message Protocol', () => {
         'respondPermission',
         'respondReadPermission',
         'openDiff',
+        'openExternal',
         'runCommand',
         'loadSkills',
         'webviewReady',

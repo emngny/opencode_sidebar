@@ -1,10 +1,15 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { postMessage } from '../vscode-api';
+import { COLORS } from '../styles';
 
 interface Props {
   content: string;
 }
+
+/** Schemes DOMPurify allows through; the extension re-checks on arrival. */
+const EXTERNAL_SCHEME = /^(?:https?|mailto):/i;
 
 export function Markdown({ content }: Readonly<Props>) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -25,7 +30,13 @@ export function Markdown({ content }: Readonly<Props>) {
       const target = e.target as HTMLElement;
       const link = target.closest('a');
       const href = link?.getAttribute('href');
-      if (href && !href.startsWith('#')) e.preventDefault();
+      // In-page anchors scroll natively; every other link leaves the webview,
+      // which only the extension host can do.
+      if (href && !href.startsWith('#')) {
+        e.preventDefault();
+        if (EXTERNAL_SCHEME.test(href)) postMessage({ type: 'openExternal', payload: { url: href } });
+        return;
+      }
 
       const btn = target.closest('.copy-btn');
       if (!btn) return;
@@ -53,7 +64,7 @@ export function Markdown({ content }: Readonly<Props>) {
       style={{
         fontSize: 13,
         lineHeight: 1.6,
-        color: '#cdd6f4',
+        color: COLORS.text,
         wordBreak: 'break-word',
       }}
     >

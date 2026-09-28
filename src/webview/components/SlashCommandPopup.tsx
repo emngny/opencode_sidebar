@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CommandItem, BUILTIN_COMMANDS, getCommandColor } from '../slashCommands';
+import { COLORS, FONT_SIZE, RADIUS, popupPanel } from '../styles';
 import { useEscapeToClose } from '../hooks/useFocusTrap';
 
 /** Id of the listbox, referenced by the input's `aria-controls`. */
@@ -97,20 +98,20 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose, comboboxR
       role="listbox"
       aria-label="Commands and skills"
       style={{
-        position: 'absolute',
-        bottom: '100%',
+        ...popupPanel,
         left: 16,
         right: 16,
         maxHeight: 280,
-        overflowY: 'auto',
-        backgroundColor: '#1e1e2e',
-        border: '1px solid #45475a',
-        borderRadius: 12,
-        boxShadow: '0 -4px 20px rgba(0,0,0,0.4)',
-        zIndex: 100,
       }}
     >
-      <div style={{ padding: '6px 12px', borderBottom: '1px solid #313244', fontSize: 11, color: '#a6adc8' }}>
+      <div
+        style={{
+          padding: '6px 12px',
+          borderBottom: `1px solid ${COLORS.bgHover}`,
+          fontSize: 11,
+          color: COLORS.textDim,
+        }}
+      >
         Commands &amp; Skills
       </div>
       {filtered.map((cmd, i) => {
@@ -134,7 +135,7 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose, comboboxR
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              backgroundColor: isSelected ? '#313244' : 'transparent',
+              backgroundColor: isSelected ? COLORS.bgHover : 'transparent',
               transition: 'background-color 0.1s',
             }}
           >
@@ -143,21 +144,23 @@ export function SlashCommandPopup({ filter, skills, onSelect, onClose, comboboxR
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                backgroundColor: color?.text || '#a6adc8',
+                backgroundColor: color?.text || COLORS.textDim,
                 flexShrink: 0,
               }}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, color: '#cdd6f4', fontWeight: 500 }}>
-                <span style={{ color: color?.text || '#a6adc8' }}>/{cmd.command}</span>
+              <div style={{ fontSize: 13, color: COLORS.text, fontWeight: 500 }}>
+                <span style={{ color: color?.text || COLORS.textDim }}>/{cmd.command}</span>
                 {cmd.type === 'skill' && (
-                  <span style={{ fontSize: 10, color: '#a6adc8', marginLeft: 6, fontWeight: 400 }}>skill</span>
+                  <span style={{ fontSize: FONT_SIZE.xs, color: COLORS.textDim, marginLeft: 6, fontWeight: 400 }}>
+                    skill
+                  </span>
                 )}
               </div>
               <div
                 style={{
                   fontSize: 11,
-                  color: '#a6adc8',
+                  color: COLORS.textDim,
                   marginTop: 1,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',

@@ -14,7 +14,8 @@ import { useChatState, genId } from './hooks/useChatState';
 import { useModelManager } from './hooks/useModelManager';
 import { resolvePromptModel } from './hooks/modelUtils';
 import { useMessageHandler } from './hooks/useMessageHandler';
-import { COLORS, flexRow, overlay, card, btnIcon, textSmall, textHeader } from './styles';
+import { COLORS, RADIUS, btnIcon, card, flexRow, overlay, textHeader, textSmall } from './styles';
+import { hoverable } from './hover';
 
 interface AppErrorBoundaryState {
   hasError: boolean;
@@ -40,8 +41,8 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, Ap
       return (
         <div
           style={{
-            padding: 20,
-            color: '#d32f2f',
+            padding: 24,
+            color: COLORS.red,
             fontFamily: 'system-ui, sans-serif',
           }}
         >
@@ -339,7 +340,7 @@ function AppContent() {
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
-        backgroundColor: '#1e1e2e',
+        backgroundColor: COLORS.bg,
         position: 'relative',
       }}
     >
@@ -379,10 +380,10 @@ function AppContent() {
           style={{
             padding: '8px 16px',
             fontSize: 12,
-            color: '#89b4fa',
-            backgroundColor: '#181825',
+            color: COLORS.accent,
+            backgroundColor: COLORS.bgLight,
             textAlign: 'center',
-            borderTop: '1px solid #313244',
+            borderTop: `1px solid ${COLORS.bgHover}`,
           }}
         >
           <span
@@ -391,7 +392,7 @@ function AppContent() {
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: '#89b4fa',
+              backgroundColor: COLORS.accent,
               marginRight: 8,
               animation: 'pulse 1s infinite',
               verticalAlign: 'middle',
@@ -403,10 +404,10 @@ function AppContent() {
             style={{
               marginLeft: 12,
               padding: '2px 8px',
-              borderRadius: 4,
-              border: '1px solid #45475a',
+              borderRadius: RADIUS.sm,
+              border: `1px solid ${COLORS.border}`,
               backgroundColor: 'transparent',
-              color: '#f38ba8',
+              color: COLORS.red,
               cursor: 'pointer',
               fontSize: 11,
             }}
@@ -435,8 +436,8 @@ function AppContent() {
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '8px 16px 12px',
-            backgroundColor: '#181825',
-            borderTop: '1px solid #313244',
+            backgroundColor: COLORS.bgLight,
+            borderTop: `1px solid ${COLORS.bgHover}`,
           }}
         >
           <ModeSelector mode={mode} onChange={selectMode} agents={agents} />
@@ -445,8 +446,7 @@ function AppContent() {
               onClick={() => setShowSessions(true)}
               aria-label="Session History"
               style={btnIcon}
-              onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
-              onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textMuted)}
+              {...hoverable({ color: COLORS.text }, { color: COLORS.textMuted })}
               title="Session History"
             >
               <svg
@@ -480,8 +480,9 @@ function AppContent() {
                 color: showProviders ? COLORS.accent : COLORS.textMuted,
                 transition: 'color 0.15s',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
-              onMouseLeave={(e) => (e.currentTarget.style.color = showProviders ? COLORS.accent : COLORS.textMuted)}
+              {...hoverable({ color: COLORS.text }, () => ({
+                color: showProviders ? COLORS.accent : COLORS.textMuted,
+              }))}
               title="Provider Settings"
             >
               <svg
@@ -543,8 +544,8 @@ function AppContent() {
                 color: COLORS.accent,
                 fontFamily: 'monospace',
                 padding: '8px 12px',
-                backgroundColor: '#11111b',
-                borderRadius: 6,
+                backgroundColor: COLORS.bg,
+                borderRadius: RADIUS.md,
                 marginBottom: 8,
                 wordBreak: 'break-all',
               }}
@@ -556,7 +557,7 @@ function AppContent() {
               <button
                 onClick={() => handleRespondReadPermission('deny')}
                 style={{
-                  padding: '6px 14px',
+                  padding: '6px 16px',
                   borderRadius: 6,
                   border: `1px solid ${COLORS.border}`,
                   backgroundColor: 'transparent',
@@ -570,11 +571,11 @@ function AppContent() {
               <button
                 onClick={() => handleRespondReadPermission('allow')}
                 style={{
-                  padding: '6px 14px',
+                  padding: '6px 16px',
                   borderRadius: 6,
                   border: 'none',
                   backgroundColor: COLORS.green,
-                  color: '#11111b',
+                  color: COLORS.onBright,
                   cursor: 'pointer',
                   fontSize: 12,
                   fontWeight: 600,
@@ -585,11 +586,11 @@ function AppContent() {
               <button
                 onClick={() => handleRespondReadPermission('allow', true)}
                 style={{
-                  padding: '6px 14px',
+                  padding: '6px 16px',
                   borderRadius: 6,
                   border: 'none',
                   backgroundColor: COLORS.accent,
-                  color: '#11111b',
+                  color: COLORS.onBright,
                   cursor: 'pointer',
                   fontSize: 12,
                   fontWeight: 600,

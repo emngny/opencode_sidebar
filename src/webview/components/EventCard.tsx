@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChatMessage, isRecord } from '../../shared/types';
+import { COLORS, FONT_SIZE, RADIUS, SPACE } from '../styles';
 import { ThinkingDots } from './ThinkingDots';
 import { DiffPreview } from './DiffPreview';
 import { DiffChanges } from './DiffChanges';
@@ -12,9 +13,9 @@ interface Props {
 }
 
 function formatArgs(args: unknown): React.ReactNode {
-  if (typeof args === 'string') return <span style={{ fontSize: 11, color: '#a6adc8' }}>{args}</span>;
+  if (typeof args === 'string') return <span style={{ fontSize: 11, color: COLORS.textDim }}>{args}</span>;
   if (typeof args !== 'object' || args === null)
-    return <span style={{ fontSize: 11, color: '#a6adc8' }}>{String(args)}</span>;
+    return <span style={{ fontSize: 11, color: COLORS.textDim }}>{String(args)}</span>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}>
@@ -30,8 +31,8 @@ function formatArgs(args: unknown): React.ReactNode {
         }
         return (
           <div key={key} style={{ display: 'flex', gap: 6 }}>
-            <span style={{ color: '#89b4fa', whiteSpace: 'nowrap' }}>{key}</span>
-            <span style={{ color: '#cdd6f4', wordBreak: 'break-word' }}>= {display}</span>
+            <span style={{ color: COLORS.accent, whiteSpace: 'nowrap' }}>{key}</span>
+            <span style={{ color: COLORS.text, wordBreak: 'break-word' }}>= {display}</span>
           </div>
         );
       })}
@@ -49,12 +50,12 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
   );
 
   let icon = '🔧';
-  let titleColor = '#cdd6f4';
-  let borderColor = '#45475a';
-  let bgColor = '#181825';
+  let titleColor = COLORS.text;
+  let borderColor = COLORS.border;
+  let bgColor = COLORS.bgLight;
 
   if (eventType === 'thinking') {
-    borderColor = '#9ca2b8';
+    borderColor = COLORS.textMuted;
     return (
       <div
         style={{
@@ -66,7 +67,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
           border: `1px solid ${borderColor}`,
           borderRadius: 10,
           fontSize: 12,
-          color: '#a6adc8',
+          color: COLORS.textDim,
         }}
       >
         <ThinkingDots small />
@@ -87,9 +88,9 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
       return (
         <div
           style={{
-            padding: '10px 14px',
-            backgroundColor: 'rgba(166,227,161,0.05)',
-            border: '1px solid rgba(166,227,161,0.3)',
+            padding: '12px 16px',
+            backgroundColor: COLORS.successTint,
+            border: `1px solid ${COLORS.successBorder}`,
             borderRadius: 10,
             display: 'flex',
             alignItems: 'center',
@@ -97,7 +98,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
             maxWidth: '90%',
             alignSelf: 'flex-start',
             fontSize: 12,
-            color: '#a6e3a1',
+            color: COLORS.green,
           }}
         >
           <span style={{ fontSize: 14 }}>{responded === 'deny' ? '🔒' : '🔓'}</span>
@@ -108,9 +109,9 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
     return (
       <div
         style={{
-          padding: '12px 14px',
-          backgroundColor: 'rgba(137,180,250,0.06)',
-          border: '1px solid rgba(137,180,250,0.3)',
+          padding: '12px 16px',
+          backgroundColor: COLORS.accentTint,
+          border: `1px solid ${COLORS.accentBorder}`,
           borderRadius: 10,
           display: 'flex',
           flexDirection: 'column',
@@ -121,25 +122,25 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 14 }}>🔒</span>
-          <span style={{ fontSize: 12, color: '#89b4fa', fontWeight: 500 }}>Permission required</span>
+          <span style={{ fontSize: 12, color: COLORS.accent, fontWeight: 500 }}>Permission required</span>
         </div>
-        <div style={{ fontSize: 12, color: '#a6adc8', paddingLeft: 22 }}>
+        <div style={{ fontSize: 12, color: COLORS.textDim, paddingLeft: 24 }}>
           {permType}
           {patterns.length > 0 && (
-            <span style={{ color: '#cdd6f4', fontFamily: 'monospace', marginLeft: 4 }}>{patterns.join(', ')}</span>
+            <span style={{ color: COLORS.text, fontFamily: 'monospace', marginLeft: 4 }}>{patterns.join(', ')}</span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 6, paddingLeft: 22 }}>
+        <div style={{ display: 'flex', gap: 6, paddingLeft: 24 }}>
           <button
             onClick={() => handleResponse('allow', false)}
             disabled={!!responded}
             style={{
-              padding: '5px 12px',
+              padding: `${SPACE.xs}px 12px`,
               fontSize: 11,
-              borderRadius: 6,
-              border: '1px solid rgba(137,180,250,0.3)',
-              background: 'rgba(137,180,250,0.15)',
-              color: '#89b4fa',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.accentBorder}`,
+              background: COLORS.accentFill,
+              color: COLORS.accent,
               cursor: responded ? 'not-allowed' : 'pointer',
               opacity: responded ? 0.6 : 1,
             }}
@@ -150,12 +151,12 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
             onClick={() => handleResponse('allow', true)}
             disabled={!!responded}
             style={{
-              padding: '5px 12px',
+              padding: `${SPACE.xs}px 12px`,
               fontSize: 11,
-              borderRadius: 6,
-              border: '1px solid #7c3aed',
-              background: '#7c3aed',
-              color: '#fff',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.purple}`,
+              background: COLORS.purple,
+              color: COLORS.onAccent,
               cursor: responded ? 'not-allowed' : 'pointer',
               opacity: responded ? 0.6 : 1,
             }}
@@ -166,12 +167,12 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
             onClick={() => handleResponse('deny', false)}
             disabled={!!responded}
             style={{
-              padding: '5px 12px',
+              padding: `${SPACE.xs}px 12px`,
               fontSize: 11,
-              borderRadius: 6,
-              border: '1px solid #45475a',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.border}`,
               background: 'transparent',
-              color: '#f38ba8',
+              color: COLORS.red,
               cursor: responded ? 'not-allowed' : 'pointer',
               opacity: responded ? 0.6 : 1,
             }}
@@ -185,23 +186,23 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
 
   if (eventType === 'file_read') {
     icon = '📖';
-    borderColor = 'rgba(137,180,250,0.3)';
-    bgColor = 'rgba(137,180,250,0.04)';
-    titleColor = '#89b4fa';
+    borderColor = COLORS.accentBorder;
+    bgColor = COLORS.accentTint;
+    titleColor = COLORS.accent;
   } else if (status === 'running') {
     icon = '⏳';
-    borderColor = '#9ca2b8';
-    titleColor = '#89b4fa';
+    borderColor = COLORS.textMuted;
+    titleColor = COLORS.accent;
   } else if (status === 'completed') {
     icon = '✅';
-    borderColor = 'rgba(166,227,161,0.3)';
-    bgColor = 'rgba(166,227,161,0.05)';
-    titleColor = '#a6e3a1';
+    borderColor = COLORS.successBorder;
+    bgColor = COLORS.successTint;
+    titleColor = COLORS.green;
   } else if (status === 'failed') {
     icon = '❌';
-    borderColor = 'rgba(243,139,168,0.3)';
-    bgColor = 'rgba(243,139,168,0.05)';
-    titleColor = '#f38ba8';
+    borderColor = COLORS.dangerBorder;
+    bgColor = COLORS.dangerTint;
+    titleColor = COLORS.red;
   }
 
   let title = message.content;
@@ -244,14 +245,30 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
   if (eventType === 'tool_result' && meta?.result) {
     if (typeof meta.result === 'string') {
       resultContent = (
-        <pre style={{ margin: 0, fontSize: 10, color: '#a6adc8', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        <pre
+          style={{
+            margin: 0,
+            fontSize: FONT_SIZE.xs,
+            color: COLORS.textDim,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
           {meta.result.slice(0, 500)}
           {meta.result.length > 500 ? '...' : ''}
         </pre>
       );
     } else {
       resultContent = (
-        <pre style={{ margin: 0, fontSize: 10, color: '#a6adc8', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        <pre
+          style={{
+            margin: 0,
+            fontSize: FONT_SIZE.xs,
+            color: COLORS.textDim,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
           {JSON.stringify(meta.result, null, 2).slice(0, 500)}
           {JSON.stringify(meta.result).length > 500 ? '...' : ''}
         </pre>
@@ -264,10 +281,10 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
       <div
         style={{
           fontSize: 11,
-          color: '#f38ba8',
-          padding: '6px 10px',
-          backgroundColor: 'rgba(243,139,168,0.08)',
-          borderRadius: 6,
+          color: COLORS.red,
+          padding: '6px 12px',
+          backgroundColor: COLORS.dangerTint,
+          borderRadius: RADIUS.md,
         }}
       >
         {meta.error}
@@ -282,8 +299,8 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
       fileInfo = (
         <div style={{ display: 'flex', gap: 8, fontSize: 11, alignItems: 'center' }}>
           <DiffChanges additions={added} deletions={deleted} variant="bars" />
-          <span style={{ color: '#a6e3a1' }}>+{added}</span>
-          <span style={{ color: '#f38ba8' }}>-{deleted}</span>
+          <span style={{ color: COLORS.green }}>+{added}</span>
+          <span style={{ color: COLORS.red }}>-{deleted}</span>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -291,12 +308,12 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
             }}
             style={{
               marginLeft: 8,
-              padding: '2px 8px',
-              fontSize: 10,
-              borderRadius: 4,
-              border: '1px solid rgba(137,180,250,0.3)',
-              background: 'rgba(137,180,250,0.1)',
-              color: '#89b4fa',
+              padding: `${SPACE.hair}px 8px`,
+              fontSize: FONT_SIZE.xs,
+              borderRadius: RADIUS.sm,
+              border: `1px solid ${COLORS.accentBorder}`,
+              background: COLORS.accentFill,
+              color: COLORS.accent,
               cursor: 'pointer',
             }}
           >
@@ -326,12 +343,12 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
             onLoadSession(sessionId);
           }}
           style={{
-            padding: '4px 10px',
+            padding: '4px 12px',
             fontSize: 11,
-            borderRadius: 6,
-            border: '1px solid rgba(137,180,250,0.3)',
-            background: 'rgba(137,180,250,0.1)',
-            color: '#89b4fa',
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.accentBorder}`,
+            background: COLORS.accentFill,
+            color: COLORS.accent,
             cursor: 'pointer',
           }}
         >
@@ -393,8 +410,8 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
         {hasDetail && (
           <span
             style={{
-              color: '#9ca2b8',
-              fontSize: 10,
+              color: COLORS.textMuted,
+              fontSize: FONT_SIZE.xs,
               transition: 'transform 0.2s',
               transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
             }}
@@ -405,7 +422,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
       </button>
 
       {expanded && hasDetail && (
-        <div style={{ paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ paddingLeft: 24, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {fileInfo}
           {eventType === 'file_edit' && meta?.content && <DiffPreview patch={meta.content} />}
           {argsContent}
@@ -414,7 +431,7 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
           {taskLink}
         </div>
       )}
-      {taskLink && !expanded && <div style={{ paddingLeft: 22 }}>{taskLink}</div>}
+      {taskLink && !expanded && <div style={{ paddingLeft: 24 }}>{taskLink}</div>}
     </div>
   );
 }

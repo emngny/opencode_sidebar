@@ -391,6 +391,13 @@ interface OpenDiffPayload {
   filePath: string;
 }
 
+/**
+ * Absolute http(s)/mailto URL to hand to the OS via `vscode.env.openExternal`.
+ */
+interface OpenExternalPayload {
+  url: string;
+}
+
 interface RunCommandPayload {
   command: string;
   args?: string;
@@ -422,6 +429,7 @@ export type WebviewToExtensionMessage =
   | { type: 'respondPermission'; payload: RespondPermissionPayload }
   | { type: 'respondReadPermission'; payload: RespondReadPermissionPayload }
   | { type: 'openDiff'; payload: OpenDiffPayload }
+  | { type: 'openExternal'; payload: OpenExternalPayload }
   | { type: 'runCommand'; payload: RunCommandPayload }
   | { type: 'loadSkills'; payload?: undefined }
   | { type: 'webviewReady'; payload?: undefined };
@@ -666,6 +674,7 @@ export const WEBVIEW_TO_EXTENSION_TYPES = [
   'respondPermission',
   'respondReadPermission',
   'openDiff',
+  'openExternal',
   'runCommand',
   'loadSkills',
   'webviewReady',

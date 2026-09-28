@@ -98,10 +98,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const hasStrings = (...keys: string[]) => keys.every((key) => typeof value[key] === 'string');
     if (type === 'searchFiles') return hasStrings('query');
     if (type === 'openDiff') return hasStrings('filePath');
+    if (type === 'openExternal') return hasStrings('url');
     if (type === 'runCommand') return hasStrings('command');
     if (type === 'revertMessage') return hasStrings('messageId');
     if (type === 'saveModel') return hasStrings('model');
-    if (type === 'respondPermission') return hasStrings('permId', 'response');
+    if (type === 'respondPermission')
+      return hasStrings('permId', 'permSessionId') && (value['response'] === 'allow' || value['response'] === 'deny');
     if (type === 'respondReadPermission') return hasStrings('filePath', 'response');
     if (type === 'setApiKey') return hasStrings('providerId', 'key');
     if (type === 'removeApiKey' || type === 'loadSession' || type === 'deleteSession')
