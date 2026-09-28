@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
-import { ServerProcessManager, ServerStartupAbortedError } from './ServerProcessManager';
+import { ServerProcessManager, ServerStartupAbortedError, buildChildPath } from './ServerProcessManager';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -85,6 +85,34 @@ describe('ServerProcessManager.resolveBinaryCandidates', () => {
   });
 });
 
+describe('buildChildPath', () => {
+  // The platform is a parameter so both branches are covered on any runner.
+  // These are the assertions a per-platform test would otherwise get wrong.
+  it('prefixes the Windows system directories and keeps the inherited PATH', () => {
+    const path = buildChildPath({ SystemRoot: 'C:\\Windows', PATH: 'C:\\tools' }, 'win32');
+    expect(path).toBe(String.raw`C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\tools`);
+  });
+
+  it('prefixes the POSIX system directories and keeps the inherited PATH', () => {
+    const path = buildChildPath({ PATH: '/opt/tools' }, 'linux');
+    expect(path).toBe('/usr/bin:/bin:/usr/sbin:/sbin:/opt/tools');
+  });
+
+  it('uses the POSIX prefix and drops no separator when PATH is absent', () => {
+    expect(buildChildPath({}, 'linux')).toBe('/usr/bin:/bin:/usr/sbin:/sbin');
+    expect(buildChildPath({}, 'darwin')).toBe('/usr/bin:/bin:/usr/sbin:/sbin');
+  });
+
+  it('accepts the upper-case SYSTEMROOT spelling Windows may expose', () => {
+    const path = buildChildPath({ SYSTEMROOT: 'D:\\Win', PATH: 'D:\\tools' }, 'win32');
+    expect(path).toBe(String.raw`D:\Win\System32;D:\Win;D:\Win\System32\Wbem;D:\tools`);
+  });
+
+  it('defaults to the running platform', () => {
+    expect(buildChildPath({ PATH: 'x' })).toBe(buildChildPath({ PATH: 'x' }, process.platform));
+  });
+});
+
 describe('ServerProcessManager.tryStart', () => {
   it('does not pass OPENCODE_BIN_PATH to the child process', async () => {
     vi.stubEnv('OPENCODE_BIN_PATH', 'C:\\Windows\\Temp\\evil.exe');
@@ -124,7 +152,12 @@ describe('ServerProcessManager.tryStart', () => {
     expect(envValue('PATHEXT')).toBe('.COM;.EXE;.BAT;.CMD');
     expect(envValue('ComSpec')).toBe('C:\\Windows\\system32\\cmd.exe');
     expect(envValue('TEMP')).toBe('C:\\Users\\test\\AppData\\Local\\Temp');
-    expect(envValue('PATH')).toContain(String.raw`${process.env.SystemRoot || 'C:\\Windows'}\System32`);
+
+    // PATH must gain the platform's system directories without losing the
+    // inherited value. Compare against buildChildPath rather than a literal so
+    // this holds on every platform — a hard-coded Windows expectation here is
+    // what broke Linux CI.
+    expect(envValue('PATH')).toBe(buildChildPath(process.env));
   });
 
   it('strips inherited OPENCODE_* overrides other than the explicit pass-through set', async () => {

@@ -16,6 +16,26 @@ export class ServerStartupAbortedError extends Error {
   }
 }
 
+/**
+ * Builds the child PATH: the platform's system directories first, then the
+ * inherited value. The system prefix is what lets the server find core tools
+ * even when the inherited PATH is minimal, and appending rather than replacing
+ * is what keeps git, ripgrep, and language servers reachable.
+ *
+ * Extracted so both platform branches are directly testable — a caller that
+ * re-derives this inline will drift, and a Windows-only expectation here fails
+ * on Linux CI.
+ */
+export function buildChildPath(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): string {
+  const win = platform === 'win32';
+  const sep = win ? ';' : ':';
+  const systemRoot = env.SystemRoot || env.SYSTEMROOT || String.raw`C:\Windows`;
+  const systemPath = win
+    ? [String.raw`${systemRoot}\System32`, systemRoot, String.raw`${systemRoot}\System32\Wbem`].join(sep)
+    : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(sep);
+  return [systemPath, env.PATH].filter(Boolean).join(sep);
+}
+
 /** Owns the opencode server child process and its connection metadata. */
 export class ServerProcessManager {
   private process: ChildProcess | null = null;
@@ -194,21 +214,15 @@ export class ServerProcessManager {
 
   private tryStart(binary: string, password: string, timeoutMs: number, epoch = this.epoch): Promise<void> {
     return new Promise((resolveStart, reject) => {
-      const win = process.platform === 'win32';
-      const sep = win ? ';' : ':';
-      const systemRoot = process.env.SystemRoot || String.raw`C:\Windows`;
-      const systemPath = win
-        ? [String.raw`${systemRoot}\System32`, systemRoot, String.raw`${systemRoot}\System32\Wbem`].join(sep)
-        : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(sep);
       // Keep the inherited PATH so the server can locate git, ripgrep, language tools, etc.
-      const childPath = [systemPath, process.env.PATH].filter(Boolean).join(sep);
+      const childPath = buildChildPath(process.env);
       // Inherit the host environment rather than allow-listing a handful of
       // variables. Tools the agent runs (bash, node, git, language servers)
-      // need the full Windows environment: without PATHEXT an extensionless
-      // command such as `node` cannot be resolved to `node.exe`, and without
-      // ComSpec/TEMP many shell-based tools fail outright. An allow-list here
-      // silently breaks tool execution, which is far worse than inheriting
-      // the environment the user already runs the extension in.
+      // need the full environment: without PATHEXT an extensionless command
+      // such as `node` cannot be resolved to `node.exe` on Windows, and
+      // without ComSpec/TEMP many shell-based tools fail outright. An
+      // allow-list here silently breaks tool execution, which is far worse
+      // than inheriting the environment the user already runs the extension in.
       const childEnv: Record<string, string | undefined> = { ...process.env, PATH: childPath };
       // Drop every OPENCODE_* override from the outer environment — it must not
       // be able to re-point the binary, the config, or the permission set of the
