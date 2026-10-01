@@ -64,8 +64,15 @@ function patternToRegex(pattern: string): RegExp {
   if (regex) return regex;
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, String.raw`\$&`)
+    // `**/` must match zero directories (glob semantics), otherwise a
+    // workspace-root path with no separator never matches. Placeholders carry
+    // no `*` so the later single-star pass cannot rewrite them.
+    .replaceAll('**/', '___DOUBLESTAR_SLASH___')
+    .replaceAll('/**', '___SLASH_DOUBLESTAR___')
     .replaceAll('**', '___DOUBLESTAR___')
     .replaceAll('*', '[^/]*')
+    .replaceAll('___DOUBLESTAR_SLASH___', String.raw`(?:.*\/)?`)
+    .replaceAll('___SLASH_DOUBLESTAR___', String.raw`/.*`)
     .replaceAll('___DOUBLESTAR___', '.*');
   regex = new RegExp(`^${escaped}$`, 'i');
   regexCache.set(pattern, regex);

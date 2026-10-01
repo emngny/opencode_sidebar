@@ -9,12 +9,28 @@ export interface ChatMessage {
   id?: string;
   requestId?: string;
   sessionId?: string;
+  /**
+   * The opencode server's own assistant message id, e.g. `msg_...`.
+   *
+   * One turn is several server messages — the agent speaks, runs a tool, then
+   * speaks again — and each one is its own bubble. Keying the bubble by this
+   * rather than by `requestId` is what keeps the transcript in arrival order:
+   * a `requestId` spans the whole turn, so text streamed after a tool would be
+   * folded into the bubble that was opened before it.
+   */
+  serverMessageId?: string;
   isStreaming?: boolean;
   eventType?:
     'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
   eventStatus?: 'running' | 'completed' | 'failed';
   /** Number of identical consecutive tool events merged into this card. */
   eventCount?: number;
+  /**
+   * How many `file_edit` cards for this path were collapsed into one, set by
+   * the webview's `groupFileEdits` at render time. `eventMeta.added` and
+   * `eventMeta.deleted` hold the summed totals for the group.
+   */
+  fileEditCount?: number;
   eventMeta?: {
     path?: string;
     added?: number;
@@ -52,7 +68,18 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function getErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) {
+    // `fetch` reports every transport failure as the bare string "fetch failed"
+    // and hides the reason in `cause`, which is where undici puts the useful
+    // part (HeadersTimeoutError, ECONNRESET, and so on). Reporting only the
+    // outer message is why a stalled prompt could only ever report "fetch
+    // failed" with nothing to act on.
+    const cause = (err as { cause?: unknown }).cause;
+    if (cause instanceof Error && cause.message && !err.message.includes(cause.message)) {
+      return `${err.message}: ${cause.message}`;
+    }
+    return err.message;
+  }
   if (typeof err === 'string') return err;
   try {
     return String(err);
@@ -231,7 +258,10 @@ export function mapRawMessagesToChatMessages(raw: RawSessionMessage[], genId: ()
   return raw.map((m) => {
     const content =
       m.parts
-        ?.map((p) => {
+        // Tool parts are skipped rather than joined as empty strings, which
+        // would leave a trailing newline on every message that also ran a tool.
+        ?.filter((p) => p?.type !== 'tool')
+        .map((p) => {
           if (typeof p.text === 'string') return p.text;
           if (typeof p.content === 'string') return p.content;
           return '';
@@ -450,6 +480,8 @@ interface ReceiveChunkPayload {
   fullContent?: string;
   requestId?: string;
   sessionId?: string;
+  /** Owning server message, so the webview can open a bubble per agent step. */
+  messageId?: string;
 }
 
 interface StreamEndPayload {
@@ -472,6 +504,18 @@ interface SessionListPayload {
 interface SessionLoadedPayload {
   sessionId: string;
   messages: ChatMessage[];
+  /**
+   * Whether the server was still streaming this session when the transcript was
+   * fetched. A rehydrated webview starts with `busy === false`, so without this
+   * a live turn renders as finished.
+   */
+  busy?: boolean;
+  /**
+   * Request id of the in-flight turn, if any. The webview needs it to attach
+   * incoming deltas to the rehydrated assistant message instead of opening a
+   * duplicate bubble.
+   */
+  activeRequestId?: string | null;
 }
 
 interface SessionDeletedPayload {

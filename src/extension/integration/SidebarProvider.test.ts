@@ -13,6 +13,10 @@ vi.mock('vscode', () => ({
   window: {
     registerWebviewViewProvider: vi.fn(),
     showTextDocument: vi.fn(),
+    showInformationMessage: vi.fn().mockResolvedValue(undefined),
+  },
+  commands: {
+    executeCommand: vi.fn().mockResolvedValue(undefined),
   },
   Uri: {
     joinPath: vi.fn(),
@@ -27,6 +31,8 @@ describe('SidebarProvider Message Handling', () => {
   let extensionUri: vscode.Uri;
 
   beforeEach(() => {
+    // Call counts must not leak: the notification assertions count invocations.
+    vi.clearAllMocks();
     mockContext = {
       extensionUri: { fsPath: '/test/ext' },
       secrets: {
@@ -38,6 +44,81 @@ describe('SidebarProvider Message Handling', () => {
     };
     extensionUri = { fsPath: '/test/ext' } as any;
     provider = new SidebarProvider(extensionUri, mockContext);
+  });
+
+  describe('Permission notice while the view is hidden', () => {
+    const permissionEvent = {
+      type: 'toolEvent' as const,
+      payload: {
+        id: 'perm-1',
+        type: 'permission',
+        name: 'permission',
+        status: 'running',
+        content: 'bash',
+        meta: { permId: 'perm-1' },
+      },
+    };
+
+    function attachView(visible: boolean) {
+      const view = {
+        visible,
+        onDidChangeVisibility: vi.fn(),
+        webview: {
+          postMessage: vi.fn(),
+          onDidReceiveMessage: vi.fn(),
+          options: {},
+          html: '',
+          cspSource: 'vscode-resource:',
+          asWebviewUri: vi.fn(() => ({ toString: () => 'vscode-resource://script.js' })),
+        },
+      };
+      provider.resolveWebviewView(view as never);
+      return view;
+    }
+
+    it('asks the user to come back when a permission arrives while hidden', () => {
+      // The webview document is deallocated while hidden, so the prompt is
+      // dropped and the server would wait forever on the decision.
+      attachView(false);
+      provider.postMessage(permissionEvent);
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        'OpenCode needs your permission to continue',
+        'Show',
+      );
+    });
+
+    it('stays quiet when the view is visible', () => {
+      attachView(true);
+      provider.postMessage(permissionEvent);
+      expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
+    });
+
+    it('focuses the sidebar when the notice is accepted', async () => {
+      (vscode.window.showInformationMessage as ReturnType<typeof vi.fn>).mockResolvedValueOnce('Show');
+      attachView(false);
+
+      provider.postMessage(permissionEvent);
+      await vi.waitFor(() =>
+        expect(vscode.commands.executeCommand).toHaveBeenCalledWith('workbench.view.extension.opencode.focus'),
+      );
+    });
+
+    it('does not notify for unrelated tool events', () => {
+      attachView(false);
+      provider.postMessage({
+        type: 'toolEvent',
+        payload: { id: 't1', type: 'file_read', name: 'read', status: 'running', content: 'Reading: a.ts' },
+      });
+      provider.postMessage({ type: 'sessionLoaded', payload: { sessionId: 's1', messages: [] } });
+      expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
+    });
+
+    it('does not stack a second notice for the same request', () => {
+      attachView(false);
+      provider.postMessage(permissionEvent);
+      provider.postMessage(permissionEvent);
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledOnce();
+    });
   });
 
   describe('Message Type Validation', () => {

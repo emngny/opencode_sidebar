@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EventDispatcher, extractSessionErrorMessage } from './EventDispatcher';
+import { EventDispatcher, extractSessionErrorMessage, toolEventsFromPart } from './EventDispatcher';
 
 const sseEvent = (type: string, properties: Record<string, unknown>) => ({
   id: `event-${type}`,
@@ -26,6 +26,126 @@ describe('EventDispatcher', () => {
     dispatcher.dispatch(sseEvent('message.part.delta', { field: 'text', delta: 'Hello world' }), 'session-1');
 
     expect(capturedContent).toBe('Hello world');
+  });
+
+  describe('toolEventsFromPart', () => {
+    /**
+     * The live path and the restore path must render the same card for the
+     * same part. Anything that diverges here shows up as a rehydrated session
+     * looking different from the live one.
+     */
+    const cases: Array<{ label: string; part: Record<string, unknown> }> = [
+      { label: 'running', part: { id: 'p1', type: 'tool', tool: 'bash', state: { status: 'running' } } },
+      {
+        label: 'completed',
+        part: { id: 'p2', type: 'tool', tool: 'bash', state: { status: 'completed', result: 'ok' } },
+      },
+      {
+        label: 'failed',
+        part: { id: 'p3', type: 'tool', tool: 'bash', state: { status: 'failed', error: 'exit 1' } },
+      },
+      {
+        label: 'read one file',
+        part: {
+          id: 'p4',
+          type: 'tool',
+          tool: 'read',
+          state: { status: 'completed', input: { args: { path: 'a.ts' } } },
+        },
+      },
+      {
+        label: 'read several files',
+        part: {
+          id: 'p5',
+          type: 'tool',
+          tool: 'grep',
+          state: { status: 'completed', input: { args: { path: 'src' } } },
+        },
+      },
+      {
+        label: 'sub-agent task',
+        part: {
+          id: 'p6',
+          type: 'tool',
+          tool: 'task',
+          state: {
+            status: 'completed',
+            input: { description: 'scan repo', subagent_type: 'general' },
+            metadata: { sessionId: 'sub-1' },
+          },
+        },
+      },
+      { label: 'unknown status', part: { id: 'p7', type: 'tool', tool: 'bash', state: {} } },
+    ];
+
+    for (const { label, part } of cases) {
+      it(`matches the events the live path emits for a ${label} tool`, () => {
+        const seen: any[] = [];
+        const dispatcher = createDispatcher({ onToolEvent: (event: unknown) => seen.push(event) });
+
+        dispatcher.dispatch(sseEvent('message.part.updated', { sessionID: 's1', part }), 's1');
+        const direct = toolEventsFromPart(part as never);
+
+        expect(direct).toEqual(seen);
+      });
+    }
+
+    it('ignores a part with no state', () => {
+      expect(toolEventsFromPart({ id: 'p8', type: 'tool', tool: 'bash' } as never)).toEqual([]);
+    });
+  });
+
+  describe('pending permission', () => {
+    const askPermission = (dispatcher: EventDispatcher, sessionId = 'session-1') =>
+      dispatcher.dispatch(
+        sseEvent('permission.asked', { id: 'perm-1', sessionID: sessionId, permission: 'bash' }),
+        sessionId,
+      );
+
+    it('holds a permission request so a hidden webview can recover it', () => {
+      // The prompt is only ever a live event, and history cannot rebuild it, so
+      // losing the event would block the server on a decision nobody can make.
+      const dispatcher = createDispatcher();
+
+      expect(dispatcher.getPendingPermission()).toBeNull();
+      askPermission(dispatcher);
+
+      expect(dispatcher.getPendingPermission()?.sessionId).toBe('session-1');
+      expect(dispatcher.getPendingPermission()?.event.meta?.['permId']).toBe('perm-1');
+    });
+
+    it('releases the request once it is answered explicitly', () => {
+      const dispatcher = createDispatcher();
+      askPermission(dispatcher);
+
+      dispatcher.clearPendingPermission();
+
+      expect(dispatcher.getPendingPermission()).toBeNull();
+    });
+
+    it('releases the request when the session goes idle', () => {
+      const dispatcher = createDispatcher();
+      dispatcher.resetSession('session-1');
+      askPermission(dispatcher);
+
+      dispatcher.dispatch(
+        sseEvent('session.status', { sessionID: 'session-1', status: { type: 'idle' } }),
+        'session-1',
+      );
+
+      expect(dispatcher.getPendingPermission()).toBeNull();
+    });
+
+    it('keeps only the most recent request', () => {
+      const dispatcher = createDispatcher();
+      askPermission(dispatcher);
+      dispatcher.dispatch(
+        sseEvent('permission.asked', { id: 'perm-2', sessionID: 'session-1', permission: 'edit' }),
+        'session-1',
+      );
+
+      expect(dispatcher.getPendingPermission()?.event.meta?.['permId']).toBe('perm-2');
+    });
   });
 
   it('should recover assistant text from message.part.updated when deltas are absent', () => {

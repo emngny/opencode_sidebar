@@ -8,10 +8,12 @@ exports[`shared/types.ts contract lock > locks the shape of every exported decla
     id?: string;
     requestId?: string;
     sessionId?: string;
+    serverMessageId?: string;
     isStreaming?: boolean;
     eventType?: 'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
     eventStatus?: 'running' | 'completed' | 'failed';
     eventCount?: number;
+    fileEditCount?: number;
     eventMeta?: {
         path?: string;
         added?: number;
@@ -42,8 +44,15 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function getErrorMessage(err: unknown): string {
-    if (err instanceof Error)
+    if (err instanceof Error) {
+        const cause = (err as {
+            cause?: unknown;
+        }).cause;
+        if (cause instanceof Error && cause.message && !err.message.includes(cause.message)) {
+            return \`\${err.message}: \${cause.message}\`;
+        }
         return err.message;
+    }
     if (typeof err === 'string')
         return err;
     try {
@@ -226,7 +235,8 @@ export type ToolPart = ToolCallPart | ToolStatePart | {
 export function mapRawMessagesToChatMessages(raw: RawSessionMessage[], genId: () => string): ChatMessage[] {
     return raw.map((m) => {
         const content = m.parts
-            ?.map((p) => {
+            ?.filter((p) => p?.type !== 'tool')
+            .map((p) => {
             if (typeof p.text === 'string')
                 return p.text;
             if (typeof p.content === 'string')

@@ -35,6 +35,7 @@ function createState() {
     setConfirmDialog: vi.fn(),
     setReadPermissionPrompt: vi.fn(),
     setAgents: vi.fn(),
+    onAgentsLoaded: vi.fn(),
     processProviderList: vi.fn(),
     tryAutoSelectModel: vi.fn(),
   } as any;
@@ -62,6 +63,210 @@ describe('useMessageHandler file search ordering', () => {
     });
     expect(state.setFileSearchResults).toHaveBeenCalledWith([{ name: 'new.ts', path: 'new.ts' }]);
     expect(state.setFileSearchQuery).toHaveBeenCalledWith('new');
+  });
+});
+
+describe('useMessageHandler transcript rehydration', () => {
+  /**
+   * VS Code rebuilds the webview document when the view is shown again, so the
+   * app remounts with an empty transcript while the server keeps streaming.
+   */
+  function setup() {
+    let handler!: (message: any) => void;
+    vi.mocked(onMessage).mockImplementation((next) => {
+      handler = next;
+      return vi.fn();
+    });
+    const state = createState();
+    // A real `setMessages` is what proves the delta lands in the existing
+    // assistant bubble rather than opening a second one.
+    let messages: any[] = [];
+    state.setMessages = vi.fn((next: any) => {
+      messages = typeof next === 'function' ? next(messages) : next;
+    });
+    renderHook(() => useMessageHandler(state));
+    return {
+      state,
+      send: (message: unknown) => handler(message),
+      get messages() {
+        return messages;
+      },
+    };
+  }
+
+  it('replaces the transcript and marks the session busy', () => {
+    const harness = setup();
+
+    harness.send({
+      type: 'sessionLoaded',
+      payload: {
+        sessionId: 'session-1',
+        messages: [{ role: 'user', content: 'hi' }],
+        busy: true,
+        activeRequestId: 'req-9',
+      },
+    });
+
+    expect(harness.state.setMessages).toHaveBeenCalledWith([{ role: 'user', content: 'hi' }]);
+    // Without this a turn still running on the server renders as finished.
+    expect(harness.state.setBusy).toHaveBeenCalledWith(true);
+  });
+
+  it('reports an idle session when no turn is in flight', () => {
+    const harness = setup();
+
+    harness.send({ type: 'sessionLoaded', payload: { sessionId: 'session-1', messages: [] } });
+
+    expect(harness.state.setBusy).toHaveBeenCalledWith(false);
+  });
+
+  it('streams deltas into the rehydrated assistant message instead of a new one', () => {
+    const harness = setup();
+    harness.send({
+      type: 'sessionLoaded',
+      payload: {
+        sessionId: 'session-1',
+        messages: [
+          { role: 'user', content: 'hi' },
+          { role: 'assistant', content: 'par', requestId: 'req-9', isStreaming: true },
+        ],
+        busy: true,
+        activeRequestId: 'req-9',
+      },
+    });
+
+    harness.send({
+      type: 'receiveChunk',
+      payload: { content: 'tial', fullContent: 'partial', requestId: 'req-9', sessionId: 'session-1' },
+    });
+    harness.state.flushPendingChunk('req-9');
+
+    // The turn is already on screen; a second bubble would duplicate it.
+    expect(harness.messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
+    expect(harness.messages[1].content).toBe('partial');
+  });
+
+  it('empties the transcript when the payload carries no messages', () => {
+    const harness = setup();
+
+    harness.send({ type: 'sessionLoaded', payload: { sessionId: 'session-1', messages: 'not-an-array' } });
+
+    expect(harness.state.setMessages).toHaveBeenCalledWith([]);
+  });
+});
+
+describe('useMessageHandler agent step ordering', () => {
+  /**
+   * A turn is several server messages: the agent speaks, runs a tool, then
+   * speaks again. Each step needs its own bubble, in the order the steps
+   * arrived, or the post-tool narration renders inside the bubble that was
+   * opened before the tool ran.
+   */
+  function setup() {
+    let handler!: (message: any) => void;
+    vi.mocked(onMessage).mockImplementation((next) => {
+      handler = next;
+      return vi.fn();
+    });
+    const state = createState();
+    let messages: any[] = [];
+    state.setMessages = vi.fn((next: any) => {
+      messages = typeof next === 'function' ? next(messages) : next;
+    });
+    renderHook(() => useMessageHandler(state));
+    return {
+      state,
+      send: (message: unknown) => handler(message),
+      get messages() {
+        return messages;
+      },
+    };
+  }
+
+  it('puts the text after a tool in its own bubble, below the tool card', () => {
+    const harness = setup();
+
+    harness.send({ type: 'receiveMessage', payload: { role: 'user', content: 'go', requestId: 'req-1' } });
+    harness.send({
+      type: 'receiveChunk',
+      payload: { content: 'Looking now.', fullContent: 'Looking now.', messageId: 'msg-1', requestId: 'req-1' },
+    });
+    harness.send({
+      type: 'toolEvent',
+      payload: {
+        id: 'tool-1',
+        type: 'tool_call',
+        name: 'bash',
+        status: 'running',
+        content: 'bash calling...',
+        requestId: 'req-1',
+      },
+    });
+    harness.send({
+      type: 'receiveChunk',
+      payload: {
+        content: 'Found the bug.',
+        fullContent: 'Found the bug.',
+        messageId: 'msg-2',
+        requestId: 'req-1',
+      },
+    });
+
+    expect(harness.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'event', 'assistant']);
+    expect(harness.messages[1].content).toBe('Looking now.');
+    // The whole point: not merged into the pre-tool bubble, and not above it.
+    expect(harness.messages[3].content).toBe('Found the bug.');
+    expect(harness.messages[3].serverMessageId).toBe('msg-2');
+  });
+
+  it('keeps appending into the same bubble while one step streams', () => {
+    const harness = setup();
+
+    harness.send({
+      type: 'receiveChunk',
+      payload: { content: 'par', fullContent: 'par', messageId: 'msg-1', requestId: 'req-1' },
+    });
+    harness.send({
+      type: 'receiveChunk',
+      payload: { content: 'tial', fullContent: 'partial', messageId: 'msg-1', requestId: 'req-1' },
+    });
+
+    expect(harness.messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
+    expect(harness.messages[0].content).toBe('partial');
+  });
+
+  it('closes every bubble of the turn when it ends', () => {
+    const harness = setup();
+
+    harness.send({
+      type: 'receiveChunk',
+      payload: { content: 'a', fullContent: 'a', messageId: 'msg-1', requestId: 'req-1' },
+    });
+    harness.send({
+      type: 'receiveChunk',
+      payload: { content: 'b', fullContent: 'b', messageId: 'msg-2', requestId: 'req-1' },
+    });
+    expect(harness.messages.every((m) => m.isStreaming)).toBe(true);
+
+    harness.send({ type: 'streamEnd', payload: { content: 'b', requestId: 'req-1' } });
+
+    expect(harness.messages.every((m) => m.isStreaming === false)).toBe(true);
+    expect(harness.state.setBusy).toHaveBeenCalledWith(false);
+  });
+
+  it('attaches reasoning to the step it belongs to', () => {
+    const harness = setup();
+
+    harness.send({
+      type: 'reasoningContent',
+      payload: { content: 'thinking about it', messageId: 'msg-1', requestId: 'req-1' },
+    });
+    harness.send({
+      type: 'reasoningContent',
+      payload: { content: ' and again', messageId: 'msg-2', requestId: 'req-1' },
+    });
+
+    expect(harness.messages.map((m) => m.reasoning)).toEqual(['thinking about it', ' and again']);
   });
 });
 
@@ -143,6 +348,27 @@ describe('useMessageHandler agent catalog', () => {
 
     expect(state.setAgents).toHaveBeenCalledWith(['Prometheus - Plan Builder']);
     expect(state.setAgentModels).toHaveBeenCalledWith({ 'Prometheus - Plan Builder': 'omniroute/pro-models' });
+    // The reconciler must not act on the placeholder list before this arrives.
+    expect(state.onAgentsLoaded).toHaveBeenCalled();
+  });
+
+  /**
+   * "No session-owning agents" is an answer, not a missing one. Leaving the
+   * previous list in place would let the reconciler keep validating against it.
+   */
+  it('treats an empty agent list as authoritative', () => {
+    let handler!: (message: any) => void;
+    vi.mocked(onMessage).mockImplementation((next) => {
+      handler = next;
+      return vi.fn();
+    });
+    const state = createState();
+    renderHook(() => useMessageHandler(state));
+
+    act(() => handler({ type: 'agentList', payload: { agents: [] } }));
+
+    expect(state.onAgentsLoaded).toHaveBeenCalled();
+    expect(state.setAgents).toHaveBeenCalledWith([]);
   });
 });
 

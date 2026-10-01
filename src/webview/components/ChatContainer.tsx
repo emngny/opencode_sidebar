@@ -6,6 +6,7 @@ import { EventCard } from './EventCard';
 import { ContextGroup } from './ContextGroup';
 import { CompactionDivider } from './CompactionDivider';
 import { ToolMessage } from './ToolMessage';
+import { groupFileEdits } from './fileEditGroups';
 import { DEFAULT_VISIBLE_MESSAGE_COUNT, expandVisibleCount, getVisibleWindow } from './ChatContainer.windowing';
 
 interface Props {
@@ -43,6 +44,9 @@ export function ChatContainer({
     hiddenCount,
     hasMore,
   } = useMemo(() => getVisibleWindow(messages, visibleCount), [messages, visibleCount]);
+  // Windowing counts the raw stream so paging stays correct; folding repeated
+  // file edits is a pure function of what is on screen and never mutates state.
+  const renderedMessages = useMemo(() => groupFileEdits(visibleMessages), [visibleMessages]);
 
   useLayoutEffect(() => {
     const pendingScroll = pendingScrollRef.current;
@@ -105,7 +109,7 @@ export function ChatContainer({
         </div>
       )}
       {hasContext && <ContextGroup events={contextEvents!} allDone={!!allDone} />}
-      {visibleMessages.map((msg, index) => {
+      {renderedMessages.map((msg, index) => {
         let content: React.ReactNode;
         if (msg.eventType === 'compacting') {
           content = <CompactionDivider status={msg.eventStatus} />;

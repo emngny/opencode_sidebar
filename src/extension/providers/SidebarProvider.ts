@@ -20,6 +20,11 @@ import {
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'opencode.sidebar';
   private _view?: vscode.WebviewView;
+  private _visible = false;
+  private _permissionNotice?: {
+    permId: string | undefined;
+    dispose: vscode.Disposable;
+  };
   private readonly _opencode: OpencodeCli;
   private readonly _sessions: SessionService;
   private readonly _handler: SidebarMessageHandler;
@@ -54,6 +59,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   /** Configures webview options, HTML, and validated message dispatch. */
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this._view = webviewView;
+    this._visible = webviewView.visible;
+    webviewView.onDidChangeVisibility(() => {
+      this._visible = webviewView.visible;
+    });
     webviewView.webview.options = { enableScripts: true, localResourceRoots: [this._extensionUri] };
     const serverUrl = this._opencode.url || undefined;
     webviewView.webview.html = new WebviewHtmlBuilder(this._extensionUri, () => serverUrl).build(webviewView.webview);
@@ -70,6 +79,35 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   /** Sends an extension event to the webview when a view is attached. */
   postMessage(message: ExtensionToWebviewMessage): void {
     void this._view?.webview.postMessage(message);
+    if (!this._visible && message.type === 'toolEvent' && message.payload.type === 'permission') {
+      this.notifyPermissionNeeded(message.payload.meta?.['permId'] as string | undefined);
+    }
+  }
+
+  /**
+   * Surfaces a blocked permission request while the view is hidden.
+   *
+   * VS Code deallocates the webview document when the view is hidden, so a
+   * permission posted then is dropped and the server waits forever on a
+   * decision nobody can make. One notice is kept per permission id so a tool
+   * that re-asks does not stack notifications, and a request that is answered
+   * or superseded is disposed.
+   */
+  private notifyPermissionNeeded(permId: string | undefined): void {
+    if (this._permissionNotice && this._permissionNotice.permId === permId) return;
+    this._permissionNotice?.dispose.dispose();
+    const clear = (): void => {
+      if (this._permissionNotice?.permId === permId) this._permissionNotice = undefined;
+    };
+    this._permissionNotice = { permId, dispose: { dispose: clear } as vscode.Disposable };
+    void vscode.window
+      .showInformationMessage('OpenCode needs your permission to continue', 'Show')
+      .then((selection) => {
+        if (selection === 'Show') {
+          void vscode.commands.executeCommand('workbench.view.extension.opencode.focus');
+        }
+        clear();
+      });
   }
 
   /** Narrows untrusted webview data to a supported message envelope. */
@@ -138,6 +176,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   /** Aborts active work, stops the local server, and releases the view. */
   dispose(): void {
+    this._permissionNotice?.dispose.dispose();
+    this._permissionNotice = undefined;
     void this._sessions.abort().catch(() => undefined);
     this._opencode.stop();
     this._view = undefined;

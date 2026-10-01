@@ -82,6 +82,7 @@ function AppContent() {
     DEBOUNCE_MS,
     flushPendingChunk,
     cleanupStreaming,
+    resetConversation,
   } = useChatState();
 
   const {
@@ -126,7 +127,14 @@ function AppContent() {
   const nearBottomRef = useRef(true);
   const fileSearchRequestIdRef = useRef<string | null>(null);
 
-  const [agents, setAgents] = useState<string[]>(['build', 'plan', 'ask', 'debug', 'docs', 'code', 'review']);
+  /**
+   * Empty until the server answers `GET /agent`. It must not be seeded with a
+   * guess: the reconciler below treats the list as the truth about which modes
+   * exist, so a placeholder makes it "correct" the mode into an agent the server
+   * has never heard of, and the real list then corrects it back.
+   */
+  const [agents, setAgents] = useState<string[]>([]);
+  const agentsLoadedRef = useRef(false);
 
   useMessageHandler({
     setMessages,
@@ -153,6 +161,9 @@ function AppContent() {
     setConfirmDialog,
     setReadPermissionPrompt,
     setAgents,
+    onAgentsLoaded: () => {
+      agentsLoadedRef.current = true;
+    },
     processProviderList,
     tryAutoSelectModel,
   });
@@ -172,11 +183,31 @@ function AppContent() {
   );
 
   useEffect(() => {
-    // The server only offers session-owning agents as modes, so the active mode
-    // can disappear (e.g. it is a subagent on this machine). Move to a usable one
-    // and say so, instead of leaving the picker on a value it cannot show.
-    if (agents.length === 0 || !mode || agents.includes(mode)) return;
+    /**
+     * Moves off a mode the server does not offer, but only once it has actually
+     * said what it offers.
+     *
+     * The previous default list (`build`, `plan`, …) made this effect fire on
+     * mount, before `agentList` arrived: the real mode was not in the guess, so
+     * it switched to `build`; the real list then contained neither, so it
+     * switched back — two system messages per open, and a mode flip the user
+     * never asked for. Worse, `agents[0]` is not a fallback the user can have
+     * meant, so it is only correct when the current mode is genuinely gone.
+     */
+    if (!agentsLoadedRef.current) return;
+    if (agents.length === 0) return;
+    // No mode yet means the user has not picked one on this machine, so adopt
+    // the server's first agent silently rather than reporting a switch.
+    if (!mode) {
+      selectMode(agents[0]!);
+      return;
+    }
+    if (agents.includes(mode)) return;
+    // Keep the mode if the server's list is merely incomplete. Only a mode the
+    // server does not know at all is switched away from, and then to the first
+    // agent it did offer.
     const next = agents[0]!;
+    if (next === mode) return;
     selectMode(next);
     setMessages((prev) => [
       ...prev,
@@ -271,8 +302,28 @@ function AppContent() {
 
   const handleAbort = useCallback(() => {
     postMessage({ type: 'abort' });
+    // Drop buffered chunks too: otherwise a pending debounce timer flushes the
+    // aborted turn's text back into the transcript after the user stops it.
+    cleanupStreaming();
     setBusy(false);
-  }, [setBusy]);
+  }, [cleanupStreaming, setBusy]);
+
+  /**
+   * Starts a fresh session while keeping the previous one in session history.
+   *
+   * The extension side already does the right thing: `clearChat` dispatches to
+   * `SessionService.abort()`, which stops the server stream and nulls
+   * `_currentSessionId`, so the next prompt creates a brand new session. This
+   * callback only has to clear the webview's own copy of the conversation.
+   */
+  const handleNewChat = useCallback(() => {
+    resetConversation();
+    setRevertActive(false);
+    setReadPermissionPrompt(null);
+    setConfirmDialog(null);
+    setShowSessions(false);
+    postMessage({ type: 'clearChat' });
+  }, [resetConversation, setRevertActive, setReadPermissionPrompt, setConfirmDialog, setShowSessions]);
 
   const handleRevert = useCallback(
     (messageId: string) => {
@@ -295,13 +346,15 @@ function AppContent() {
 
   const handleSlashCommand = useCallback(
     (cmd: CommandItem) => {
-      if (cmd.command === 'init' || cmd.command === 'review') {
+      if (cmd.command === 'new') {
+        handleNewChat();
+      } else if (cmd.command === 'init' || cmd.command === 'review') {
         postMessage({ type: 'runCommand', payload: { command: cmd.command, args: '' } });
       } else if (cmd.agent && agents.includes(cmd.agent)) {
         selectMode(cmd.agent);
       }
     },
-    [agents, selectMode],
+    [agents, selectMode, handleNewChat],
   );
 
   const handleRespondPermission = useCallback(
@@ -429,6 +482,7 @@ function AppContent() {
           fileSearchQuery={fileSearchQuery}
           onSlashCommand={handleSlashCommand}
           skills={skills}
+          agents={agents}
         />
         <div
           style={{
@@ -442,6 +496,27 @@ function AppContent() {
         >
           <ModeSelector mode={mode} onChange={selectMode} agents={agents} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              onClick={handleNewChat}
+              aria-label="New Chat"
+              style={btnIcon}
+              {...hoverable({ color: COLORS.text }, { color: COLORS.textMuted })}
+              title="New Chat"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
             <button
               onClick={() => setShowSessions(true)}
               aria-label="Session History"

@@ -38,9 +38,13 @@ export function useChatState() {
       }
 
       setMessages((prev) => {
-        const messageIndex = id
-          ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === id)
-          : prev.reduce((found, message, index) => (message.role === 'assistant' ? index : found), -1);
+        // Follow the bubble the current step opened. Falling back to "first
+        // assistant message of the request" would land debounced text from a
+        // later step in the bubble that predates it.
+        const streamingId = streamingMsgIdRef.current.get(id);
+        const messageIndex = streamingId
+          ? prev.findIndex((message) => message.id === streamingId)
+          : prev.findIndex((message) => message.role === 'assistant' && message.requestId === id);
         if (messageIndex < 0) return prev;
         const updated = [...prev];
         const message = updated[messageIndex];
@@ -64,6 +68,20 @@ export function useChatState() {
     }
   }, []);
 
+  /**
+   * Drops the whole conversation and every pending streaming buffer.
+   *
+   * `cleanupStreaming()` runs first on purpose: the 80ms debounce timers hold
+   * text already received from the old session, and flushing them after
+   * `setMessages([])` would repopulate the empty transcript.
+   */
+  const resetConversation = useCallback(() => {
+    cleanupStreaming();
+    setMessages([]);
+    setContextEvents([]);
+    setBusy(false);
+  }, [cleanupStreaming]);
+
   return {
     messages,
     setMessages,
@@ -77,5 +95,6 @@ export function useChatState() {
     DEBOUNCE_MS,
     flushPendingChunk,
     cleanupStreaming,
+    resetConversation,
   };
 }

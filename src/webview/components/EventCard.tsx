@@ -193,16 +193,26 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
     icon = '⏳';
     borderColor = COLORS.textMuted;
     titleColor = COLORS.accent;
-  } else if (status === 'completed') {
-    icon = '✅';
-    borderColor = COLORS.successBorder;
-    bgColor = COLORS.successTint;
-    titleColor = COLORS.green;
   } else if (status === 'failed') {
     icon = '❌';
     borderColor = COLORS.dangerBorder;
     bgColor = COLORS.dangerTint;
     titleColor = COLORS.red;
+  } else if (status === 'completed' && eventType === 'file_edit') {
+    // The one card that is proof a file actually changed: the diff stream
+    // already drops zero-change entries, so a green tick here is never a lie.
+    icon = '✅';
+    borderColor = COLORS.successBorder;
+    bgColor = COLORS.successTint;
+    titleColor = COLORS.green;
+  } else if (status === 'completed') {
+    // Everything else that finished — commands, diagnostics, sub-agent runs —
+    // changes nothing on disk, so it keeps the neutral default. Tinting these
+    // green made the transcript read as a list of files the agent had edited.
+    icon = '🔧';
+    borderColor = COLORS.border;
+    bgColor = COLORS.bgLight;
+    titleColor = COLORS.text;
   }
 
   let title = message.content;
@@ -357,8 +367,13 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
       ) : null;
   }
 
-  const hasDetail = argsContent || resultContent || errorContent || fileInfo || !!taskLink;
+  // Appended last: the title is reassigned further up for paths and sub-agent
+  // tasks, so a count added earlier would be overwritten.
+  if (message.fileEditCount && message.fileEditCount > 1) {
+    title = `${title} ×${message.fileEditCount}`;
+  }
 
+  const hasDetail = argsContent || resultContent || errorContent || fileInfo || !!taskLink;
   return (
     <div
       style={{

@@ -40,6 +40,156 @@ describe('SidebarMessageHandler', () => {
     expect(sessions.abort).toHaveBeenCalledOnce();
   });
 
+  it('routes clearChat to abort without re-sending history to the webview', async () => {
+    // The webview already cleared its own transcript; posting messages back
+    // here would repopulate the fresh session with the old conversation.
+    const sessions = { abort: vi.fn() };
+    const post = vi.fn();
+    const handler = createHandler(sessions, post);
+
+    await handler.dispatch({ type: 'clearChat' });
+
+    expect(sessions.abort).toHaveBeenCalledOnce();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('reports no error when clearChat arrives without an active session', async () => {
+    const sessions = { abort: vi.fn().mockRejectedValue(new Error('no active session')) };
+    const post = vi.fn();
+    const handler = createHandler(sessions, post);
+
+    await handler.dispatch({ type: 'clearChat' });
+
+    expect(post).toHaveBeenCalledWith({ type: 'error', payload: { message: 'Abort failed: no active session' } });
+  });
+
+  describe('transcript rehydration on webviewReady', () => {
+    /**
+     * VS Code rebuilds the webview document whenever the view becomes visible
+     * again, so the app remounts empty while the session is still live.
+     */
+    function readyHandler(options: {
+      currentSessionId?: string | null;
+      activeRequestId?: string | null;
+      pendingPermission?: unknown;
+      loadSession?: ReturnType<typeof vi.fn>;
+    }) {
+      const post = vi.fn();
+      const opencode = {
+        start: vi.fn().mockResolvedValue(undefined),
+        getCurrentProject: vi.fn().mockResolvedValue(null),
+        getPath: vi.fn().mockResolvedValue(null),
+        getVcsInfo: vi.fn().mockResolvedValue(null),
+        listProviders: vi.fn().mockResolvedValue({ all: [], connected: [], default: {} }),
+        getAgents: vi.fn().mockResolvedValue([]),
+        getActiveRequestId: vi.fn().mockReturnValue(options.activeRequestId ?? null),
+        getPendingPermission: vi.fn().mockReturnValue(options.pendingPermission ?? null),
+      };
+      const sessions = {
+        abort: vi.fn(),
+        get currentSessionId() {
+          return options.currentSessionId ?? null;
+        },
+        set currentSessionId(_v: string | null) {},
+        loadSession: options.loadSession ?? vi.fn().mockResolvedValue([{ role: 'user', content: 'hi' }]),
+        listSessions: vi.fn().mockResolvedValue([]),
+      };
+      const handler = new SidebarMessageHandler(
+        opencode as never,
+        sessions as never,
+        {} as never,
+        { restoreApiKeys: vi.fn() } as never,
+        { list: vi.fn().mockReturnValue([]) } as never,
+        {} as never,
+        { get: vi.fn(), update: vi.fn() } as never,
+        post,
+        {} as never,
+      );
+      return { handler, post, opencode, sessions };
+    }
+
+    it('restores the transcript for a live session', async () => {
+      const { handler, post, opencode, sessions } = readyHandler({ currentSessionId: 'session-1' });
+
+      await handler.dispatch({ type: 'webviewReady' });
+
+      expect(sessions.loadSession).toHaveBeenCalledWith('session-1', null);
+      expect(post).toHaveBeenCalledWith({
+        type: 'sessionLoaded',
+        payload: {
+          sessionId: 'session-1',
+          messages: [{ role: 'user', content: 'hi' }],
+          busy: false,
+          activeRequestId: null,
+        },
+      });
+      // The live turn has to be named, or the next delta opens a second bubble.
+      expect(opencode.getActiveRequestId).toHaveBeenCalledWith('session-1');
+    });
+
+    it('marks the session busy while a turn is still streaming', async () => {
+      const { handler, post } = readyHandler({ currentSessionId: 'session-1', activeRequestId: 'req-9' });
+
+      await handler.dispatch({ type: 'webviewReady' });
+
+      const loaded = post.mock.calls.find(([m]) => m.type === 'sessionLoaded')?.[0];
+      expect(loaded.payload.busy).toBe(true);
+      expect(loaded.payload.activeRequestId).toBe('req-9');
+    });
+
+    it('sends nothing when no session is open', async () => {
+      const { handler, post } = readyHandler({ currentSessionId: null });
+
+      await handler.dispatch({ type: 'webviewReady' });
+
+      expect(post.mock.calls.some(([m]) => m.type === 'sessionLoaded')).toBe(false);
+    });
+
+    it('replays a permission the hidden webview never saw', async () => {
+      // The prompt only exists as a live event, so without the replay the
+      // server stays blocked on a decision the user cannot make.
+      const pending = { id: 'perm-1', type: 'permission', name: 'permission', status: 'running', content: 'bash' };
+      const { handler, post } = readyHandler({
+        currentSessionId: 'session-1',
+        activeRequestId: 'req-9',
+        pendingPermission: pending,
+      });
+
+      await handler.dispatch({ type: 'webviewReady' });
+
+      const replay = post.mock.calls.filter(([m]) => m.type === 'toolEvent').map(([m]) => m.payload);
+      expect(replay).toHaveLength(1);
+      expect(replay[0]).toMatchObject({ id: 'perm-1', type: 'permission', requestId: 'req-9' });
+      // It has to arrive after the transcript it belongs to.
+      const order = post.mock.calls.map(([m]) => m.type);
+      expect(order.indexOf('sessionLoaded')).toBeLessThan(order.indexOf('toolEvent'));
+    });
+
+    it('does not replay once the permission has been answered', async () => {
+      const { handler, post } = readyHandler({ currentSessionId: 'session-1', pendingPermission: null });
+
+      await handler.dispatch({ type: 'webviewReady' });
+
+      expect(post.mock.calls.some(([m]) => m.type === 'toolEvent')).toBe(false);
+    });
+
+    it('surfaces a restore failure without breaking the rest of ready', async () => {
+      const { handler, post } = readyHandler({
+        currentSessionId: 'session-1',
+        loadSession: vi.fn().mockRejectedValue(new Error('boom')),
+      });
+
+      await handler.dispatch({ type: 'webviewReady' });
+
+      expect(post).toHaveBeenCalledWith({
+        type: 'error',
+        payload: { message: 'Failed to restore session: boom' },
+      });
+      // projectInfo still went out.
+      expect(post.mock.calls.some(([m]) => m.type === 'projectInfo')).toBe(true);
+    });
+  });
+
   it('offers only session-owning agents as chat modes', async () => {
     const post = vi.fn();
     const opencode = {

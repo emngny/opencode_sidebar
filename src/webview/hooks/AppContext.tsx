@@ -18,6 +18,7 @@ interface AppState {
   DEBOUNCE_MS: number;
   flushPendingChunk: (requestId?: string) => void;
   cleanupStreaming: (requestId?: string) => void;
+  resetConversation: () => void;
   model: string;
   setModel: React.Dispatch<React.SetStateAction<string>>;
   mode: string;
@@ -67,7 +68,7 @@ export function useAppState() {
   return ctx;
 }
 
-export function AppProvider({ children }: { children: ReactNode }) {
+export function AppProvider({ children }: Readonly<{ children: ReactNode }>) {
   const chatState = useChatState();
   const modelState = useModelManager();
 

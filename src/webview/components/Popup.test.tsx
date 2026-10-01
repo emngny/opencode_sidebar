@@ -355,12 +355,16 @@ describe('ModelSelector', () => {
 });
 
 describe('SlashCommandPopup', () => {
+  /** Every builtin agent this machine's server actually offers. */
+  const ALL = ['build', 'plan', 'ask', 'debug', 'docs', 'code', 'review'];
+
   it('is a listbox whose options report their selected state', () => {
     render(
       <Popup label="unused" backdrop={false} onClose={() => undefined} modal={false}>
         <SlashCommandPopup
           filter=""
           skills={[{ name: 'review' }]}
+          agents={ALL}
           onSelect={() => undefined}
           onClose={() => undefined}
         />
@@ -385,6 +389,7 @@ describe('SlashCommandPopup', () => {
           <SlashCommandPopup
             filter=""
             skills={[{ name: 'review' }]}
+            agents={ALL}
             onSelect={() => undefined}
             onClose={() => undefined}
             comboboxRef={inputRef}
@@ -407,10 +412,62 @@ describe('SlashCommandPopup', () => {
 
   it('closes on Escape', () => {
     const onClose = vi.fn();
-    render(<SlashCommandPopup filter="" skills={[]} onSelect={() => undefined} onClose={onClose} />);
+    render(<SlashCommandPopup filter="" skills={[]} agents={ALL} onSelect={() => undefined} onClose={onClose} />);
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * On this machine `build`, `plan`, `review` … are subagents, not chat modes.
+   * Offering them would switch to a mode the server rejects and bounce back.
+   */
+  it('omits mode-switching commands the server does not offer as a mode', () => {
+    render(
+      <SlashCommandPopup
+        filter=""
+        skills={[]}
+        agents={['Sisyphus - ultraworker', 'Prometheus - Plan Builder']}
+        onSelect={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+
+    const labels = screen.getAllByRole('option').map((el) => el.textContent ?? '');
+    expect(labels.some((l) => l.startsWith('/build'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('/plan'))).toBe(false);
+    // Local actions do not depend on a mode existing, so they stay.
+    expect(labels.some((l) => l.startsWith('/new'))).toBe(true);
+    expect(labels.some((l) => l.startsWith('/init'))).toBe(true);
+  });
+
+  it('offers only local commands before the server answers', () => {
+    render(
+      <SlashCommandPopup filter="" skills={[]} agents={[]} onSelect={() => undefined} onClose={() => undefined} />,
+    );
+
+    const labels = screen.getAllByRole('option').map((el) => el.textContent ?? '');
+    expect(labels.some((l) => l.startsWith('/new'))).toBe(true);
+    expect(labels.some((l) => l.startsWith('/init'))).toBe(true);
+    expect(labels.some((l) => l.startsWith('/review'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('/build'))).toBe(false);
+  });
+
+  it('keeps a mode-switching command the server does offer', () => {
+    render(
+      <SlashCommandPopup
+        filter=""
+        skills={[]}
+        agents={['build', 'plan']}
+        onSelect={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+
+    const labels = screen.getAllByRole('option').map((el) => el.textContent ?? '');
+    expect(labels.some((l) => l.startsWith('/build'))).toBe(true);
+    expect(labels.some((l) => l.startsWith('/plan'))).toBe(true);
+    expect(labels.some((l) => l.startsWith('/debug'))).toBe(false);
   });
 });

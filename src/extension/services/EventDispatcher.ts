@@ -23,16 +23,27 @@ export interface MessageMeta {
  * All callbacks are optional and called at appropriate points during streaming.
  */
 export interface EventCallbacks {
-  onContent?: (text: string) => void;
+  onContent?: (text: string, messageId?: string) => void;
   onToolCall?: (name: string, args: unknown) => void;
   onError?: (error: string) => void;
   onToolEvent?: (event: ToolEvent) => void;
   onMessageMeta?: (meta: MessageMeta) => void;
-  onReasoning?: (text: string) => void;
+  onReasoning?: (text: string, messageId?: string) => void;
   onDiffs?: (diffs: NormalizedDiff[]) => void;
 }
 
 const READ_TOOLS = new Set(['read', 'grep', 'glob', 'list', 'webfetch']);
+
+/**
+ * Reads `messageID` off a raw event payload.
+ *
+ * The webview needs it to give each agent step its own bubble: one turn is a
+ * sequence of server messages, and text streamed after a tool belongs to a
+ * later message than the one that was open before the tool ran.
+ */
+function asMessageId(raw: unknown): string | undefined {
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
 
 /** Keys that may wrap opencode's error object. */
 const ERROR_WRAPPER_KEYS = ['data', 'error', 'cause'] as const;
@@ -114,6 +125,97 @@ function extractReadPaths(tool: string, args: unknown): string[] {
   }
 }
 
+/**
+ * Converts a stored tool part into the cards the transcript shows.
+ *
+ * The live path builds these from SSE events; restoring a session builds them
+ * from the parts `GET /session/:id/message` returns. Both call this so a
+ * rehydrated transcript cannot drift from what a live turn renders — a second
+ * implementation here would be a permanent source of that drift.
+ *
+ * Returns a list because a read covers one card per file it touched.
+ */
+export function toolEventsFromPart(part: ToolPart): ToolEvent[] {
+  const rec = part as Record<string, unknown>;
+  const toolName = typeof rec['tool'] === 'string' ? (rec['tool'] as string) : 'unknown';
+  const state = isRecord(rec['state']) ? (rec['state'] as Record<string, unknown>) : undefined;
+  const status = typeof state?.['status'] === 'string' ? (state['status'] as string) : undefined;
+  const inputRec = isRecord(state?.['input']) ? (state['input'] as Record<string, unknown>) : undefined;
+  const toolArgs: unknown = inputRec?.['args'] ?? rec['args'] ?? inputRec;
+  const events: ToolEvent[] = [];
+
+  if (status === 'running') {
+    events.push({
+      id: (rec['id'] as string) || toolName,
+      type: 'tool_result',
+      name: toolName,
+      status: 'running',
+      content: `${toolName} running...`,
+      meta: { args: toolArgs },
+    });
+    return events;
+  }
+
+  if (status === 'failed') {
+    const error = (state?.['error'] as string) || (state?.['reason'] as string);
+    if (READ_TOOLS.has(toolName)) {
+      const paths = extractReadPaths(toolName, inputRec?.['args'] ?? rec['args']);
+      for (const p of paths) {
+        events.push({
+          id: `${(rec['id'] as string) || toolName}_read_${p}`,
+          type: 'file_read',
+          name: toolName,
+          status: 'failed',
+          content: `Read failed: ${p}`,
+          meta: { path: p, tool: toolName, error },
+        });
+      }
+    }
+    events.push({
+      id: (rec['id'] as string) || toolName,
+      type: 'tool_result',
+      name: toolName,
+      status: 'failed',
+      content: `${toolName} failed`,
+      meta: { error },
+    });
+    return events;
+  }
+
+  if (status !== 'completed') return events;
+
+  const toolResult: unknown = rec['result'] ?? state?.['result'];
+  const meta: Record<string, unknown> = { result: toolResult, args: toolArgs };
+  if (toolName === 'task' && state) {
+    const metadata = isRecord(state['metadata']) ? (state['metadata'] as Record<string, unknown>) : undefined;
+    if (metadata?.['sessionId']) meta['sessionId'] = metadata['sessionId'];
+    if (inputRec?.['description']) meta['description'] = inputRec['description'];
+    if (inputRec?.['subagent_type']) meta['subagentType'] = inputRec['subagent_type'];
+  }
+  if (READ_TOOLS.has(toolName)) {
+    const paths = extractReadPaths(toolName, inputRec?.['args'] ?? rec['args'] ?? toolResult);
+    for (const p of paths) {
+      events.push({
+        id: `${(rec['id'] as string) || toolName}_read_${p}`,
+        type: 'file_read',
+        name: toolName,
+        status: 'completed',
+        content: `Read: ${p}`,
+        meta: { path: p, tool: toolName, result: toolResult as string | number | boolean | null | undefined },
+      });
+    }
+  }
+  events.push({
+    id: (rec['id'] as string) || toolName,
+    type: 'tool_result',
+    name: toolName,
+    status: 'completed',
+    content: toolName === 'task' ? 'Task completed' : `${toolName} completed`,
+    meta,
+  });
+  return events;
+}
+
 export class EventDispatcher {
   private readonly callbacks: EventCallbacks;
   private readonly sessionPartTypes: Map<string, Map<string, string>> = new Map();
@@ -123,9 +225,29 @@ export class EventDispatcher {
   private activeSessionId = '';
   /** Last error text reported for this dispatcher, which lives for one prompt. */
   private reportedError: string | null = null;
+  /**
+   * The most recent unanswered permission request.
+   *
+   * A permission the user has to answer for blocks the server, and the request
+   * itself only ever arrives as a live event. While the view is hidden that
+   * event is posted into a deallocated webview and lost, and it cannot be
+   * rebuilt from the session history either, so the turn would hang forever.
+   * Holding it here lets the message handler replay it into the fresh webview.
+   */
+  private pendingPermission: { sessionId: string; event: ToolEvent } | null = null;
 
   constructor(callbacks: EventCallbacks) {
     this.callbacks = callbacks;
+  }
+
+  /** The permission request still awaiting a decision, if any. */
+  getPendingPermission(): { sessionId: string; event: ToolEvent } | null {
+    return this.pendingPermission;
+  }
+
+  /** Drops the held permission request, e.g. once it has been answered. */
+  clearPendingPermission(): void {
+    this.pendingPermission = null;
   }
 
   resetSession(sessionId: string): void {
@@ -141,6 +263,7 @@ export class EventDispatcher {
     this.sessionTextByPart.delete(sessionId);
     this.sessionReasoningByPart.delete(sessionId);
     this.sessionMessageRoles.delete(sessionId);
+    if (this.pendingPermission?.sessionId === sessionId) this.pendingPermission = null;
   }
 
   /**
@@ -169,15 +292,33 @@ export class EventDispatcher {
     }
     if (!Array.isArray(parts)) return;
     const cb = this.callbacks;
+    // Parts normally carry their own `messageID`; the response's `info.id` is
+    // the fallback so the JSON-only mode still identifies the step it belongs to.
+    const infoId = isRecord(info) && typeof info['id'] === 'string' ? (info['id'] as string) : undefined;
     for (const raw of parts) {
       if (!isRecord(raw)) continue;
       if (!this.isAssistantMessage(this.activeSessionId, raw['messageID'])) continue;
       const type = typeof raw['type'] === 'string' ? (raw['type'] as string) : undefined;
       const id = typeof raw['id'] === 'string' ? (raw['id'] as string) : undefined;
+      const messageId = asMessageId(raw['messageID']) ?? infoId;
       if (type === 'text' && id && typeof raw['text'] === 'string') {
-        this.emitSuffix(this.sessionTextByPart, this.activeSessionId, id, raw['text'] as string, cb.onContent);
+        this.emitSuffix(
+          this.sessionTextByPart,
+          this.activeSessionId,
+          id,
+          raw['text'] as string,
+          cb.onContent,
+          messageId,
+        );
       } else if (type === 'reasoning' && id && typeof raw['text'] === 'string') {
-        this.emitSuffix(this.sessionReasoningByPart, this.activeSessionId, id, raw['text'] as string, cb.onReasoning);
+        this.emitSuffix(
+          this.sessionReasoningByPart,
+          this.activeSessionId,
+          id,
+          raw['text'] as string,
+          cb.onReasoning,
+          messageId,
+        );
       } else if (type === 'tool_call' && raw) {
         this.handleToolCallEvent(cb, raw as unknown as ToolPart);
       } else if (type === 'tool') {
@@ -258,9 +399,17 @@ export class EventDispatcher {
       types?.set(part['id'] as string, part['type'] as string);
     }
     const partType = part && typeof part['type'] === 'string' ? (part['type'] as string) : undefined;
+    const partMessageId = part ? asMessageId(part['messageID']) : undefined;
     if (partType === 'text' && part && typeof part['id'] === 'string' && typeof part['text'] === 'string') {
       if (!this.isAssistantMessage(sessionId, part['messageID'])) return;
-      this.emitSuffix(this.sessionTextByPart, sessionId, part['id'] as string, part['text'] as string, cb.onContent);
+      this.emitSuffix(
+        this.sessionTextByPart,
+        sessionId,
+        part['id'] as string,
+        part['text'] as string,
+        cb.onContent,
+        partMessageId,
+      );
       return;
     }
     if (partType === 'reasoning' && part && typeof part['id'] === 'string' && typeof part['text'] === 'string') {
@@ -271,6 +420,7 @@ export class EventDispatcher {
         part['id'] as string,
         part['text'] as string,
         cb.onReasoning,
+        partMessageId,
       );
       return;
     }
@@ -308,7 +458,7 @@ export class EventDispatcher {
       });
       const resultStr =
         typeof part['result'] === 'string' ? (part['result'] as string) : JSON.stringify(part['result']);
-      cb.onContent?.(`\n[Tool: ${name}]\n${resultStr}\n[/Tool]\n`);
+      cb.onContent?.(`\n[Tool: ${name}]\n${resultStr}\n[/Tool]\n`, partMessageId);
     }
   }
 
@@ -343,84 +493,24 @@ export class EventDispatcher {
 
   /** Emits running, completed, or failed states for an active tool. */
   private handleToolStateEvent(cb: EventCallbacks, part: ToolPart): void {
-    const rec = part as Record<string, unknown>;
-    const toolName = typeof rec['tool'] === 'string' ? (rec['tool'] as string) : 'unknown';
-    const state = isRecord(rec['state']) ? (rec['state'] as Record<string, unknown>) : undefined;
-    const status = typeof state?.['status'] === 'string' ? (state['status'] as string) : undefined;
-    const inputRec = isRecord(state?.['input']) ? (state['input'] as Record<string, unknown>) : undefined;
-    const toolArgs: unknown = inputRec?.['args'] ?? rec['args'] ?? inputRec;
-    if (status === 'running') {
-      cb.onToolEvent?.({
-        id: (rec['id'] as string) || toolName,
-        type: 'tool_result',
-        name: toolName,
-        status: 'running',
-        content: `${toolName} running...`,
-        meta: { args: toolArgs },
-      });
-    } else if (status === 'completed') {
-      const toolResult: unknown = rec['result'] ?? state?.['result'];
-      const meta: Record<string, unknown> = { result: toolResult, args: toolArgs };
-      if (toolName === 'task' && state) {
-        const metadata = isRecord(state['metadata']) ? (state['metadata'] as Record<string, unknown>) : undefined;
-        const input = inputRec;
-        if (metadata?.['sessionId']) meta['sessionId'] = metadata['sessionId'];
-        if (input?.['description']) meta['description'] = input['description'];
-        if (input?.['subagent_type']) meta['subagentType'] = input['subagent_type'];
-      }
-      if (READ_TOOLS.has(toolName)) {
-        const input = isRecord(state?.['input']) ? (state['input'] as Record<string, unknown>) : undefined;
-        const paths = extractReadPaths(toolName, input?.['args'] ?? rec['args'] ?? toolResult);
-        for (const p of paths) {
-          cb.onToolEvent?.({
-            id: `${(rec['id'] as string) || toolName}_read_${p}`,
-            type: 'file_read',
-            name: toolName,
-            status: 'completed',
-            content: `Read: ${p}`,
-            meta: { path: p, tool: toolName, result: toolResult as string | number | boolean | null | undefined },
-          });
-        }
-      }
-      cb.onToolEvent?.({
-        id: (rec['id'] as string) || toolName,
-        type: 'tool_result',
-        name: toolName,
-        status: 'completed',
-        content: toolName === 'task' ? 'Task completed' : `${toolName} completed`,
-        meta,
-      });
-      if (toolResult !== undefined && toolResult !== null && toolResult !== '') {
+    const events = toolEventsFromPart(part);
+    for (const event of events) cb.onToolEvent?.(event);
+    const failed = events.find((e) => e.type === 'tool_result' && e.status === 'failed');
+    if (failed) {
+      const error = typeof failed.meta?.['error'] === 'string' ? (failed.meta['error'] as string) : 'unknown error';
+      cb.onError?.(`${failed.name} failed: ${error}`);
+    }
+    // Completed tools also fold their result into the assistant text, so a
+    // restored session reads the same as a live one.
+    const completed = events.find((e) => e.type === 'tool_result' && e.status === 'completed');
+    if (completed) {
+      const result = completed.meta?.['result'];
+      if (result !== undefined && result !== null && result !== '') {
         cb.onContent?.(
-          `\n[${toolName} result]\n${typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)}\n[/${toolName}]\n`,
+          `\n[${completed.name} result]\n${typeof result === 'string' ? result : JSON.stringify(result, null, 2)}\n[/${completed.name}]\n`,
+          asMessageId((part as Record<string, unknown>)['messageID']),
         );
       }
-    } else if (status === 'failed') {
-      if (READ_TOOLS.has(toolName)) {
-        const input = isRecord(state?.['input']) ? (state['input'] as Record<string, unknown>) : undefined;
-        const paths = extractReadPaths(toolName, input?.['args'] ?? rec['args']);
-        for (const p of paths) {
-          cb.onToolEvent?.({
-            id: `${(rec['id'] as string) || toolName}_read_${p}`,
-            type: 'file_read',
-            name: toolName,
-            status: 'failed',
-            content: `Read failed: ${p}`,
-            meta: { path: p, tool: toolName, error: (state?.['error'] as string) || (state?.['reason'] as string) },
-          });
-        }
-      }
-      cb.onToolEvent?.({
-        id: (rec['id'] as string) || toolName,
-        type: 'tool_result',
-        name: toolName,
-        status: 'failed',
-        content: `${toolName} failed`,
-        meta: { error: (state?.['error'] as string) || (state?.['reason'] as string) },
-      });
-      cb.onError?.(
-        `${toolName} failed: ${(state?.['error'] as string) || (state?.['reason'] as string) || 'unknown error'}`,
-      );
     }
   }
 
@@ -433,20 +523,21 @@ export class EventDispatcher {
       if (!this.isAssistantMessage(sessionId, props['messageID'])) return;
       const types = this.sessionPartTypes.get(sessionId);
       const partID = typeof props['partID'] === 'string' ? (props['partID'] as string) : undefined;
+      const messageId = asMessageId(props['messageID']);
       const partType = partID ? types?.get(partID) : undefined;
       if (partType === 'reasoning') {
         if (partID) {
           const byPart = this.sessionReasoningByPart.get(sessionId);
           byPart?.set(partID, (byPart.get(partID) ?? '') + delta);
         }
-        cb.onReasoning?.(delta);
+        cb.onReasoning?.(delta, messageId);
         return;
       }
       if (partID) {
         const textByPart = this.sessionTextByPart.get(sessionId);
         textByPart?.set(partID, (textByPart.get(partID) ?? '') + delta);
       }
-      cb.onContent?.(delta);
+      cb.onContent?.(delta, messageId);
     }
   }
 
@@ -456,7 +547,8 @@ export class EventDispatcher {
     sessionId: string,
     partId: string,
     text: string,
-    emit?: (text: string) => void,
+    emit?: (text: string, messageId?: string) => void,
+    messageId?: string,
   ): void {
     if (!text) return;
     const byPart = store.get(sessionId);
@@ -466,7 +558,7 @@ export class EventDispatcher {
     const suffix = text.startsWith(emitted) ? text.slice(emitted.length) : text;
     if (!suffix) return;
     byPart.set(partId, text);
-    emit?.(suffix);
+    emit?.(suffix, messageId);
   }
 
   /**
@@ -529,14 +621,18 @@ export class EventDispatcher {
       (props['sessionID'] as string | undefined) || (props['sessionId'] as string | undefined) || sessionId;
     const permType = props['permission'] as string | undefined;
     const patternsRaw = props['patterns'];
-    const patterns = Array.isArray(patternsRaw) ? (patternsRaw as unknown[]) : [];
-    cb.onToolEvent?.({
+    const patterns = Array.isArray(patternsRaw)
+      ? (patternsRaw as unknown[]).filter((p): p is string => typeof p === 'string')
+      : [];
+    const toolEvent: ToolEvent = {
       id: permId || 'permission',
       type: 'permission',
       name: 'permission',
       status: 'running',
       content: `${permType}${patterns.length > 0 ? ' ' + patterns.join(', ') : ''}`,
       meta: { permId, permSessionId, permType, patterns },
-    });
+    };
+    this.pendingPermission = { sessionId, event: toolEvent };
+    cb.onToolEvent?.(toolEvent);
   }
 }

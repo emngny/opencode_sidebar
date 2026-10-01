@@ -15,6 +15,25 @@ export function postMessage(msg: WebviewToExtensionMessage) {
   vscode.postMessage(msg);
 }
 
+/**
+ * Reads state persisted across webview deallocations.
+ *
+ * VS Code destroys the webview document whenever the view is hidden and builds
+ * a new one on the next show, so anything the user picked — agent mode, hidden
+ * models — is gone unless it was written back through `setPersistedState`.
+ * VS Code serialises this store itself and restores it after an editor restart.
+ */
+export function getPersistedState<T extends object>(): Partial<T> {
+  const state = vscode.getState?.();
+  return state && typeof state === 'object' ? (state as Partial<T>) : {};
+}
+
+/** Merges `patch` into the persisted state. Never throws on a missing API. */
+export function setPersistedState(patch: Record<string, unknown>): void {
+  if (typeof vscode.setState !== 'function') return;
+  vscode.setState({ ...getPersistedState<object>(), ...patch });
+}
+
 export function onMessage(handler: (msg: ExtensionToWebviewMessage) => void): () => void {
   const wrapped = (event: MessageEvent) => {
     if (!isTrustedVsCodeOrigin(event.origin)) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CommandItem, BUILTIN_COMMANDS, getCommandColor } from '../slashCommands';
+import { CommandItem, BUILTIN_COMMANDS, getCommandColor, needsAgent } from '../slashCommands';
 import { COLORS, FONT_SIZE, RADIUS, popupPanel } from '../styles';
 import { useEscapeToClose } from '../hooks/useFocusTrap';
 
@@ -14,6 +14,12 @@ export function slashOptionId(index: number): string {
 interface Props {
   filter: string;
   skills: Array<{ name: string; description?: string }>;
+  /**
+   * Chat modes the server actually offers. Agent-bearing builtins the server
+   * does not list are dropped rather than shown: selecting one would switch to a
+   * mode the server has never heard of, and the next reconcile would switch back.
+   */
+  agents: string[];
   onSelect: (cmd: CommandItem) => void;
   onClose: () => void;
   /**
@@ -23,13 +29,16 @@ interface Props {
   comboboxRef?: React.RefObject<HTMLTextAreaElement>;
 }
 
-export function SlashCommandPopup({ filter, skills, onSelect, onClose, comboboxRef }: Readonly<Props>) {
+export function SlashCommandPopup({ filter, skills, agents, onSelect, onClose, comboboxRef }: Readonly<Props>) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [hoveredIndex, setHoveredIndex] = useState(-1);
   const popupRef = useRef<HTMLDivElement>(null);
+  const agentsLoaded = agents.length > 0;
 
   const items: CommandItem[] = [
-    ...BUILTIN_COMMANDS,
+    // Before the server answers, a mode-switching command cannot be routed, so
+    // only the local ones are offered instead of a list that would do nothing.
+    ...BUILTIN_COMMANDS.filter((c) => !needsAgent(c) || (agentsLoaded && agents.includes(c.agent!))),
     ...skills.map((s) => ({
       type: 'skill' as const,
       command: s.name,

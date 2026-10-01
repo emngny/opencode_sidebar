@@ -10,10 +10,11 @@ import {
   SendPromptPart,
   AgentSummary,
   getErrorMessage,
+  isRecord,
 } from '../../shared/types';
 import { ApiClient } from './ApiClient';
 import { SseStream, SSEMessage } from './SseStream';
-import { EventDispatcher, EventCallbacks, MessageMeta } from './EventDispatcher';
+import { EventDispatcher, EventCallbacks, MessageMeta, ToolEvent } from './EventDispatcher';
 import { NormalizedDiff } from '../utils/diffUtils';
 import { ServerProcessManager } from './ServerProcessManager';
 
@@ -32,12 +33,34 @@ interface ActivePrompt {
 type EventHandler = (event: SSEMessage) => void;
 
 /**
+ * Safety net for a turn that never completes. A real turn runs for as long as
+ * it needs — long tool loops and slow free-tier models regularly take ten
+ * minutes — so this is a hang detector, not a budget. When it does fire it
+ * stops the server turn as well; aborting the HTTP fetch alone leaves the
+ * session running its loop with nobody listening to the result.
+ */
+const TURN_WATCHDOG_MS = 30 * 60 * 1000;
+
+/**
+ * How long to wait for the POST body after the server reports idle. The idle
+ * event and the finished JSON body arrive together, and the body is the
+ * authoritative record of the turn, so it gets a moment to land.
+ */
+const POST_BODY_GRACE_MS = 2000;
+
+/**
  * Opencode CLI wrapper that manages the server process, HTTP API client,
  * SSE streaming, and event dispatching for the VS Code extension.
  */
 export class OpencodeCli {
   private readonly eventHandlers: Set<EventHandler> = new Set();
   private readonly activePrompts = new Map<string, ActivePrompt>();
+  /**
+   * Dispatcher per in-flight request, so an unanswered permission can be
+   * replayed into a webview that was deallocated while the view was hidden.
+   * Keyed like `activePrompts` and cleared in the same place.
+   */
+  private readonly activeDispatchers = new Map<string, EventDispatcher>();
   private readonly cwd: string | undefined;
   private readonly serverManager: ServerProcessManager;
   private apiClient: ApiClient | null = null;
@@ -91,6 +114,44 @@ export class OpencodeCli {
 
   async start(): Promise<void> {
     return this.serverManager.start();
+  }
+
+  /**
+   * Request id of the turn currently streaming in `sessionId`, or `null`.
+   *
+   * A webview is deallocated while its view is hidden, so on re-show the
+   * transcript has to be rebuilt from the server. The server keeps streaming
+   * meanwhile, and `activePrompts` already holds the correlation id the webview
+   * uses to attach incoming deltas — re-reading it here lets the rehydrated
+   * transcript attach to the live turn instead of opening a duplicate bubble.
+   */
+  getActiveRequestId(sessionId: string): string | null {
+    for (const [requestId, prompt] of this.activePrompts) {
+      if (prompt.sessionId === sessionId) return requestId;
+    }
+    return null;
+  }
+
+  /**
+   * The permission request `sessionId` is still blocked on, if any.
+   *
+   * Only the live event carries it, so a webview that was hidden when the
+   * request arrived can never recover the prompt from the session history.
+   */
+  getPendingPermission(sessionId: string): ToolEvent | null {
+    for (const [requestId, prompt] of this.activePrompts) {
+      if (prompt.sessionId !== sessionId) continue;
+      return this.activeDispatchers.get(requestId)?.getPendingPermission()?.event ?? null;
+    }
+    return null;
+  }
+
+  /** Forgets the held permission request for `sessionId`. */
+  clearPendingPermission(sessionId: string): void {
+    for (const [requestId, prompt] of this.activePrompts) {
+      if (prompt.sessionId !== sessionId) continue;
+      this.activeDispatchers.get(requestId)?.clearPendingPermission();
+    }
   }
 
   /**
@@ -186,7 +247,8 @@ export class OpencodeCli {
     sessionId: string,
     prompt: string,
     options?: {
-      onContent?: (text: string) => void;
+      /** `messageId` is the server's assistant message, so callers can split a turn into steps. */
+      onContent?: (text: string, messageId?: string) => void;
       onToolCall?: (name: string, args: unknown) => void;
       onError?: (error: string) => void;
       model?: string;
@@ -201,7 +263,7 @@ export class OpencodeCli {
         meta?: Record<string, unknown>;
       }) => void;
       onMessageMeta?: (meta: MessageMeta & { requestedModel?: string }) => void;
-      onReasoning?: (text: string) => void;
+      onReasoning?: (text: string, messageId?: string) => void;
       onDiffs?: (diffs: NormalizedDiff[]) => void;
       requestId?: string;
     },
@@ -254,18 +316,24 @@ export class OpencodeCli {
     dispatcher.resetSession(sessionId);
     const activePrompt: ActivePrompt = { requestId, sessionId, controller, finish: () => finishRequest() };
     this.activePrompts.set(requestId, activePrompt);
+    this.activeDispatchers.set(requestId, dispatcher);
 
     let messageId = '';
     const seenEventIds = new Set<string>();
     const idlePromise = new Promise<void>((resolve) => {
       let settled = false;
       let timeout: ReturnType<typeof setTimeout> | undefined;
+      let idleGrace: ReturnType<typeof setTimeout> | undefined;
+      let turnStarted = false;
+      let postDone = false;
       const onAbort = () => finish();
       const cleanup = () => {
         clearTimeout(timeout);
+        clearTimeout(idleGrace);
         controller.signal.removeEventListener('abort', onAbort);
         if (this.activePrompts.get(requestId) === activePrompt) {
           this.activePrompts.delete(requestId);
+          this.activeDispatchers.delete(requestId);
         }
         dispatcher.clearSession(sessionId);
       };
@@ -286,6 +354,25 @@ export class OpencodeCli {
         return !eventSessionId || eventSessionId === sessionId;
       };
 
+      /**
+       * `session.status` idle is the server saying the turn is over, and it
+       * arrives once per turn (measured: repeated `busy`, a single `idle`).
+       * The POST cannot carry that signal: current opencode answers it as JSON
+       * only once the turn finishes, so no response header exists until then and
+       * undici abandons the fetch after five minutes. Long turns were therefore
+       * reported as `fetch failed` while the server carried on regardless.
+       */
+      const handleIdle = (): void => {
+        if (postDone) {
+          finish();
+          return;
+        }
+        // The POST body carries the authoritative finished message and reaches
+        // us at the same moment as the idle event, so let it land first.
+        if (idleGrace) clearTimeout(idleGrace);
+        idleGrace = setTimeout(() => finish(), POST_BODY_GRACE_MS);
+      };
+
       const dispatchEvent = (event: SSEMessage) => {
         if (settled) return;
         if (event.id) {
@@ -294,21 +381,28 @@ export class OpencodeCli {
         }
         if (!isOwnEvent(event)) return;
 
-        dispatcher.dispatch(event, sessionId);
         const props = event.properties as Record<string, unknown>;
+        const status = props['status'];
+        const isIdle = event.type === 'session.status' && isRecord(status) && status['type'] === 'idle';
+        if (!isIdle) turnStarted = true;
+
+        dispatcher.dispatch(event, sessionId);
         const info = props['info'];
         const infoId =
           info && typeof info === 'object' && typeof (info as Record<string, unknown>)['id'] === 'string'
             ? ((info as Record<string, unknown>)['id'] as string)
             : undefined;
         if (!messageId && infoId) messageId = infoId;
+        if (isIdle) handleIdle();
       };
 
       // Subscribe to the server event stream to render deltas and tool events
-      // live. The POST request itself is the completion signal, so this stream
-      // never ends the prompt — it is aborted with it.
+      // live. It is also what keeps the turn alive once the POST is gone, so it
+      // reconnects for as long as the prompt runs rather than giving up.
       void this.sseStream
-        .connect(`${this.url!}/event`, { ...this.authHeader }, dispatchEvent, controller.signal)
+        .connect(`${this.url!}/event`, { ...this.authHeader }, dispatchEvent, controller.signal, {
+          maxRetries: Number.POSITIVE_INFINITY,
+        })
         .catch(() => undefined);
 
       const postUrl = `${this.url!}/session/${sessionId}/message`;
@@ -319,15 +413,22 @@ export class OpencodeCli {
         signal: controller.signal,
       })
         .then(async (response) => {
+          postDone = true;
           if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
           const contentType = response.headers.get('content-type') ?? '';
           if (contentType.includes('text/event-stream')) {
             // Older opencode versions streamed the assistant reply from the POST itself.
             await this.sseStream.parse(response, dispatchEvent, controller.signal);
           } else {
-            // Current opencode versions answer with the finished message as JSON,
-            // which is the only place the assistant text arrives in that mode.
-            const payload: unknown = await response.json().catch(() => null);
+            // Current opencode versions answer with the finished message as JSON.
+            // This is a backstop for text the event stream did not carry, not the
+            // completion signal — the turn ends on `session.status` idle.
+            let payload: unknown = null;
+            try {
+              payload = await response.json();
+            } catch {
+              payload = null;
+            }
             const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
             const info = record['info'];
             if (info && typeof info === 'object' && typeof (info as Record<string, unknown>)['id'] === 'string') {
@@ -339,14 +440,33 @@ export class OpencodeCli {
         })
         .catch((error: unknown) => {
           if (error instanceof Error && error.name === 'AbortError') return;
+          postDone = true;
+          if (turnStarted) {
+            // Our transport gave up, the server did not. undici abandons a fetch
+            // whose response headers never arrive, and this POST sends none until
+            // the turn is over, so a turn longer than that killed itself here and
+            // reported a failure for work that was still running. The event stream
+            // carries the turn to its end; idle closes it.
+            console.warn(
+              `[opencode] prompt POST ended early, continuing on the event stream: ${getErrorMessage(error)}`,
+            );
+            return;
+          }
           onError?.(`Request failed: ${getErrorMessage(error)}`);
           finish();
         });
 
       timeout = setTimeout(() => {
+        // Stop the server-side turn first. Without this the session keeps
+        // stepping through its loop after the client hangs up, burning tokens
+        // on work whose output nobody receives.
+        void this.ensureApiClient()
+          .abortSession(sessionId)
+          .catch(() => undefined);
         controller.abort();
+        onError?.('Turn exceeded the 30 minute watchdog and was stopped.');
         finish();
-      }, 120000);
+      }, TURN_WATCHDOG_MS);
     });
 
     return idlePromise.then(() => messageId);

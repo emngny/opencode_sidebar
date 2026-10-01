@@ -26,26 +26,40 @@ Two independent compilation targets under `src/`:
 
 ## Key Files
 
-| File                                         | Role                                                                                                |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `src/extension/extension.ts`                 | Activation entrypoint; registers SidebarProvider only                                               |
-| `src/extension/providers/SidebarProvider.ts` | Webview view provider; message dispatch, session management, permission prompts, skills loading     |
-| `src/extension/services/OpencodeCli.ts`      | Spawns `opencode serve --port 0`, HTTP API client, SSE streaming, diff polling, permission granting |
-| `src/extension/types.ts`                     | Shared types: ChatMessage, message types (WebviewTo/ExtensionTo), ProviderInfo, SessionDiff, etc.   |
-| `src/extension/services/readPatterns.ts`     | Deny patterns blocking reads of `.env`, secrets, `node_modules`, build artifacts                    |
-| `src/webview/App.tsx`                        | Main React app; message handler hub, model/mode/session state, revert, abort                        |
-| `src/webview/components/ChatContainer.tsx`   | Message renderer: ChatBubble, EventCard, ContextGroup, CompactionDivider, DiffPreview               |
+| File                                         | Role                                                                                                 |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `src/extension/extension.ts`                 | Activation entrypoint; registers SidebarProvider only                                                |
+| `src/extension/providers/SidebarProvider.ts` | Webview view provider; message dispatch, session management, permission prompts, skills loading      |
+| `src/extension/services/OpencodeCli.ts`      | Spawns `opencode serve --port 0`, HTTP API client, SSE streaming, diff polling, permission granting  |
+| `src/extension/types.ts`                     | Shared types: ChatMessage, message types (WebviewTo/ExtensionTo), ProviderInfo, SessionDiff, etc.    |
+| `src/extension/services/readPatterns.ts`     | Deny patterns blocking reads of `.env`, secrets, `node_modules`, build artifacts                     |
+| `src/webview/App.tsx`                        | Main React app; message handler hub, model/mode/session state, revert, abort, new chat               |
+| `src/webview/components/ChatContainer.tsx`   | Message renderer: ChatBubble, EventCard, ContextGroup, CompactionDivider, DiffPreview                |
+| `src/webview/hooks/useChatState.ts`          | Conversation state: messages, contextEvents, busy, streaming debounce buffers, `resetConversation()` |     | `src/webview/hooks/useMessageHandler.ts` | Extension → webview reducer: streaming deltas, `sessionLoaded` rehydration, permission prompts |
+| `src/webview/hooks/useModelManager.ts`       | Model/agent/skills state; persists mode, hidden models, provider panel via `setState`                |
 
 ## Critical Gotchas
 
+- **`retainContextWhenHidden` is deliberately NOT set** on the webview. VS Code deallocates the webview document whenever the view is hidden and rebuilds it on the next show, so the React app remounts empty. The extension instead rehydrates: `webviewReady` posts `sessionLoaded` (with `busy` and `activeRequestId`) for the live session, and `acquireVsCodeApi().setState()` keeps the agent mode, hidden models, and provider panel. Setting the flag would not help — VS Code documents that you _cannot_ post messages to a hidden webview even with it enabled — and it carries a high memory overhead
+- **A permission asked while the view is hidden is a deadlock risk**: the prompt only exists as a live event, and history cannot rebuild it, so the server would wait forever. `EventDispatcher` holds it, `OpencodeCli` exposes it per in-flight request, `webviewReady` replays it, and `SidebarProvider.postMessage` raises a VS Code notification while the view is hidden
 - **Model IDs use `providerId/modelId` format** (e.g., `opencode/glm-5.1`) to avoid duplicates across providers
 - **`sendPrompt` reads POST `/session/:id/message` as SSE stream** (`text/event-stream`), not JSON. Also listens to `/event` SSE endpoint. Parses `data:` lines, stops on `session.status` → `idle`
 - **`opencode serve` binary resolution** hardcoded to Windows paths in `resolveBinary()` — tries 3 candidate paths before falling back to `PATH`
 - **API keys stored in VS Code SecretStorage**, restored on startup via `_restoreApiKeys()`
 - **No auth UI** — server generates `oc-vsc-{random}` password, uses Basic Auth
 - **Permission events** sent to webview for user decision (Allow Once/Always/Deny), not auto-granted. Read prompts also appear for files matching `readPatterns.ts` deny rules
-- **Session reused** with same `currentSessionId`; `clearChat`/`abort` resets it to null, forcing a new session on next message
+- **Session reused** with same `currentSessionId`; the New Chat button / `/new` posts `clearChat`, which resets it to null and forces a new session on next message. Both `clearChat` and `abort` land on the same `abortSession()` path in `SidebarMessageHandler`; the webview side is what distinguishes them — `abort` keeps the transcript, `clearChat` also runs `resetConversation()`
 - **Event stream**: `message.part.delta` for streaming text (field=`"text"`), `message.part.updated` for tool/compaction/reasoning, `message.updated`/`session.diff` for file diffs
+- **Green in a tool card means a file changed, nothing else.** `EventCard` keys its icon and colour off `eventType` for that reason: only `file_edit` gets ✅, and it is safe because the diff stream drops zero-change entries (`ChatCoordinator.ts:63`). A finished `bash`/`lsp_diagnostics` result changes no file and stays neutral. Keying off `eventStatus` instead made the transcript read as a list of edited files
+- **Tool part → card mapping lives in exactly one place**, `toolEventsFromPart` in `EventDispatcher.ts`. The live path calls it from `handleToolStateEvent`; `SessionService` calls it to rebuild cards for a restored session. A second implementation would let the two paths drift
+- **`mapRawMessagesToChatMessages` flattens text only** and drops tool parts; `SessionService.withToolEvents` re-inserts the cards afterwards, and `withFileEdits` appends one `file_edit` per file from `GET /session/:id/diff`. That diff is cumulative, so it carries no turn and the cards go at the end of the transcript
+- **The POST is not the completion signal; `session.status` idle is.** Current opencode answers `POST /session/:id/message` with the finished message as JSON, so it sends no response header until the turn ends and undici abandons it after `headersTimeout` (300s, verified). Measured: `idle` fires exactly once per turn (`busy` repeats, `idle` does not), so it is a reliable end-of-turn marker. A POST that dies _after_ events arrived is our transport giving up, not a server failure — report nothing and let the stream finish the turn; report only when nothing ever arrived. The POST body is a backstop for text `/event` did not carry, hence the 2s grace after idle
+- **`getErrorMessage` includes `cause`.** `fetch` collapses every transport failure to `fetch failed`; without this the log says nothing actionable
+- **Never seed the agent list or the mode with a guess.** The mode reconciler in `App.tsx` treats `agents` as the truth about which modes the server offers, so a hard-coded default (`['build','plan',…]`, and `mode = 'build'`) made it "correct" a valid mode into one the server had never heard of; the real `agentList` then corrected it back, producing a `Mode "…" is not available … Switched to "…"` pair on every open. `agents` starts empty and a ref records that the server has answered. On a machine where opencode plugins own the agents, `build`/`plan`/`review` are **subagents**, not chat modes, so the guess was wrong by default
+- **An empty `agentList` is an answer, not a missing one.** `filterChatModeAgents` can return nothing, and then the reconciler must stop trusting the previous list, so `agentList` sets `agents` to `[]` rather than skipping the update
+- **A `requestId` spans a whole turn; a `serverMessageId` spans one agent step.** A turn is a sequence of opencode messages — speak, tool, speak again — so `ChatMessage.serverMessageId` keys the bubble and `EventDispatcher` threads `messageID` through `onContent`/`onReasoning`. Keying by `requestId` instead spans the whole turn: every step's text folds into the bubble opened before the tool ran, and the narration renders _above_ the tool cards. `ChatCoordinator` therefore accumulates `fullContent` per message id, and the webview appends a new bubble at the end of the transcript when it sees an id it has not seen. `ChatCoordinator` no longer posts an up-front empty assistant placeholder — it would sit there permanently empty. `streamEnd` closes every bubble of the request, not the first
+- **Restored turns are trimmed** to their last 3 routine tool cards (`RESTORED_TOOL_CARDS_PER_TURN` in `SessionService.ts`) with an `N earlier operations` card in their place. `failed`, `file_edit`, `file_read`, `permission`, and `thinking` cards are never dropped
+- **`groupFileEdits` runs at render time** in `ChatContainer`, not in state. It folds same-path `file_edit` cards within one turn and sums `added`/`deleted`; windowing still counts the raw stream so paging stays correct. A user message is a turn boundary, an assistant message is not — assistant messages interleave with tool events, and treating them as a boundary would leave the repeated cards unmerged
 - **Reasoning** arrives as `message.part.delta` with `partType === 'reasoning'`, accumulated in `ChatMessage.reasoning`, toggleable in UI
 - **Context tools** (read/glob/grep/list/webfetch/websearch/search) grouped into `ContextGroup` component; non-context tools render as `EventCard`
 - **Tool event types** in webview: `tool_call`, `tool_result`, `thinking`, `discovery`, `permission`, `compacting`, `file_edit`, `file_read`
@@ -60,6 +74,7 @@ Two independent compilation targets under `src/`:
 
 Built-in (handled in `App.tsx` + `slashCommands.ts`):
 
+- `/new` — Starts a fresh session. Agent-less command (no `agent` field), so `handleSlashCommand` handles it as a local action instead of routing it to the mode picker
 - `/init` — Creates a template `AGENTS.md` in workspace root
 - `/review` — Without text: runs `git diff --cached`, sends output for AI review. With text: switches to review mode and sends the remaining text as a prompt
 - `/plan`, `/build`, `/ask`, `/debug`, `/docs`, `/code` — Switch agent mode; any remaining text after the command is sent as a prompt in that mode

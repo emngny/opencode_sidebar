@@ -27,18 +27,33 @@ export class ChatCoordinator {
         type: 'receiveMessage',
         payload: { role: 'user', content: prompt, requestId, sessionId },
       });
-      this._postMessage({
-        type: 'receiveMessage',
-        payload: { role: 'assistant', content: '', requestId, sessionId },
-      });
-      let accumulatedContent = '';
+      // No assistant placeholder here. One turn is several server messages, and
+      // each needs its own bubble in arrival order; a bubble opened up front
+      // would be a permanent empty one sitting above the tool cards.
+      //
+      // `fullContent` is therefore accumulated per server message rather than
+      // across the turn — a single running total would paste post-tool narration
+      // into the bubble the agent spoke into before the tool ran.
+      const textByMessage = new Map<string, string>();
+      let latestContent = '';
+      const appendText = (chunk: string, key = ''): string => {
+        const next = (textByMessage.get(key) ?? '') + chunk;
+        textByMessage.set(key, next);
+        latestContent = next;
+        return next;
+      };
       await this._opencode.sendPrompt(sessionId, processed.userContent, {
         requestId,
-        onContent: (chunk) => {
-          accumulatedContent += chunk;
+        onContent: (chunk, messageId) => {
           this._postMessage({
             type: 'receiveChunk',
-            payload: { content: chunk, fullContent: accumulatedContent, requestId, sessionId },
+            payload: {
+              content: chunk,
+              fullContent: appendText(chunk, messageId),
+              messageId,
+              requestId,
+              sessionId,
+            },
           });
         },
         onError: (error) => this._postMessage({ type: 'error', payload: { message: error, requestId, sessionId } }),
@@ -47,8 +62,11 @@ export class ChatCoordinator {
         extraParts: processed.extraParts,
         onToolEvent: (event) => this._postMessage({ type: 'toolEvent', payload: { ...event, requestId, sessionId } }),
         onMessageMeta: (meta) => this._postMessage({ type: 'messageMeta', payload: { ...meta, requestId, sessionId } }),
-        onReasoning: (reasoning) =>
-          this._postMessage({ type: 'reasoningContent', payload: { content: reasoning, requestId, sessionId } }),
+        onReasoning: (reasoning, messageId) =>
+          this._postMessage({
+            type: 'reasoningContent',
+            payload: { content: reasoning, messageId, requestId, sessionId },
+          }),
         onDiffs: (diffs) => {
           for (const diff of diffs) {
             if (!diff.path || (diff.added === 0 && diff.deleted === 0)) continue;
@@ -68,7 +86,7 @@ export class ChatCoordinator {
           }
         },
       });
-      this._postMessage({ type: 'streamEnd', payload: { content: accumulatedContent, requestId, sessionId } });
+      this._postMessage({ type: 'streamEnd', payload: { content: latestContent, requestId, sessionId } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this._postMessage({ type: 'error', payload: { message, requestId, sessionId } });

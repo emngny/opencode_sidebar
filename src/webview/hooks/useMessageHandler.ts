@@ -3,7 +3,6 @@ import {
   ExtensionToWebviewMessage,
   ChatMessage,
   ProviderListResult,
-  ProviderModel,
   SavedModelPayload,
   isRecord,
 } from '../../shared/types';
@@ -45,6 +44,8 @@ interface MessageHandlerState {
     React.SetStateAction<{ filePath: string; reason: string; requestId: string } | null>
   >;
   setAgents: React.Dispatch<React.SetStateAction<string[]>>;
+  /** Marks the first `agentList` as the server's authoritative answer. */
+  onAgentsLoaded: () => void;
   processProviderList: (result: ProviderListResult) => void;
   tryAutoSelectModel: (models: ModelItem[]) => ModelSwitch | null;
 }
@@ -75,6 +76,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     setConfirmDialog,
     setReadPermissionPrompt,
     setAgents,
+    onAgentsLoaded,
     processProviderList,
     tryAutoSelectModel,
   } = state;
@@ -120,9 +122,42 @@ export function useMessageHandler(state: MessageHandlerState): void {
           break;
         }
         case 'receiveChunk': {
-          const { requestId, sessionId, fullContent } = msg.payload;
+          const { requestId, sessionId, fullContent, content, messageId } = msg.payload;
           if (!isCurrentRequest(requestId, sessionId)) break;
-          if (fullContent !== undefined) {
+          if (messageId) {
+            // One bubble per server message, appended as it arrives. Keying on
+            // requestId instead spans the whole turn, so every step's text —
+            // including the narration after a tool — would be folded into the
+            // bubble that was opened before it and appear above the tool cards.
+            cleanupStreaming(requestId);
+            flushPendingChunk(requestId);
+            setMessages((prev) => {
+              const index = prev.findIndex(
+                (message) => message.role === 'assistant' && message.serverMessageId === messageId,
+              );
+              if (index >= 0) {
+                const updated = [...prev];
+                updated[index] = {
+                  ...updated[index],
+                  content: fullContent ?? updated[index].content + content,
+                  isStreaming: true,
+                };
+                return updated;
+              }
+              const created: ChatMessage = {
+                role: 'assistant',
+                content: fullContent ?? content,
+                timestamp: Date.now(),
+                id: `srv_${messageId}`,
+                serverMessageId: messageId,
+                requestId,
+                sessionId,
+                isStreaming: true,
+              };
+              if (requestId) streamingMsgIdRef.current.set(requestId, created.id!);
+              return [...prev, created];
+            });
+          } else if (fullContent !== undefined) {
             cleanupStreaming(requestId);
             flushPendingChunk(requestId);
             setMessages((prev) => {
@@ -157,13 +192,22 @@ export function useMessageHandler(state: MessageHandlerState): void {
           cleanupStreaming(requestId);
           flushPendingChunk(requestId);
           setMessages((prev) => {
-            const index = requestId
-              ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === requestId)
-              : prev.reduce((found, message, index) => (message.role === 'assistant' ? index : found), -1);
-            if (index < 0) return prev;
-            const updated = [...prev];
-            updated[index] = { ...updated[index], isStreaming: false };
-            return updated;
+            // A turn leaves one bubble per agent step and all of them are open
+            // when it ends, so every one of them has to be closed here — not
+            // just the first.
+            let target = -1;
+            if (!requestId)
+              target = prev.reduce((found, message, index) => (message.role === 'assistant' ? index : found), -1);
+            let changed = false;
+            const updated = prev.map((message, index) => {
+              const inTurn = requestId
+                ? message.role === 'assistant' && message.requestId === requestId
+                : index === target;
+              if (!inTurn || !message.isStreaming) return message;
+              changed = true;
+              return { ...message, isStreaming: false };
+            });
+            return changed ? updated : prev;
           });
           if (requestId) streamingMsgIdRef.current.delete(requestId);
           activeRequestIdRef.current = null;
@@ -177,15 +221,19 @@ export function useMessageHandler(state: MessageHandlerState): void {
         }
         case 'sessionLoaded': {
           cleanupStreaming();
-          activeRequestIdRef.current = null;
-          activeSessionIdRef.current = null;
-          lastRequestIdRef.current = null;
-          setMessages([]);
-          const { messages: sessionMessages } = msg.payload;
-          if (Array.isArray(sessionMessages)) {
-            // SessionService already maps RawSessionMessage -> ChatMessage
-            setMessages(sessionMessages as ChatMessage[]);
-          }
+          const { sessionId, messages, busy, activeRequestId } = msg.payload;
+          // Reattach to the in-flight turn instead of starting a new one: the
+          // payload is the whole transcript, so the id the server is still
+          // streaming under has to become the active request here. Without it,
+          // the next delta finds no target message and opens a duplicate bubble
+          // for a turn that is already on screen.
+          activeRequestIdRef.current = activeRequestId ?? null;
+          lastRequestIdRef.current = activeRequestId ?? null;
+          activeSessionIdRef.current = sessionId;
+          // The webview remounts with `busy === false`, so a turn that is still
+          // running server-side would render as finished without this.
+          setBusy(busy === true);
+          setMessages(Array.isArray(messages) ? (messages as ChatMessage[]) : []);
           break;
         }
         case 'gitInfo': {
@@ -369,6 +417,39 @@ export function useMessageHandler(state: MessageHandlerState): void {
           if (!isCurrentRequest(payload.requestId, payload.sessionId)) break;
           const text = payload.content;
           if (typeof text !== 'string') break;
+          const messageId = payload.messageId;
+          if (messageId) {
+            // Reasoning opens the step before its first text delta, so the
+            // bubble is created here — it lands where the text will land.
+            setMessages((prev) => {
+              const index = prev.findIndex(
+                (message) => message.role === 'assistant' && message.serverMessageId === messageId,
+              );
+              if (index >= 0) {
+                const updated = [...prev];
+                updated[index] = {
+                  ...updated[index],
+                  reasoning: (updated[index].reasoning || '') + text,
+                  isStreaming: true,
+                };
+                return updated;
+              }
+              const created: ChatMessage = {
+                role: 'assistant',
+                content: '',
+                timestamp: Date.now(),
+                id: `srv_${messageId}`,
+                serverMessageId: messageId,
+                requestId: payload.requestId,
+                sessionId: payload.sessionId,
+                isStreaming: true,
+                reasoning: text,
+              };
+              if (payload.requestId) streamingMsgIdRef.current.set(payload.requestId, created.id!);
+              return [...prev, created];
+            });
+            break;
+          }
           setMessages((prev) => {
             const index = payload.requestId
               ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === payload.requestId)
@@ -415,8 +496,14 @@ export function useMessageHandler(state: MessageHandlerState): void {
         }
         case 'agentList': {
           const agentArray = msg.payload.agents;
+          // The list is the server's answer even when empty: an empty list means
+          // "no session-owning agents", which must stop the mode reconciler from
+          // treating the previous list as still current.
+          onAgentsLoaded();
           if (Array.isArray(agentArray) && agentArray.length > 0) {
             setAgents(agentArray);
+          } else {
+            setAgents([]);
           }
           setAgentModels(msg.payload.agentModels ?? {});
           break;
@@ -453,6 +540,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     setConfirmDialog,
     setReadPermissionPrompt,
     setAgents,
+    onAgentsLoaded,
     processProviderList,
     tryAutoSelectModel,
   ]);

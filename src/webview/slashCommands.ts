@@ -10,7 +10,25 @@ export interface CommandItem {
   skillName?: string;
 }
 
+/**
+ * True when picking this command switches the chat mode. `/new` and `/init` are
+ * local actions, `/review` only needs an agent when it is given text to review —
+ * so those must not be hidden just because the mode they would switch to is not
+ * one the server offers.
+ */
+export function needsAgent(cmd: CommandItem): boolean {
+  if (cmd.type === 'skill') return false;
+  if (cmd.command === 'new' || cmd.command === 'init') return false;
+  return Boolean(cmd.agent);
+}
+
 export const BUILTIN_COMMANDS: CommandItem[] = [
+  {
+    type: 'command',
+    command: 'new',
+    label: 'New',
+    description: 'Start a fresh chat session',
+  },
   {
     type: 'command',
     command: 'init',

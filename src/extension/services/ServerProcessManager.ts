@@ -77,7 +77,7 @@ export class ServerProcessManager {
 
   start(): Promise<void> {
     if (this.server) return Promise.resolve();
-    if (this.startPromise) return this.startPromise;
+    if (this.startPromise !== null) return this.startPromise;
 
     const epoch = this.epoch;
     let startup: Promise<void>;

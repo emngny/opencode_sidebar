@@ -128,6 +128,36 @@ export class SidebarMessageHandler {
           });
       })
       .catch(() => undefined);
+    await this.rehydrateTranscript();
+  }
+
+  /**
+   * Rebuilds the transcript for a freshly mounted webview.
+   *
+   * VS Code deallocates the webview document while the view is hidden and
+   * recreates it on the next show, so the React app remounts with an empty
+   * `messages` array even though the session is still live in the extension
+   * host and on the server. Without this the chat looks like a fresh session
+   * even though the next prompt continues the existing one.
+   */
+  private async rehydrateTranscript(): Promise<void> {
+    const sessionId = this._sessions.currentSessionId;
+    if (!sessionId) return;
+    try {
+      const activeRequestId = this._opencode.getActiveRequestId(sessionId);
+      const messages = await this._sessions.loadSession(sessionId, activeRequestId);
+      this._post({
+        type: 'sessionLoaded',
+        payload: { sessionId, messages, busy: activeRequestId !== null, activeRequestId },
+      });
+      // Replay after the transcript: the prompt is a tool event the fresh
+      // webview has never seen, and without it the server stays blocked on a
+      // decision the user cannot make.
+      const pending = this._opencode.getPendingPermission(sessionId);
+      if (pending) this._post({ type: 'toolEvent', payload: { ...pending, requestId: activeRequestId ?? undefined } });
+    } catch (error) {
+      this._post({ type: 'error', payload: { message: `Failed to restore session: ${getErrorMessage(error)}` } });
+    }
   }
 
   private async searchFiles(query: string, requestId?: string): Promise<void> {
@@ -198,6 +228,9 @@ export class SidebarMessageHandler {
         payload.remember,
       );
       if (success) {
+        // The held copy exists only to survive a hidden webview; once the
+        // decision is through, replaying it again would re-prompt the user.
+        this._opencode.clearPendingPermission(payload.permSessionId);
         this._post({
           type: 'toolEvent',
           payload: {

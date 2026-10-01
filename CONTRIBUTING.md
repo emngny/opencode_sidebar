@@ -31,6 +31,44 @@ Before opening a pull request, run:
 npm run validate
 ```
 
+## Build Commands
+
+| Command                              | Description                                                      |
+| ------------------------------------ | ---------------------------------------------------------------- |
+| `npm run compile`                    | Full build: `tsc` for the extension plus esbuild for the webview |
+| `npm run build:webview`              | Webview bundle only, outputs to `out/webview.js`                 |
+| `npx tsc -p tsconfig.extension.json` | Extension host only, outputs to `out/`                           |
+| `npx tsc -p tsconfig.webview.json`   | Webview type-check only                                          |
+| `npm run typecheck`                  | Type-check all three tsconfig targets, no emit                   |
+| `npm run watch:extension`            | `tsc --watch` for the extension host                             |
+| `npm run watch:webview`              | `esbuild --watch` for the webview bundle                         |
+| `npm test`                           | Run the Vitest suite                                             |
+| `npm run test:watch`                 | Vitest in watch mode                                             |
+| `npm run test:coverage`              | Run the suite with coverage                                      |
+| `npm run lint`                       | ESLint, zero warnings tolerated                                  |
+| `npm run format`                     | Write Prettier formatting                                        |
+| `npm run format:check`               | Check Prettier formatting                                        |
+| `npm run audit:high`                 | `npm audit` restricted to high severity                          |
+| `npm run validate`                   | The full gate: format, lint, typecheck, test, build, audit       |
+| `npm run package`                    | Package a `.vsix` with `vsce`                                    |
+
+`npm run validate` is the single command that must pass before a pull request. Run the tests serially
+(`npx vitest run --no-file-parallelism`) if the jsdom render tests fail under load — they are timing
+sensitive rather than order dependent.
+
+## Project Structure
+
+- `package.json` — single manifest for both targets, no monorepo
+- `tsconfig.extension.json` — Node.js extension target
+- `tsconfig.webview.json` — React webview target, includes `src/shared/types.ts`
+- `tsconfig.test.json` — test sources
+- `vitest.config.ts` / `vitest.setup.ts` — test runner config and jsdom setup
+- `esbuild.config.js` — webview bundler
+- `src/shared/` — the contract both targets compile against; nothing here imports `vscode` or Node APIs
+- `docs/openapi.yaml` — HTTP surface consumed by `ApiClient`
+- `docs/adr/` — architecture decision records
+- `AGENTS.md` — conventions and gotchas for agents working in this repo (gitignored)
+
 ## Change Rules
 
 - Keep extension-host code under `src/extension`; keep React/DOM code under `src/webview`.

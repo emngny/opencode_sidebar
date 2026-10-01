@@ -103,4 +103,66 @@ describe('isReadDenied', () => {
   it('should not false-positive on allowed files', () => {
     expect(isReadDenied('src/env.ts')).toBeNull();
   });
+
+  it('denies root-level files that only **/ patterns cover', () => {
+    // Regression: `**/x` compiled to `^.*/x$`, so a workspace-root path with no
+    // directory separator was never denied and got inlined without a prompt.
+    const rootFiles = [
+      'secret.txt',
+      'my_passwords.md',
+      'api_token.json',
+      'credentials.json',
+      'private.key',
+      'server.pem',
+      'bundle.min.js',
+      'styles.min.css',
+      'service-account.json',
+      'config.json.googleapis.com',
+      '.ssh/id_rsa',
+      '.aws/credentials',
+      'tokenizer.ts',
+    ];
+    for (const filePath of rootFiles) {
+      expect(isReadDenied(filePath), `expected deny for ${filePath}`).not.toBeNull();
+    }
+  });
+
+  it('denies root-level build and dependency directories', () => {
+    const rootDirFiles = [
+      'dist/index.js',
+      'build/app.js',
+      'out/main.js',
+      'node_modules/lodash/index.js',
+      '.git/HEAD',
+      '.kube/config',
+    ];
+    for (const filePath of rootDirFiles) {
+      expect(isReadDenied(filePath), `expected deny for ${filePath}`).not.toBeNull();
+    }
+  });
+
+  it('denies workspace-root .env variants', () => {
+    expect(isReadDenied('.env')).not.toBeNull();
+    expect(isReadDenied('.env.local')).not.toBeNull();
+    expect(isReadDenied('.env.production')).not.toBeNull();
+  });
+
+  it('still allows safe root-level files', () => {
+    const allowed = ['index.ts', 'README.md', 'main.js', 'styles.css', 'key.txt', 'docs/guide.md'];
+    for (const filePath of allowed) {
+      expect(isReadDenied(filePath), `expected allow for ${filePath}`).toBeNull();
+    }
+  });
+
+  it('still allows safe files in subdirectories', () => {
+    expect(isReadDenied('src/index.ts')).toBeNull();
+    expect(isReadDenied('src/utils/format.ts')).toBeNull();
+    expect(isReadDenied('assets/key.txt')).toBeNull();
+  });
+
+  it('denies absolute paths at any depth', () => {
+    expect(isReadDenied('C:/work/proj/secret.txt')).not.toBeNull();
+    expect(isReadDenied('/home/user/proj/private.key')).not.toBeNull();
+    expect(isReadDenied('C:/work/proj/dist/bundle.js')).not.toBeNull();
+  });
 });

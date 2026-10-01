@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import { getErrorMessage } from '../../shared/types';
 
 /**
  * Server-Sent Events message from the opencode server.
@@ -10,6 +11,16 @@ export interface SSEMessage {
 }
 
 export type EventCallback = (event: SSEMessage) => void;
+
+/** Retry policy for a subscription. */
+export interface SseConnectOptions {
+  /**
+   * Attempts before giving up. `Infinity` keeps a long-lived subscription alive
+   * for as long as the caller allows, which is what a prompt needs: the stream
+   * is the only thing carrying the turn once the POST has been abandoned.
+   */
+  maxRetries?: number;
+}
 
 interface SseEvent {
   data: string;
@@ -31,34 +42,46 @@ export class SseStream {
     headers: Record<string, string>,
     onEvent: EventCallback,
     signal: AbortSignal,
+    options?: SseConnectOptions,
   ): Promise<void> {
-    let attempt = 0;
+    await this.connectAttempt(url, headers, onEvent, signal, options?.maxRetries ?? this.maxRetries, 1);
+  }
 
-    while (!signal.aborted) {
-      try {
-        const response = await fetch(url, { headers, signal });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        await this.parse(response, onEvent, signal);
-        break;
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const name = err instanceof Error ? err.name : '';
-        if (name === 'AbortError' || signal.aborted) break;
-
-        attempt++;
-        if (attempt >= this.maxRetries) {
-          console.error(`[opencode:sse] ${url} failed after ${attempt} attempts:`, msg);
-          break;
-        }
-
-        const delay = this.getRetryDelay(attempt);
-        console.warn(
-          `[opencode:sse] ${url} disconnected, retrying in ${delay}ms (attempt ${attempt}/${this.maxRetries})`,
-        );
-        await this.sleep(delay, signal);
+  /**
+   * Opens the stream once and, on failure, sleeps for the backoff delay before
+   * trying again. Recursive instead of a retry loop so no `await` sits inside a
+   * loop body; attempts are sequential by nature — a retry may only start after
+   * the previous attempt failed and its backoff elapsed.
+   */
+  private async connectAttempt(
+    url: string,
+    headers: Record<string, string>,
+    onEvent: EventCallback,
+    signal: AbortSignal,
+    maxRetries: number,
+    attempt: number,
+  ): Promise<void> {
+    if (signal.aborted) return;
+    try {
+      const response = await fetch(url, { headers, signal });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
+      await this.parse(response, onEvent, signal);
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err);
+      const name = err instanceof Error ? err.name : '';
+      if (name === 'AbortError' || signal.aborted) return;
+
+      if (attempt >= maxRetries) {
+        console.error(`[opencode:sse] ${url} failed after ${attempt} attempts:`, msg);
+        return;
+      }
+
+      const delay = this.getRetryDelay(attempt);
+      console.warn(`[opencode:sse] ${url} disconnected, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`);
+      await this.sleep(delay, signal);
+      await this.connectAttempt(url, headers, onEvent, signal, maxRetries, attempt + 1);
     }
   }
 
@@ -187,7 +210,7 @@ export class SseStream {
     } catch (err: unknown) {
       const name = err instanceof Error ? err.name : '';
       if (name !== 'AbortError') {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         console.error('[opencode:sse-stream] Error:', msg);
         throw err;
       }

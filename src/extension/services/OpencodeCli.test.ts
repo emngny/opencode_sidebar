@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OpencodeCli } from './OpencodeCli';
+import { EventDispatcher, ToolEvent } from './EventDispatcher';
 
 interface TestableOpencodeCli {
   start(): Promise<void>;
@@ -16,6 +17,10 @@ interface TestableOpencodeCli {
     },
   ): Promise<string>;
   activePrompts: Map<string, { requestId: string; sessionId: string; controller: AbortController; finish: () => void }>;
+  activeDispatchers: Map<string, EventDispatcher>;
+  getActiveRequestId(sessionId: string): string | null;
+  getPendingPermission(sessionId: string): ToolEvent | null;
+  clearPendingPermission(sessionId: string): void;
   apiClient: { abortSession: ReturnType<typeof vi.fn>; updateAuth: ReturnType<typeof vi.fn> } | null;
   abortSession(sessionId: string): Promise<void>;
   sseStream: { connect: ReturnType<typeof vi.fn>; parse: ReturnType<typeof vi.fn> };
@@ -40,6 +45,9 @@ function sseResponse() {
   };
 }
 
+/** Hang detector, not a turn budget — must match TURN_WATCHDOG_MS. */
+const WATCHDOG_MS = 30 * 60 * 1000;
+
 /** Lets a test control exactly when the POST resolves, like a real slow turn. */
 function deferredJson(payload: unknown) {
   let resolve!: () => void;
@@ -52,6 +60,71 @@ function deferredJson(payload: unknown) {
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+});
+
+describe('OpencodeCli in-flight turn lookups', () => {
+  /**
+   * Seeds the private prompt map the way `sendPrompt` would, without running a
+   * real turn — the lookups under test only read these two maps.
+   */
+  function seedActiveTurn(
+    entries: Array<{ requestId: string; sessionId: string; pending?: ToolEvent }>,
+  ): TestableOpencodeCli {
+    const testable = createRunningCli() as unknown as TestableOpencodeCli;
+    for (const entry of entries) {
+      testable.activePrompts.set(entry.requestId, {
+        requestId: entry.requestId,
+        sessionId: entry.sessionId,
+        controller: new AbortController(),
+        finish: () => undefined,
+      });
+      const dispatcher = new EventDispatcher({});
+      if (entry.pending) {
+        dispatcher.dispatch(
+          {
+            id: `evt-${entry.requestId}`,
+            type: 'permission.asked',
+            properties: { id: 'perm-1', sessionID: entry.sessionId, permission: 'bash' },
+          },
+          entry.sessionId,
+        );
+      }
+      testable.activeDispatchers.set(entry.requestId, dispatcher);
+    }
+    return testable;
+  }
+
+  it('reports the streaming request id for a session', () => {
+    const testable = seedActiveTurn([{ requestId: 'req-1', sessionId: 'session-1' }]);
+    expect(testable.getActiveRequestId('session-1')).toBe('req-1');
+  });
+
+  it('returns null when the session has no turn in flight', () => {
+    const testable = seedActiveTurn([{ requestId: 'req-1', sessionId: 'session-1' }]);
+    expect(testable.getActiveRequestId('session-2')).toBeNull();
+    expect(seedActiveTurn([]).getActiveRequestId('session-1')).toBeNull();
+  });
+
+  it('exposes the permission a session is blocked on', () => {
+    const testable = seedActiveTurn([{ requestId: 'req-1', sessionId: 'session-1', pending: {} as ToolEvent }]);
+    const pending = testable.getPendingPermission('session-1');
+    expect(pending?.type).toBe('permission');
+    expect(pending?.meta?.['permId']).toBe('perm-1');
+  });
+
+  it('returns no permission for a session that was never asked', () => {
+    const testable = seedActiveTurn([{ requestId: 'req-1', sessionId: 'session-1' }]);
+    expect(testable.getPendingPermission('session-1')).toBeNull();
+  });
+
+  it('drops the held permission once it is answered', () => {
+    const testable = seedActiveTurn([{ requestId: 'req-1', sessionId: 'session-1', pending: {} as ToolEvent }]);
+    expect(testable.getPendingPermission('session-1')).not.toBeNull();
+
+    testable.clearPendingPermission('session-1');
+
+    expect(testable.getPendingPermission('session-1')).toBeNull();
+  });
 });
 
 function createRunningCli(): OpencodeCli {
@@ -115,13 +188,13 @@ describe('OpencodeCli.sendPrompt', () => {
       type: 'message.part.delta',
       properties: { sessionID: 'session-1', messageID: 'msg-assistant', partID: 'prt-1', delta: 'mer' },
     });
-    expect(onContent).toHaveBeenCalledWith('mer');
+    expect(onContent).toHaveBeenCalledWith('mer', 'msg-assistant');
 
     deferred.resolve();
     await pending;
 
     // The JSON body then contributes only the remainder, not a duplicate.
-    expect(onContent).toHaveBeenCalledWith('haba');
+    expect(onContent).toHaveBeenCalledWith('haba', 'msg-assistant');
     expect(onContent).toHaveBeenCalledTimes(2);
     expect(testable.activePrompts.size).toBe(0);
   });
@@ -165,8 +238,8 @@ describe('OpencodeCli.sendPrompt', () => {
     });
     await pending;
 
-    expect(onContent).not.toHaveBeenCalledWith('prompt');
-    expect(onContent).toHaveBeenCalledWith('ok');
+    expect(onContent.mock.calls.map((call) => call[0])).not.toContain('prompt');
+    expect(onContent).toHaveBeenCalledWith('ok', 'msg-a');
   });
 
   it('echoes the requested model next to the model the server used', async () => {
@@ -241,7 +314,7 @@ describe('OpencodeCli.sendPrompt', () => {
     await testable.sendPrompt('session-1', 'prompt', { onContent });
 
     expect(testable.sseStream.parse).toHaveBeenCalledOnce();
-    expect(onContent).toHaveBeenCalledExactlyOnceWith('hello');
+    expect(onContent).toHaveBeenCalledExactlyOnceWith('hello', undefined);
     expect(testable.activePrompts.size).toBe(0);
   });
 
@@ -281,10 +354,12 @@ describe('OpencodeCli.sendPrompt', () => {
     expect(testable.activePrompts.size).toBe(0);
   });
 
-  it('aborts request and SSE stream when prompt times out', async () => {
+  it('keeps a long turn alive, then aborts the server turn when the watchdog fires', async () => {
     vi.useFakeTimers();
     const cli = createRunningCli();
     const testable = cli as unknown as TestableOpencodeCli;
+    const abortSession = vi.fn().mockResolvedValue(undefined);
+    testable.apiClient = { abortSession, updateAuth: vi.fn() };
     let requestSignal: AbortSignal | undefined;
     let streamHandler: ((event: { id: string; type: string; properties: Record<string, unknown> }) => void) | undefined;
     testable.sseStream = {
@@ -306,12 +381,22 @@ describe('OpencodeCli.sendPrompt', () => {
     );
 
     const content = vi.fn();
-    const pending = testable.sendPrompt('session-1', 'prompt', { onContent: content });
+    const onError = vi.fn();
+    const pending = testable.sendPrompt('session-1', 'prompt', { onContent: content, onError });
     await vi.waitFor(() => expect(requestSignal).toBeDefined());
+
+    // Two minutes in, the turn is still the server's business. Cutting the
+    // fetch here is what froze the transcript mid-work.
     await vi.advanceTimersByTimeAsync(120000);
+    expect(requestSignal?.aborted).toBe(false);
+    expect(testable.activePrompts.size).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(WATCHDOG_MS - 120000);
 
     await expect(pending).resolves.toBe('');
     expect(requestSignal?.aborted).toBe(true);
+    expect(abortSession).toHaveBeenCalledWith('session-1');
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('watchdog'));
     expect(testable.activePrompts.size).toBe(0);
 
     streamHandler?.({
@@ -320,6 +405,147 @@ describe('OpencodeCli.sendPrompt', () => {
       properties: { sessionID: 'session-1', field: 'text', delta: 'late' },
     });
     expect(content).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  /**
+   * The reported failure: a turn ran 8m24s, undici's 300s headers timeout
+   * abandoned the POST, the UI showed `Request failed: fetch failed` and went
+   * idle, and the server finished the turn 84 seconds later. The POST sends no
+   * response header until the turn is over, so it is structurally incapable of
+   * surviving a long turn — the event stream has to own the turn instead.
+   */
+  it('keeps a turn alive when the POST is abandoned after undici headers timeout', async () => {
+    vi.useFakeTimers();
+    const cli = createRunningCli();
+    const testable = cli as unknown as TestableOpencodeCli;
+    let streamHandler: ((event: any) => void) | undefined;
+    testable.sseStream = {
+      connect: vi.fn((_url, _headers, handler) => {
+        streamHandler = handler;
+        return new Promise<void>(() => undefined);
+      }),
+      parse: vi.fn(),
+    };
+
+    // undici rejects with `TypeError: fetch failed` and the reason in `cause`.
+    const headersTimeout = Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error('Headers Timeout Error'), { code: 'UND_ERR_HEADERS_TIMEOUT' }),
+    });
+    let postStarted = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          postStarted = true;
+          return new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+            // Reproduce the real failure: no response headers, ever.
+            setTimeout(() => reject(headersTimeout), 300000);
+          });
+        }
+        return Promise.resolve(sseResponse());
+      }),
+    );
+
+    const onError = vi.fn();
+    const content = vi.fn();
+    const pending = testable.sendPrompt('session-1', 'do a long job', { onError, onContent: content });
+    await vi.waitFor(() => expect(postStarted).toBe(true));
+
+    // The server accepts the turn: a busy status, then real work.
+    streamHandler?.({
+      id: 'e1',
+      type: 'session.status',
+      properties: { sessionID: 'session-1', status: { type: 'busy' } },
+    });
+    await vi.advanceTimersByTimeAsync(299000);
+    expect(onError).not.toHaveBeenCalled();
+
+    // Five minutes in, undici gives up on the POST.
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(onError).not.toHaveBeenCalled();
+    // Still ours: no error, and the prompt has not resolved.
+    expect(testable.activePrompts.size).toBe(1);
+
+    // Work keeps streaming past the failure — this is what used to be lost.
+    streamHandler?.({
+      id: 'e2',
+      type: 'message.part.delta',
+      properties: { sessionID: 'session-1', messageID: 'msg-1', partID: 'p-1', delta: 'still going' },
+    });
+    expect(content).toHaveBeenCalledWith('still going', 'msg-1');
+
+    // 8m24s in, the server reports the turn is over.
+    streamHandler?.({
+      id: 'e3',
+      type: 'session.status',
+      properties: { sessionID: 'session-1', status: { type: 'idle' } },
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await expect(pending).resolves.toBe('');
+    expect(onError).not.toHaveBeenCalled();
+    expect(testable.activePrompts.size).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('still reports a POST that fails before the server accepts the turn', async () => {
+    const cli = createRunningCli();
+    const testable = cli as unknown as TestableOpencodeCli;
+    testable.sseStream = {
+      connect: vi.fn(() => new Promise<void>(() => undefined)),
+      parse: vi.fn(),
+    };
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    const onError = vi.fn();
+
+    await expect(testable.sendPrompt('session-1', 'prompt', { onError })).resolves.toBe('');
+    expect(onError).toHaveBeenCalledWith('Request failed: ECONNREFUSED');
+    expect(testable.activePrompts.size).toBe(0);
+  });
+
+  it('closes the turn on session idle when the server never answers the POST', async () => {
+    vi.useFakeTimers();
+    const cli = createRunningCli();
+    const testable = cli as unknown as TestableOpencodeCli;
+    let streamHandler: ((event: any) => void) | undefined;
+    testable.sseStream = {
+      connect: vi.fn((_url, _headers, handler) => {
+        streamHandler = handler;
+        return new Promise<void>(() => undefined);
+      }),
+      parse: vi.fn(),
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => {
+        if (init?.method !== 'POST') return Promise.resolve(sseResponse());
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        });
+      }),
+    );
+
+    const onError = vi.fn();
+    const pending = testable.sendPrompt('session-1', 'prompt', { onError });
+    await vi.waitFor(() => expect(testable.sseStream.connect).toHaveBeenCalledOnce());
+
+    streamHandler?.({
+      id: 's1',
+      type: 'session.status',
+      properties: { sessionID: 'session-1', status: { type: 'busy' } },
+    });
+    streamHandler?.({
+      id: 's2',
+      type: 'session.status',
+      properties: { sessionID: 'session-1', status: { type: 'idle' } },
+    });
+    // The body grace period expires and the turn closes on its own.
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await expect(pending).resolves.toBe('');
+    expect(onError).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -364,7 +590,7 @@ describe('OpencodeCli.sendPrompt', () => {
       type: 'message.part.delta',
       properties: { sessionID: 'session-A', field: 'text', delta: 'A' },
     });
-    await vi.waitFor(() => expect(contentA).toHaveBeenCalledWith('A'));
+    await vi.waitFor(() => expect(contentA).toHaveBeenCalledWith('A', undefined));
     expect(contentB).not.toHaveBeenCalled();
     await testable.abortSession('session-A');
     await expect(promptA).resolves.toBe('');

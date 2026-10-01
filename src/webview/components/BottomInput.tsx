@@ -18,6 +18,8 @@ interface Props {
   fileSearchQuery: string;
   onSlashCommand?: (cmd: CommandItem) => void;
   skills?: Array<{ name: string; description?: string }>;
+  /** Chat modes the server offers; filters the agent-bearing slash commands. */
+  agents?: string[];
 }
 
 export function BottomInput({
@@ -28,6 +30,7 @@ export function BottomInput({
   fileSearchQuery,
   onSlashCommand,
   skills,
+  agents,
 }: Readonly<Props>) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<ContextPart[]>([]);
@@ -225,6 +228,7 @@ export function BottomInput({
           <SlashCommandPopup
             filter={slashFilter}
             skills={skills || []}
+            agents={agents || []}
             onSelect={handleSlashSelect}
             onClose={() => setShowSlashPopup(false)}
             comboboxRef={textareaRef}

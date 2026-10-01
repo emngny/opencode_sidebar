@@ -63,4 +63,75 @@ describe('EventCard', () => {
 
     expect(header(/bash: ls/).getAttribute('aria-expanded')).toBe('true');
   });
+
+  describe('completion styling', () => {
+    const icon = (container: HTMLElement): string => container.querySelector('span')?.textContent ?? '';
+
+    it('marks a real file edit with a green tick', () => {
+      const { container } = render(<EventCard message={createMessage()} />);
+
+      expect(icon(container)).toBe('✅');
+    });
+
+    it('does not mark a finished command as a file change', () => {
+      // `lsp_diagnostics completed` changes nothing on disk. Tinting it green
+      // made the transcript read as a list of edited files.
+      const { container } = render(
+        <EventCard
+          message={createMessage({
+            eventType: 'tool_result',
+            content: 'lsp_diagnostics completed',
+            eventMeta: { name: 'lsp_diagnostics', result: 'no errors' },
+          })}
+        />,
+      );
+
+      expect(icon(container)).not.toBe('✅');
+      expect(icon(container)).toBe('🔧');
+    });
+
+    it('still marks a failed tool with the error icon', () => {
+      const { container } = render(
+        <EventCard
+          message={createMessage({
+            eventType: 'tool_result',
+            eventStatus: 'failed',
+            content: 'bash failed',
+            eventMeta: { name: 'bash', error: 'exit 1' },
+          })}
+        />,
+      );
+
+      expect(icon(container)).toBe('❌');
+    });
+  });
+
+  describe('folded file edits', () => {
+    it('shows how many edits the card stands for', () => {
+      render(<EventCard message={createMessage({ fileEditCount: 3 })} />);
+
+      expect(header(/src\/app\.ts ×3/)).toBeDefined();
+    });
+
+    it('leaves an unfolded card without a count', () => {
+      render(<EventCard message={createMessage()} />);
+
+      expect(screen.queryByText(/×/)).toBeNull();
+    });
+
+    it('reports the summed totals rather than one edit', () => {
+      // `groupFileEdits` writes the turn total into eventMeta; the card shows
+      // what is there, so the numbers must be the sum.
+      render(
+        <EventCard
+          message={createMessage({ fileEditCount: 3, eventMeta: { path: 'src/app.ts', added: 6, deleted: 2 } })}
+        />,
+      );
+
+      fireEvent.click(header());
+
+      expect(screen.getByText('+6')).toBeDefined();
+      expect(screen.getByText('-2')).toBeDefined();
+    });
+  });
 });

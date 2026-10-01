@@ -1,13 +1,28 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { GitInfo, ProviderListResult } from '../../shared/types';
-import { postMessage } from '../vscode-api';
+import { getPersistedState, postMessage, setPersistedState } from '../vscode-api';
 import { buildModelItems, ModelItem, ModelSwitch, pickAutoSelectModel } from './modelUtils';
 
 export type { ModelItem, ModelSwitch } from './modelUtils';
 
+/** UI choices the user made that have to outlive a webview deallocation. */
+interface PersistedUiState {
+  mode?: string;
+  hiddenModels?: Record<string, boolean>;
+  showProviders?: boolean;
+}
+
 export function useModelManager() {
+  // VS Code recreates the webview document when the view is hidden, so these
+  // are read back from the state VS Code persisted for us. `model` is absent on
+  // purpose: it already round-trips through the extension's workspaceState.
+  const persisted = getPersistedState<PersistedUiState>();
   const [model, setModel] = useState('');
-  const [mode, setMode] = useState('build');
+  // Left empty until the server names an agent. Defaulting to 'build' is a
+  // guess: on this machine `build` is a subagent, not a chat mode, so the
+  // reconciler would report it as unavailable and switch away from it on every
+  // open — the visible symptom of a mode flip the user never asked for.
+  const [mode, setMode] = useState(persisted.mode || '');
   const [gitInfo, setGitInfo] = useState<GitInfo>({
     branch: 'main',
     lastCommitTime: 'a minute ago',
@@ -15,7 +30,7 @@ export function useModelManager() {
   });
   const [availableModels, setAvailableModels] = useState<ModelItem[]>([]);
   const [agentModels, setAgentModels] = useState<Record<string, string>>({});
-  const [hiddenModels, setHiddenModels] = useState<Record<string, boolean>>({});
+  const [hiddenModels, setHiddenModels] = useState<Record<string, boolean>>(persisted.hiddenModels || {});
   const [providersLoaded, setProvidersLoaded] = useState(false);
   const [skills, setSkills] = useState<Array<{ name: string; description?: string }>>([]);
   const [fileSearchResults, setFileSearchResults] = useState<Array<{ name: string; path: string }>>([]);
@@ -27,7 +42,7 @@ export function useModelManager() {
     reason: string;
     requestId: string;
   } | null>(null);
-  const [showProviders, setShowProviders] = useState(false);
+  const [showProviders, setShowProviders] = useState(persisted.showProviders === true);
   const [showSessions, setShowSessions] = useState(false);
 
   const pendingRevertRef = useRef<string | null>(null);
@@ -36,7 +51,16 @@ export function useModelManager() {
 
   useEffect(() => {
     hiddenModelsRef.current = hiddenModels;
+    setPersistedState({ hiddenModels });
   }, [hiddenModels]);
+
+  useEffect(() => {
+    setPersistedState({ mode });
+  }, [mode]);
+
+  useEffect(() => {
+    setPersistedState({ showProviders });
+  }, [showProviders]);
 
   useEffect(() => {
     if (model) {
