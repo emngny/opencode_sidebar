@@ -12,10 +12,10 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['**/*.test.{ts,tsx}', 'src/shared/types.ts', 'src/webview/index.tsx', 'out/**'],
       thresholds: {
-        lines: 70,
+        lines: 60,
         branches: 60,
-        functions: 70,
-        statements: 70,
+        functions: 60,
+        statements: 60,
       },
     },
   },

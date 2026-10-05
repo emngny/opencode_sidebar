@@ -7,6 +7,7 @@
 - **Webview only:** `node esbuild.config.js`
 - **Watch:** `npm run watch:extension` (tsc) and `npm run watch:webview` (esbuild) in parallel
 - **Package:** `npx vsce package`
+- **Test:** `npm test` locally (no coverage, fast); CI's Test step runs `npm run test:coverage`, which enforces the thresholds in `vitest.config.ts` (60/60/60/60). Branch sits near the line (~60.4), so an uncovered branch fails CI — run `npm run test:coverage` before pushing when touching untested code
 - **Dependencies:** `marked` + `dompurify` (markdown), `opencode-ai` (server), `react` 18, `esbuild`
 
 ## Architecture

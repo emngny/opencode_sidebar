@@ -39,7 +39,7 @@ jobs:
         run: npm run typecheck
 
       - name: Test
-        run: npm test
+        run: npm run test:coverage
 
       - name: Compile
         run: npm run compile
