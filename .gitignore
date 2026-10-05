@@ -26,3 +26,6 @@ docs/COMPREHENSIVE_REVIEW_*.md
 docs/SECURITY_ASSESSMENT_*.md
 _cov.txt
 docs/UI_REVIEW_2026-09-27.md
+.opencode/oh-my-openagent.json.bak
+.probe.out
+.probe.err
