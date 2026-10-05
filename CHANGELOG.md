@@ -2,12 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-
-### Fixed
-
-- The `question` tool used to leave the turn stuck on `question running…` forever. opencode asks its questions through a tool that blocks until the server receives an answer, and the request only ever arrives as a live `question.asked` event — the extension never handled it, so the sidebar showed nothing interactive, the user had only Abort, and the server waited on an answer nobody could give. The event now becomes an answerable card: options toggle, a typed answer overrides its question, the reply goes to `POST /question/:id/reply`, and a card dismissed with no answers posts to `/reject`. A question that arrives while the view is hidden is rebuilt from `GET /question` on `webviewReady` and raises the same VS Code notification a blocked permission does, so neither prompt can park a turn in silence.
-
 ## [0.2.3] - 2026-10-02
 
 ### Fixed
@@ -22,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - An agent's own pinned model is now respected instead of being overridden by whatever the picker held. Every turn sent the picker model, and the picker won whenever the agent was the active one, so the pin never took effect. opencode resolves an agent's pin when a request carries no model, and it is the only party that can, so the model is now left off the request in that case. Measured on this machine: `Prometheus - Plan Builder` (pinned to `omniroute/pro-models`) ran `opencode/mimo-v2.6-flash-free` instead whenever the picker held a free-tier model
 - An agent pinned to a model the server does not publish no longer fails silently. `Sisyphus - ultraworker` is pinned to `opencode-go/normal-combo` while the catalog carries that model as `omniroute/normal-combo`, so opencode rejects every turn with `Model not found` — identically in its own TUI, since a request with no model gives the server nothing to second-guess. Trusting the pin blindly traded that error for a different one, so the pin is checked against the catalog first: when it cannot resolve, the picked model is sent as a fallback and the mismatch is reported once. The misconfiguration is still the user's to fix; it is named rather than papered over with a same-named model from another provider
 - The picker no longer lists the same command twice when a workspace skill shares a name with a server command, and `/new` appears once even when the server reports a command of that name
+- The `question` tool used to leave the turn stuck on `question running…` forever. opencode asks its questions through a tool that blocks until the server receives an answer, and the request only ever arrives as a live `question.asked` event — the extension never handled it, so the sidebar showed nothing interactive, the user had only Abort, and the server waited on an answer nobody could give. The event now becomes an answerable card: options toggle, a typed answer overrides its question, the reply goes to `POST /question/:id/reply`, and a card dismissed with no answers posts to `/reject`. A question that arrives while the view is hidden is rebuilt from `GET /question` on `webviewReady` and raises the same VS Code notification a blocked permission does, so neither prompt can park a turn in silence
 
 ### Changed
 
