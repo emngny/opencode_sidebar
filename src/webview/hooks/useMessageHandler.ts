@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import {
   ExtensionToWebviewMessage,
   ChatMessage,
+  CommandSummary,
   ProviderListResult,
   SavedModelPayload,
   isRecord,
@@ -23,6 +24,7 @@ interface MessageHandlerState {
   pendingChunkRef: React.MutableRefObject<Map<string, string>>;
   chunkFlushTimerRef: React.MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>;
   streamingMsgIdRef: React.MutableRefObject<Map<string, string>>;
+  streamingStepRef: React.MutableRefObject<Map<string, string>>;
   DEBOUNCE_MS: number;
   flushPendingChunk: (requestId?: string) => void;
   cleanupStreaming: (requestId?: string) => void;
@@ -35,6 +37,7 @@ interface MessageHandlerState {
   setHiddenModels: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setProvidersLoaded: React.Dispatch<React.SetStateAction<boolean>>;
   setSkills: React.Dispatch<React.SetStateAction<Array<{ name: string; description?: string }>>>;
+  setCommands: React.Dispatch<React.SetStateAction<CommandSummary[]>>;
   setFileSearchResults: React.Dispatch<React.SetStateAction<Array<{ name: string; path: string }>>>;
   setFileSearchQuery: React.Dispatch<React.SetStateAction<string>>;
   fileSearchRequestIdRef: React.MutableRefObject<string | null>;
@@ -58,6 +61,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     pendingChunkRef,
     chunkFlushTimerRef,
     streamingMsgIdRef,
+    streamingStepRef,
     DEBOUNCE_MS,
     flushPendingChunk,
     cleanupStreaming,
@@ -69,6 +73,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     setHiddenModels,
     setProvidersLoaded,
     setSkills,
+    setCommands,
     setFileSearchResults,
     setFileSearchQuery,
     fileSearchRequestIdRef,
@@ -122,75 +127,68 @@ export function useMessageHandler(state: MessageHandlerState): void {
           break;
         }
         case 'receiveChunk': {
-          const { requestId, sessionId, fullContent, content, messageId } = msg.payload;
+          const { requestId, sessionId, content, messageId } = msg.payload;
           if (!isCurrentRequest(requestId, sessionId)) break;
-          if (messageId) {
-            // One bubble per server message, appended as it arrives. Keying on
-            // requestId instead spans the whole turn, so every step's text —
-            // including the narration after a tool — would be folded into the
-            // bubble that was opened before it and appear above the tool cards.
-            cleanupStreaming(requestId);
-            flushPendingChunk(requestId);
-            setMessages((prev) => {
-              const index = prev.findIndex(
-                (message) => message.role === 'assistant' && message.serverMessageId === messageId,
-              );
-              if (index >= 0) {
-                const updated = [...prev];
-                updated[index] = {
-                  ...updated[index],
-                  content: fullContent ?? updated[index].content + content,
-                  isStreaming: true,
-                };
-                return updated;
-              }
-              const created: ChatMessage = {
-                role: 'assistant',
-                content: fullContent ?? content,
-                timestamp: Date.now(),
-                id: `srv_${messageId}`,
-                serverMessageId: messageId,
-                requestId,
-                sessionId,
-                isStreaming: true,
-              };
-              if (requestId) streamingMsgIdRef.current.set(requestId, created.id!);
-              return [...prev, created];
-            });
-          } else if (fullContent !== undefined) {
-            cleanupStreaming(requestId);
-            flushPendingChunk(requestId);
-            setMessages((prev) => {
-              const index = requestId
-                ? prev.findIndex((message) => message.role === 'assistant' && message.requestId === requestId)
-                : prev.reduce((found, message, index) => (message.role === 'assistant' ? index : found), -1);
-              if (index < 0) return prev;
-              const updated = [...prev];
-              updated[index] = { ...updated[index], content: fullContent, isStreaming: true };
-              return updated;
-            });
-          } else if (requestId) {
-            pendingChunkRef.current.set(
-              requestId,
-              (pendingChunkRef.current.get(requestId) || '') + msg.payload.content,
-            );
-            if (!chunkFlushTimerRef.current.has(requestId)) {
+          // Deltas go into the buffer, not the transcript: a state update per
+          // token re-parses the whole markdown on every keypress. The debounce
+          // in flushPendingChunk turns them into at most one render per 80ms.
+          const bufferChunk = (key: string) => {
+            pendingChunkRef.current.set(key, (pendingChunkRef.current.get(key) || '') + content);
+            if (!chunkFlushTimerRef.current.has(key)) {
               chunkFlushTimerRef.current.set(
-                requestId,
+                key,
                 setTimeout(() => {
-                  chunkFlushTimerRef.current.delete(requestId);
-                  if (isCurrentRequest(requestId, sessionId)) flushPendingChunk(requestId);
+                  chunkFlushTimerRef.current.delete(key);
+                  if (isCurrentRequest(requestId, sessionId)) flushPendingChunk(key);
                 }, DEBOUNCE_MS),
               );
             }
+          };
+          if (messageId) {
+            const key = requestId || messageId;
+            if (streamingStepRef.current.get(key) !== messageId) {
+              // Step boundary: flush while streamingMsgIdRef still points at
+              // the previous step's bubble, or its tail lands in this one.
+              flushPendingChunk(key);
+              streamingStepRef.current.set(key, messageId);
+              setMessages((prev) => {
+                const index = prev.findIndex(
+                  (message) => message.role === 'assistant' && message.serverMessageId === messageId,
+                );
+                if (index >= 0) {
+                  streamingMsgIdRef.current.set(key, prev[index].id!);
+                  if (prev[index].isStreaming) return prev;
+                  const updated = [...prev];
+                  updated[index] = { ...updated[index], isStreaming: true };
+                  return updated;
+                }
+                const created: ChatMessage = {
+                  role: 'assistant',
+                  content: '',
+                  timestamp: Date.now(),
+                  id: `srv_${messageId}`,
+                  serverMessageId: messageId,
+                  requestId,
+                  sessionId,
+                  isStreaming: true,
+                };
+                streamingMsgIdRef.current.set(key, created.id!);
+                return [...prev, created];
+              });
+            }
+            bufferChunk(key);
+          } else if (requestId) {
+            bufferChunk(requestId);
           }
           break;
         }
         case 'streamEnd': {
           const { requestId, sessionId } = msg.payload;
           if (!isCurrentRequest(requestId, sessionId)) break;
-          cleanupStreaming(requestId);
+          // Flush before cleanup: cleanup drops the buffer, so the reverse
+          // order would silently lose the turn's last 80ms of text.
           flushPendingChunk(requestId);
+          cleanupStreaming(requestId);
           setMessages((prev) => {
             // A turn leaves one bubble per agent step and all of them are open
             // when it ends, so every one of them has to be closed here — not
@@ -259,6 +257,8 @@ export function useMessageHandler(state: MessageHandlerState): void {
         case 'error': {
           const { requestId, sessionId } = msg.payload;
           if (!isCurrentRequest(requestId, sessionId)) break;
+          // Flush before cleanup, as in streamEnd: cleanup drops the buffer.
+          flushPendingChunk(requestId);
           cleanupStreaming(requestId);
           const content = `❌ ${msg.payload.message}`;
           setMessages((prev) => {
@@ -421,6 +421,9 @@ export function useMessageHandler(state: MessageHandlerState): void {
           if (messageId) {
             // Reasoning opens the step before its first text delta, so the
             // bubble is created here — it lands where the text will land.
+            // Flush first so the previous step's tail is not left buffered
+            // against a flush target this bubble is about to take over.
+            if (payload.requestId) flushPendingChunk(payload.requestId);
             setMessages((prev) => {
               const index = prev.findIndex(
                 (message) => message.role === 'assistant' && message.serverMessageId === messageId,
@@ -463,6 +466,12 @@ export function useMessageHandler(state: MessageHandlerState): void {
         }
         case 'skillList': {
           setSkills(msg.payload.skills || []);
+          break;
+        }
+        case 'commandList': {
+          // An empty array is the server's real answer, so it replaces the list
+          // rather than leaving a stale one on screen.
+          setCommands(msg.payload.commands || []);
           break;
         }
         case 'providerList': {
@@ -513,8 +522,8 @@ export function useMessageHandler(state: MessageHandlerState): void {
 
     return () => {
       unsubscribe();
-      cleanupStreaming();
       flushPendingChunk();
+      cleanupStreaming();
     };
   }, [
     setMessages,
@@ -523,6 +532,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     pendingChunkRef,
     chunkFlushTimerRef,
     streamingMsgIdRef,
+    streamingStepRef,
     DEBOUNCE_MS,
     flushPendingChunk,
     cleanupStreaming,
@@ -534,6 +544,7 @@ export function useMessageHandler(state: MessageHandlerState): void {
     setHiddenModels,
     setProvidersLoaded,
     setSkills,
+    setCommands,
     setFileSearchResults,
     setFileSearchQuery,
     setRevertActive,

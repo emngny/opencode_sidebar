@@ -9,6 +9,8 @@ import {
   SendPromptBody,
   SendPromptPart,
   AgentSummary,
+  CommandSummary,
+  QuestionRequest,
   getErrorMessage,
   isRecord,
 } from '../../shared/types';
@@ -197,6 +199,15 @@ export class OpencodeCli {
   async getAgents(): Promise<AgentSummary[]> {
     await this.start();
     return this.ensureApiClient().getAgents();
+  }
+
+  /**
+   * Slash commands the server offers, including skills installed outside the
+   * workspace. See `ApiClient.getCommands` for why this is not a local scan.
+   */
+  async getCommands(): Promise<CommandSummary[]> {
+    await this.start();
+    return this.ensureApiClient().getCommands();
   }
 
   async getCurrentProject(): Promise<ProjectInfo | null> {
@@ -516,6 +527,30 @@ export class OpencodeCli {
   ): Promise<boolean> {
     await this.start();
     return this.ensureApiClient().respondPermission(sessionID, permissionId, response, remember);
+  }
+
+  /**
+   * Question requests the server is still blocked on.
+   *
+   * A question blocks its turn until it is answered, and the request itself
+   * only ever arrives as a live event — the same hidden-webview problem the
+   * held permission request has, but with a list endpoint to rebuild from.
+   */
+  async listQuestions(): Promise<QuestionRequest[]> {
+    await this.start();
+    return this.ensureApiClient().listQuestions();
+  }
+
+  /** Answers a pending question request; returns false when the server rejected it. */
+  async replyQuestion(questionId: string, answers: string[][]): Promise<boolean> {
+    await this.start();
+    return this.ensureApiClient().replyQuestion(questionId, answers);
+  }
+
+  /** Dismisses a pending question request, failing its tool call server-side. */
+  async rejectQuestion(questionId: string): Promise<boolean> {
+    await this.start();
+    return this.ensureApiClient().rejectQuestion(questionId);
   }
 
   /**

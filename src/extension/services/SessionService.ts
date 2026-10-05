@@ -220,8 +220,8 @@ export class SessionService {
     const sessionId = this._currentSessionId;
     if (!sessionId) return;
     await this._opencode.abortSession(sessionId);
-    if (this._currentSessionId === sessionId) {
-      this._currentSessionId = null;
-    }
+    // Identity deliberately kept: abort stops the turn, not the conversation.
+    // Dropping it would make the next send open a fresh session while the
+    // webview still shows this one's transcript. Only clearChat drops it.
   }
 }

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useChatState } from './useChatState';
 import { useModelManager } from './useModelManager';
-import { ChatMessage, ProviderListResult } from '../../shared/types';
+import { ChatMessage, CommandSummary, ProviderListResult } from '../../shared/types';
 
 interface AppState {
   messages: ChatMessage[];
@@ -33,6 +33,8 @@ interface AppState {
   setProvidersLoaded: React.Dispatch<React.SetStateAction<boolean>>;
   skills: Array<{ name: string; description?: string }>;
   setSkills: React.Dispatch<React.SetStateAction<Array<{ name: string; description?: string }>>>;
+  commands: CommandSummary[];
+  setCommands: React.Dispatch<React.SetStateAction<CommandSummary[]>>;
   fileSearchResults: Array<{ name: string; path: string }>;
   setFileSearchResults: React.Dispatch<React.SetStateAction<Array<{ name: string; path: string }>>>;
   fileSearchQuery: string;

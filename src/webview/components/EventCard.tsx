@@ -9,6 +9,7 @@ interface Props {
   message: ChatMessage;
   onLoadSession?: (id: string) => void;
   onRespondPermission?: (permId: string, sessionId: string, response: 'allow' | 'deny', remember?: boolean) => void;
+  onRespondQuestion?: (questionId: string, answers?: string[][]) => void;
   onOpenDiff?: (filePath: string) => void;
 }
 
@@ -40,7 +41,209 @@ function formatArgs(args: unknown): React.ReactNode {
   );
 }
 
-function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpenDiff }: Readonly<Props>) {
+/**
+ * The prompt behind opencode's `question` tool.
+ *
+ * The tool blocks its turn until the server receives a reply, so this card is
+ * the only thing that can unblock it: options toggle as a multiple-choice
+ * selection, a typed answer overrides the selection for its question, and a
+ * question left with nothing selected is sent as explicitly unanswered.
+ */
+function QuestionCard({
+  message,
+  onRespond,
+}: Readonly<{ message: ChatMessage; onRespond?: (questionId: string, answers?: string[][]) => void }>) {
+  const meta = message.eventMeta;
+  const questionId = meta?.questionId ?? '';
+  const questions = meta?.questions ?? [];
+  const [submitted, setSubmitted] = React.useState<string[][] | null>(null);
+  const [dismissed, setDismissed] = React.useState(false);
+  const [selected, setSelected] = React.useState<Record<number, string[]>>({});
+  const [typed, setTyped] = React.useState<Record<number, string>>({});
+
+  const answers = submitted ?? (message.eventStatus === 'completed' ? (meta?.answers ?? []) : null);
+  const settled = dismissed || answers !== null || message.eventStatus === 'completed';
+
+  if (settled) {
+    const given = answers ?? [];
+    return (
+      <div
+        style={{
+          padding: '12px 16px',
+          backgroundColor: COLORS.successTint,
+          border: `1px solid ${COLORS.successBorder}`,
+          borderRadius: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          maxWidth: '90%',
+          alignSelf: 'flex-start',
+          fontSize: 12,
+          color: COLORS.green,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 14 }}>💬</span>
+          <span>{dismissed ? 'Question dismissed' : message.content}</span>
+        </div>
+        {given.some((labels) => labels.length > 0) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 24 }}>
+            {questions.map((question, index) =>
+              given[index]?.length ? (
+                <div key={index} style={{ color: COLORS.text }}>
+                  <span style={{ color: COLORS.textDim }}>{question.question} </span>
+                  <span>{given[index].join(', ')}</span>
+                </div>
+              ) : null,
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const toggle = (index: number, multiple: boolean | undefined, label: string): void => {
+    setSelected((prev) => {
+      const current = prev[index] ?? [];
+      if (!multiple) return { ...prev, [index]: current.length === 1 && current[0] === label ? [] : [label] };
+      return {
+        ...prev,
+        [index]: current.includes(label) ? current.filter((value) => value !== label) : [...current, label],
+      };
+    });
+  };
+
+  const submit = (): void => {
+    const next = questions.map((question, index) => {
+      const custom = (typed[index] ?? '').trim();
+      if (custom) return [custom];
+      return selected[index] ?? [];
+    });
+    setSubmitted(next);
+    onRespond?.(questionId, next);
+  };
+
+  const dismiss = (): void => {
+    setDismissed(true);
+    onRespond?.(questionId);
+  };
+
+  const optionStyle = (active: boolean): React.CSSProperties => ({
+    padding: `${SPACE.xs}px ${SPACE.md}px`,
+    fontSize: FONT_SIZE.xs,
+    borderRadius: RADIUS.pill,
+    border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
+    background: active ? COLORS.accentFill : 'transparent',
+    color: active ? COLORS.accent : COLORS.text,
+    cursor: 'pointer',
+    textAlign: 'left',
+  });
+
+  const buttonStyle: React.CSSProperties = {
+    padding: `${SPACE.xs}px 12px`,
+    fontSize: FONT_SIZE.xs,
+    borderRadius: RADIUS.md,
+    border: `1px solid ${COLORS.accentBorder}`,
+    background: COLORS.accentFill,
+    color: COLORS.accent,
+    cursor: 'pointer',
+  };
+
+  return (
+    <div
+      style={{
+        padding: '12px 16px',
+        backgroundColor: COLORS.accentTint,
+        border: `1px solid ${COLORS.accentBorder}`,
+        borderRadius: 10,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: SPACE.md,
+        maxWidth: '90%',
+        alignSelf: 'flex-start',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 14 }}>💬</span>
+        <span style={{ fontSize: FONT_SIZE.sm, color: COLORS.accent, fontWeight: 500 }}>
+          {questions.length > 1 ? `${questions.length} questions` : 'Question'}
+        </span>
+      </div>
+      {questions.map((question, index) => (
+        <div key={index} style={{ display: 'flex', flexDirection: 'column', gap: SPACE.sm }}>
+          <div style={{ fontSize: FONT_SIZE.sm, color: COLORS.text }}>
+            {questions.length > 1 && (
+              <span style={{ color: COLORS.textDim, marginRight: 6 }}>
+                Question {index + 1}/{questions.length}
+              </span>
+            )}
+            {question.question}
+          </div>
+          {(question.options ?? []).length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: SPACE.sm }}>
+              {(question.options ?? []).map((option) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  title={option.description}
+                  onClick={() => toggle(index, question.multiple, option.label)}
+                  style={optionStyle((selected[index] ?? []).includes(option.label))}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {question.custom !== false && (
+            <input
+              value={typed[index] ?? ''}
+              onChange={(event) => setTyped((prev) => ({ ...prev, [index]: event.target.value }))}
+              placeholder="Type your own answer"
+              style={{
+                padding: `${SPACE.xs}px ${SPACE.md}px`,
+                fontSize: FONT_SIZE.xs,
+                borderRadius: RADIUS.md,
+                border: `1px solid ${COLORS.border}`,
+                background: COLORS.bgLight,
+                color: COLORS.text,
+                width: '100%',
+                boxSizing: 'border-box',
+              }}
+            />
+          )}
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: SPACE.sm }}>
+        <button type="button" onClick={submit} style={buttonStyle}>
+          Send answer
+        </button>
+        <button
+          type="button"
+          onClick={dismiss}
+          style={{
+            padding: `${SPACE.xs}px 12px`,
+            fontSize: FONT_SIZE.xs,
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.border}`,
+            background: 'transparent',
+            color: COLORS.textDim,
+            cursor: 'pointer',
+          }}
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EventCardComponent({
+  message,
+  onLoadSession,
+  onRespondPermission,
+  onRespondQuestion,
+  onOpenDiff,
+}: Readonly<Props>) {
   const eventType = message.eventType;
   const status = message.eventStatus;
   const meta = message.eventMeta;
@@ -182,6 +385,10 @@ function EventCardComponent({ message, onLoadSession, onRespondPermission, onOpe
         </div>
       </div>
     );
+  }
+
+  if (eventType === 'question') {
+    return <QuestionCard message={message} onRespond={onRespondQuestion} />;
   }
 
   if (eventType === 'file_read') {

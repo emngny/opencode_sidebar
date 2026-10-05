@@ -28,6 +28,7 @@ describe('useChatState.resetConversation', () => {
       result.current.setMessages([{ role: 'assistant', content: 'partial', requestId: 'req-1' }] as never);
       result.current.pendingChunkRef.current.set('req-1', 'buffered text');
       result.current.streamingMsgIdRef.current.set('req-1', 'msg-1');
+      result.current.streamingStepRef.current.set('req-1', 'msg-1');
       result.current.chunkFlushTimerRef.current.set(
         'req-1',
         setTimeout(() => undefined, 10_000),
@@ -40,6 +41,7 @@ describe('useChatState.resetConversation', () => {
     // setMessages([]) would write the old session's text into the new chat.
     expect(result.current.pendingChunkRef.current.size).toBe(0);
     expect(result.current.streamingMsgIdRef.current.size).toBe(0);
+    expect(result.current.streamingStepRef.current.size).toBe(0);
     expect(result.current.chunkFlushTimerRef.current.size).toBe(0);
   });
 
@@ -78,6 +80,7 @@ describe('useChatState.cleanupStreaming', () => {
       result.current.pendingChunkRef.current.set('req-1', 'a');
       result.current.pendingChunkRef.current.set('req-2', 'b');
       result.current.streamingMsgIdRef.current.set('req-1', 'msg-1');
+      result.current.streamingStepRef.current.set('req-1', 'msg-1');
       result.current.chunkFlushTimerRef.current.set(
         'req-1',
         setTimeout(() => undefined, 10_000),
@@ -88,7 +91,49 @@ describe('useChatState.cleanupStreaming', () => {
 
     expect(result.current.pendingChunkRef.current.size).toBe(0);
     expect(result.current.streamingMsgIdRef.current.size).toBe(0);
+    expect(result.current.streamingStepRef.current.size).toBe(0);
     expect(clearTimeoutSpy).toHaveBeenCalled();
     clearTimeoutSpy.mockRestore();
+  });
+});
+
+describe('useChatState.flushPendingChunk', () => {
+  it('appends the buffered tail to the bubble the streaming ref maps to', () => {
+    const { result } = renderHook(() => useChatState());
+
+    act(() => {
+      result.current.setMessages([
+        { role: 'assistant', content: 'Look', id: 'srv-1', requestId: 'req-1', isStreaming: true },
+        { role: 'user', content: 'other turn', requestId: 'req-2' },
+      ] as never);
+      result.current.streamingMsgIdRef.current.set('req-1', 'srv-1');
+      result.current.streamingStepRef.current.set('req-1', 'msg-1');
+      result.current.pendingChunkRef.current.set('req-1', 'ing now.');
+    });
+
+    act(() => result.current.flushPendingChunk('req-1'));
+
+    expect(result.current.messages[0].content).toBe('Looking now.');
+    expect(result.current.messages[0].isStreaming).toBe(true);
+    expect(result.current.messages[1].content).toBe('other turn');
+    expect(result.current.pendingChunkRef.current.size).toBe(0);
+    expect(result.current.chunkFlushTimerRef.current.size).toBe(0);
+  });
+
+  it('leaves the transcript alone when the buffer for the key is empty', () => {
+    const { result } = renderHook(() => useChatState());
+
+    act(() => {
+      result.current.setMessages([
+        { role: 'assistant', content: 'finished', id: 'srv-2', requestId: 'req-3', isStreaming: false },
+      ] as never);
+      result.current.streamingMsgIdRef.current.set('req-3', 'srv-2');
+      result.current.pendingChunkRef.current.set('req-3', '');
+    });
+
+    act(() => result.current.flushPendingChunk('req-3'));
+
+    expect(result.current.messages[0].content).toBe('finished');
+    expect(result.current.messages[0].isStreaming).toBe(false);
   });
 });

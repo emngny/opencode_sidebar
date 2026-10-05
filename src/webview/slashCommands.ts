@@ -1,5 +1,6 @@
 import { getAgentColor } from './components/agentColors';
 import { withAlpha } from './styles';
+import type { CommandSummary } from '../shared/types';
 
 export interface CommandItem {
   type: 'command' | 'skill';
@@ -22,6 +23,15 @@ export function needsAgent(cmd: CommandItem): boolean {
   return Boolean(cmd.agent);
 }
 
+/**
+ * Commands this extension implements itself, independent of the server.
+ *
+ * Everything else comes from `GET /command`. This list deliberately holds only
+ * behaviour that lives in the extension — a fresh session, the `AGENTS.md`
+ * scaffold — and no agent-named entries: a hard-coded `plan`/`build`/`ask`
+ * cannot know what the server calls its modes, and offering one the server
+ * never heard of produced a command that silently did nothing.
+ */
 export const BUILTIN_COMMANDS: CommandItem[] = [
   {
     type: 'command',
@@ -34,28 +44,60 @@ export const BUILTIN_COMMANDS: CommandItem[] = [
     command: 'init',
     label: 'Init',
     description: 'Guided AGENTS.md setup for the workspace',
-    agent: 'build',
-  },
-  { type: 'command', command: 'review', label: 'Review', description: 'Review uncommitted changes', agent: 'review' },
-  {
-    type: 'command',
-    command: 'plan',
-    label: 'Plan',
-    description: 'Read-only analysis and code exploration',
-    agent: 'plan',
-  },
-  { type: 'command', command: 'build', label: 'Build', description: 'Full-access development agent', agent: 'build' },
-  { type: 'command', command: 'ask', label: 'Ask', description: 'Quick questions about the codebase', agent: 'ask' },
-  { type: 'command', command: 'debug', label: 'Debug', description: 'Debug issues and errors', agent: 'debug' },
-  { type: 'command', command: 'docs', label: 'Docs', description: 'Generate and improve documentation', agent: 'docs' },
-  {
-    type: 'command',
-    command: 'code',
-    label: 'Code',
-    description: 'Code quality review and suggestions',
-    agent: 'code',
   },
 ];
+
+/**
+ * Builds the picker list from the server's command index.
+ *
+ * Server entries win over the local builtins of the same name, so `init` and
+ * `review` resolve to the richer server template instead of the extension's
+ * thinner local behaviour. `/new` is the exception: it is a local action that
+ * resets the session, and a server command of that name would not do that. It
+ * replaces any same-named server entry rather than being added beside it, which
+ * otherwise put two identical `/new` rows in the picker.
+ */
+export function buildCommandItems(
+  commands: CommandSummary[],
+  skills: Array<{ name: string; description?: string }>,
+): CommandItem[] {
+  const items: CommandItem[] = [];
+  const added = new Set<string>();
+
+  for (const command of commands) {
+    if (command.name === 'new') continue;
+    if (added.has(command.name)) continue;
+    added.add(command.name);
+    items.push({
+      type: command.source === 'skill' ? 'skill' : 'command',
+      command: command.name,
+      label: command.name,
+      description: command.description || (command.source === 'skill' ? 'Skill instructions' : 'Command'),
+      agent: command.agent,
+      skillName: command.source === 'skill' ? command.name : undefined,
+    });
+  }
+
+  for (const skill of skills) {
+    if (added.has(skill.name)) continue;
+    added.add(skill.name);
+    items.push({
+      type: 'skill',
+      command: skill.name,
+      label: skill.name,
+      description: skill.description || 'Skill instructions',
+      skillName: skill.name,
+    });
+  }
+
+  for (const builtin of BUILTIN_COMMANDS) {
+    if (added.has(builtin.command)) continue;
+    added.add(builtin.command);
+    items.push(builtin);
+  }
+
+  return items;
+}
 
 export function getCommandColor(cmd: CommandItem): { bg: string; text: string; border: string } | null {
   if (cmd.type === 'skill') {

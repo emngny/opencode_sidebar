@@ -29,6 +29,7 @@ describe('Extension-Webview Message Protocol', () => {
         'unrevert',
         'respondPermission',
         'respondReadPermission',
+        'respondQuestion',
         'openDiff',
         'openExternal',
         'runCommand',
@@ -53,6 +54,7 @@ describe('Extension-Webview Message Protocol', () => {
         'sessionLoaded',
         'sessionDeleted',
         'agentList',
+        'commandList',
         'error',
         'providerList',
         'providerUpdated',
@@ -99,7 +101,6 @@ describe('Extension-Webview Message Protocol', () => {
     it('should validate receiveChunk payload structure', () => {
       const validPayload: ExtensionToWebviewMessage['payload'] = {
         content: 'Hello',
-        fullContent: 'Hello world',
       };
 
       expect(validPayload.content).toBeDefined();

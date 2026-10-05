@@ -3,7 +3,11 @@ import {
   AgentRaw,
   AgentSummary,
   mapAgentSummaries,
+  CommandRaw,
+  CommandSummary,
+  mapCommandSummaries,
   ProviderAuthMap,
+  QuestionRequest,
   RawSessionMessage,
   SendPromptBody,
   isRecord,
@@ -111,6 +115,30 @@ export class ApiClient {
       }
       if (isRecord(result) && Array.isArray(result['agents'])) {
         return mapAgentSummaries(result['agents'] as AgentRaw[]);
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Lists the slash commands the server offers.
+   *
+   * This is the only complete source: the server merges its own commands with
+   * every skill it found across the global roots and plugin packages, so
+   * commands like `brainstorming` or `brainstorm-plan` — which live outside the
+   * workspace — exist here and nowhere else. Returns `[]` on failure so a
+   * missing list degrades to the local builtins instead of an empty picker.
+   */
+  async getCommands(): Promise<CommandSummary[]> {
+    try {
+      const result = await this.fetch<unknown>('/command');
+      if (Array.isArray(result)) {
+        return mapCommandSummaries(result as CommandRaw[]);
+      }
+      if (isRecord(result) && Array.isArray(result['commands'])) {
+        return mapCommandSummaries(result['commands'] as CommandRaw[]);
       }
       return [];
     } catch {
@@ -241,6 +269,45 @@ export class ApiClient {
       }
     } catch (err: unknown) {
       console.error('[opencode] Failed to grant permission:', getErrorMessage(err));
+    }
+  }
+
+  /**
+   * Question requests the server is still blocked on.
+   *
+   * The `question.asked` event only arrives live, so a webview remounted after
+   * the view was hidden cannot rebuild the prompt from the transcript; this is
+   * how the pending one is found again.
+   */
+  async listQuestions(): Promise<QuestionRequest[]> {
+    return this.fetch('/question');
+  }
+
+  /** Answers a pending question request. Answers are labels, in question order. */
+  async replyQuestion(questionId: string, answers: string[][]): Promise<boolean> {
+    try {
+      const url = `${this.baseUrl}/question/${questionId}/reply`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.authHeader },
+        body: JSON.stringify({ answers }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async rejectQuestion(questionId: string): Promise<boolean> {
+    try {
+      const url = `${this.baseUrl}/question/${questionId}/reject`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.authHeader },
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 

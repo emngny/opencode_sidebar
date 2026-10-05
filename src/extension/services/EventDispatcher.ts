@@ -1,6 +1,6 @@
 import { SSEMessage } from './SseStream';
 import { NormalizedDiff, normalizeDiff } from '../utils/diffUtils';
-import { isRecord, ToolPart } from '../../shared/types';
+import { isRecord, QuestionInfo, ToolPart } from '../../shared/types';
 
 export interface ToolEvent {
   id: string;
@@ -33,6 +33,13 @@ export interface EventCallbacks {
 }
 
 const READ_TOOLS = new Set(['read', 'grep', 'glob', 'list', 'webfetch']);
+
+/**
+ * Events that block the server on an answer the user has to give, and that
+ * therefore must not be dropped when they name a session other than the one
+ * the prompt is running under.
+ */
+const INTERACTIVE_EVENTS = new Set(['permission.asked', 'question.asked']);
 
 /**
  * Reads `messageID` off a raw event payload.
@@ -216,6 +223,37 @@ export function toolEventsFromPart(part: ToolPart): ToolEvent[] {
   return events;
 }
 
+/**
+ * Builds the interactive card for a `question.asked` request.
+ *
+ * The `question` tool blocks its turn until the server receives a reply, and
+ * the request only ever arrives as a live event — so both the live path and a
+ * session restored through `GET /question` go through here, and a remounted
+ * webview renders the same prompt a live one did.
+ *
+ * Returns null for a malformed request rather than an interactive card with
+ * nothing to answer.
+ */
+export function questionEventFromRequest(info: unknown): ToolEvent | null {
+  if (!isRecord(info)) return null;
+  const id = typeof info['id'] === 'string' ? info['id'] : undefined;
+  const questions = Array.isArray(info['questions'])
+    ? (info['questions'] as unknown[]).filter(
+        (q): q is QuestionInfo => isRecord(q) && typeof q['question'] === 'string',
+      )
+    : [];
+  if (!id || questions.length === 0) return null;
+  const first = questions[0].question;
+  return {
+    id,
+    type: 'question',
+    name: 'question',
+    status: 'running',
+    content: questions.length > 1 ? `${first} (+${questions.length - 1} more)` : first,
+    meta: { questionId: id, questions },
+  };
+}
+
 export class EventDispatcher {
   private readonly callbacks: EventCallbacks;
   private readonly sessionPartTypes: Map<string, Map<string, string>> = new Map();
@@ -333,8 +371,10 @@ export class EventDispatcher {
     const eventSessionId = typeof eventSessionIdRaw === 'string' ? eventSessionIdRaw : undefined;
     // Only filter when the event explicitly belongs to a different session.
     // permission.asked carries its own sessionId that may differ from the
-    // caller's sessionId — don't drop it.
-    if (eventSessionId && eventSessionId !== sessionId && event.type !== 'permission.asked') return;
+    // caller's sessionId — don't drop it. question.asked comes from the
+    // session that asked, including a sub-agent's, and dropping it would leave
+    // the server blocked on a question nobody can see.
+    if (eventSessionId && eventSessionId !== sessionId && !INTERACTIVE_EVENTS.has(event.type)) return;
     this.handleMessageMeta(event);
     switch (event.type) {
       case 'message.part.updated':
@@ -357,6 +397,9 @@ export class EventDispatcher {
         break;
       case 'permission.asked':
         this.handlePermissionAsked(event, sessionId);
+        break;
+      case 'question.asked':
+        this.handleQuestionAsked(event);
         break;
     }
   }
@@ -498,7 +541,10 @@ export class EventDispatcher {
     const failed = events.find((e) => e.type === 'tool_result' && e.status === 'failed');
     if (failed) {
       const error = typeof failed.meta?.['error'] === 'string' ? (failed.meta['error'] as string) : 'unknown error';
-      cb.onError?.(`${failed.name} failed: ${error}`);
+      // A dismissed question is the user's own decision, so the failure card
+      // carries it; reporting it as an error too would render it a third time.
+      const dismissed = failed.name === 'question' && /dismissed/i.test(error);
+      if (!dismissed) cb.onError?.(`${failed.name} failed: ${error}`);
     }
     // Completed tools also fold their result into the assistant text, so a
     // restored session reads the same as a live one.
@@ -634,5 +680,11 @@ export class EventDispatcher {
     };
     this.pendingPermission = { sessionId, event: toolEvent };
     cb.onToolEvent?.(toolEvent);
+  }
+
+  /** Turns a `question.asked` request into the card the user answers. */
+  private handleQuestionAsked(event: SSEMessage): void {
+    const questionEvent = questionEventFromRequest(event.properties);
+    if (questionEvent) this.callbacks.onToolEvent?.(questionEvent);
   }
 }

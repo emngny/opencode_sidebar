@@ -16,7 +16,11 @@ vi.mock('vscode', () => ({
 }));
 
 function createHandler(
-  sessions: { abort?: ReturnType<typeof vi.fn>; [key: string]: ReturnType<typeof vi.fn> } = { abort: vi.fn() },
+  sessions: {
+    abort?: ReturnType<typeof vi.fn>;
+    currentSessionId?: string | null;
+    [key: string]: unknown;
+  } = { abort: vi.fn() },
   post = vi.fn(),
 ) {
   return new SidebarMessageHandler(
@@ -33,17 +37,22 @@ function createHandler(
 }
 
 describe('SidebarMessageHandler', () => {
-  it('delegates abort by clearing the active session', async () => {
-    const sessions = { abort: vi.fn() };
+  it('delegates abort without dropping the session identity', async () => {
+    // The transcript on screen still belongs to this session; dropping the id
+    // would make the next send open a fresh session under the old history.
+    const sessions = { abort: vi.fn(), currentSessionId: 'session-1' };
     const handler = createHandler(sessions);
+
     await handler.dispatch({ type: 'abort' });
+
     expect(sessions.abort).toHaveBeenCalledOnce();
+    expect(sessions.currentSessionId).toBe('session-1');
   });
 
   it('routes clearChat to abort without re-sending history to the webview', async () => {
     // The webview already cleared its own transcript; posting messages back
     // here would repopulate the fresh session with the old conversation.
-    const sessions = { abort: vi.fn() };
+    const sessions = { abort: vi.fn(), currentSessionId: 'session-1' };
     const post = vi.fn();
     const handler = createHandler(sessions, post);
 
@@ -51,6 +60,15 @@ describe('SidebarMessageHandler', () => {
 
     expect(sessions.abort).toHaveBeenCalledOnce();
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it('drops the session identity on clearChat so the next prompt starts fresh', async () => {
+    const sessions = { abort: vi.fn(), currentSessionId: 'session-1' };
+    const handler = createHandler(sessions);
+
+    await handler.dispatch({ type: 'clearChat' });
+
+    expect(sessions.currentSessionId).toBeNull();
   });
 
   it('reports no error when clearChat arrives without an active session', async () => {
@@ -63,51 +81,56 @@ describe('SidebarMessageHandler', () => {
     expect(post).toHaveBeenCalledWith({ type: 'error', payload: { message: 'Abort failed: no active session' } });
   });
 
-  describe('transcript rehydration on webviewReady', () => {
-    /**
-     * VS Code rebuilds the webview document whenever the view becomes visible
-     * again, so the app remounts empty while the session is still live.
-     */
-    function readyHandler(options: {
-      currentSessionId?: string | null;
-      activeRequestId?: string | null;
-      pendingPermission?: unknown;
-      loadSession?: ReturnType<typeof vi.fn>;
-    }) {
-      const post = vi.fn();
-      const opencode = {
-        start: vi.fn().mockResolvedValue(undefined),
-        getCurrentProject: vi.fn().mockResolvedValue(null),
-        getPath: vi.fn().mockResolvedValue(null),
-        getVcsInfo: vi.fn().mockResolvedValue(null),
-        listProviders: vi.fn().mockResolvedValue({ all: [], connected: [], default: {} }),
-        getAgents: vi.fn().mockResolvedValue([]),
-        getActiveRequestId: vi.fn().mockReturnValue(options.activeRequestId ?? null),
-        getPendingPermission: vi.fn().mockReturnValue(options.pendingPermission ?? null),
-      };
-      const sessions = {
-        abort: vi.fn(),
-        get currentSessionId() {
-          return options.currentSessionId ?? null;
-        },
-        set currentSessionId(_v: string | null) {},
-        loadSession: options.loadSession ?? vi.fn().mockResolvedValue([{ role: 'user', content: 'hi' }]),
-        listSessions: vi.fn().mockResolvedValue([]),
-      };
-      const handler = new SidebarMessageHandler(
-        opencode as never,
-        sessions as never,
-        {} as never,
-        { restoreApiKeys: vi.fn() } as never,
-        { list: vi.fn().mockReturnValue([]) } as never,
-        {} as never,
-        { get: vi.fn(), update: vi.fn() } as never,
-        post,
-        {} as never,
-      );
-      return { handler, post, opencode, sessions };
-    }
+  /**
+   * VS Code rebuilds the webview document whenever the view becomes visible
+   * again, so the app remounts empty while the session is still live. Every
+   * pending-request replay below runs against this same fixture.
+   */
+  function readyHandler(options: {
+    currentSessionId?: string | null;
+    activeRequestId?: string | null;
+    pendingPermission?: unknown;
+    pendingQuestions?: unknown[];
+    loadSession?: ReturnType<typeof vi.fn>;
+  }) {
+    const post = vi.fn();
+    const opencode = {
+      start: vi.fn().mockResolvedValue(undefined),
+      getCurrentProject: vi.fn().mockResolvedValue(null),
+      getPath: vi.fn().mockResolvedValue(null),
+      getVcsInfo: vi.fn().mockResolvedValue(null),
+      listProviders: vi.fn().mockResolvedValue({ all: [], connected: [], default: {} }),
+      getAgents: vi.fn().mockResolvedValue([]),
+      getActiveRequestId: vi.fn().mockReturnValue(options.activeRequestId ?? null),
+      getPendingPermission: vi.fn().mockReturnValue(options.pendingPermission ?? null),
+      listQuestions: vi.fn().mockResolvedValue(options.pendingQuestions ?? []),
+      replyQuestion: vi.fn().mockResolvedValue(true),
+      rejectQuestion: vi.fn().mockResolvedValue(true),
+    };
+    const sessions = {
+      abort: vi.fn(),
+      get currentSessionId() {
+        return options.currentSessionId ?? null;
+      },
+      set currentSessionId(_v: string | null) {},
+      loadSession: options.loadSession ?? vi.fn().mockResolvedValue([{ role: 'user', content: 'hi' }]),
+      listSessions: vi.fn().mockResolvedValue([]),
+    };
+    const handler = new SidebarMessageHandler(
+      opencode as never,
+      sessions as never,
+      {} as never,
+      { restoreApiKeys: vi.fn() } as never,
+      { list: vi.fn().mockReturnValue([]) } as never,
+      {} as never,
+      { get: vi.fn(), update: vi.fn() } as never,
+      post,
+      {} as never,
+    );
+    return { handler, post, opencode, sessions };
+  }
 
+  describe('transcript rehydration on webviewReady', () => {
     it('restores the transcript for a live session', async () => {
       const { handler, post, opencode, sessions } = readyHandler({ currentSessionId: 'session-1' });
 
@@ -173,6 +196,33 @@ describe('SidebarMessageHandler', () => {
       expect(post.mock.calls.some(([m]) => m.type === 'toolEvent')).toBe(false);
     });
 
+    it('replays a question the hidden webview never saw', async () => {
+      // The question tool blocks its turn until it is answered, and the request
+      // only ever arrives as a live event, so the remount has to rebuild it.
+      const { handler, post } = readyHandler({
+        currentSessionId: 'session-1',
+        activeRequestId: 'req-9',
+        pendingQuestions: [
+          {
+            id: 'que_1',
+            sessionID: 'session-1',
+            questions: [{ question: 'Which target?', options: [{ label: 'main' }] }],
+          },
+          { id: 'que_2', sessionID: 'other-session', questions: [{ question: 'Not ours?' }] },
+        ],
+      });
+
+      await handler.dispatch({ type: 'webviewReady' });
+
+      const replay = post.mock.calls.filter(([m]) => m.type === 'toolEvent').map(([m]) => m.payload);
+      expect(replay).toHaveLength(1);
+      expect(replay[0]).toMatchObject({ id: 'que_1', type: 'question', requestId: 'req-9', sessionId: 'session-1' });
+      // After the transcript, or the card would be dropped with nothing to
+      // attach to.
+      const order = post.mock.calls.map(([m]) => m.type);
+      expect(order.indexOf('sessionLoaded')).toBeLessThan(order.indexOf('toolEvent'));
+    });
+
     it('surfaces a restore failure without breaking the rest of ready', async () => {
       const { handler, post } = readyHandler({
         currentSessionId: 'session-1',
@@ -187,6 +237,64 @@ describe('SidebarMessageHandler', () => {
       });
       // projectInfo still went out.
       expect(post.mock.calls.some(([m]) => m.type === 'projectInfo')).toBe(true);
+    });
+  });
+
+  describe('answering a question', () => {
+    it('replies with one answer list per question, in order', async () => {
+      const { handler, post, opencode } = readyHandler({ currentSessionId: 'session-1' });
+
+      await handler.dispatch({
+        type: 'respondQuestion',
+        payload: { questionId: 'que_1', answers: [['develop'], []] },
+      });
+
+      expect(opencode.replyQuestion).toHaveBeenCalledWith('que_1', [['develop'], []]);
+      expect(opencode.rejectQuestion).not.toHaveBeenCalled();
+      // The interactive card settles in place rather than leaving a second one.
+      const settled = post.mock.calls.filter(([m]) => m.type === 'toolEvent').map(([m]) => m.payload);
+      expect(settled).toHaveLength(1);
+      expect(settled[0]).toMatchObject({
+        id: 'que_1',
+        type: 'question',
+        status: 'completed',
+        content: 'Question answered',
+      });
+    });
+
+    it('rejects the request when the card is dismissed', async () => {
+      const { handler, opencode } = readyHandler({ currentSessionId: 'session-1' });
+
+      await handler.dispatch({ type: 'respondQuestion', payload: { questionId: 'que_1' } });
+
+      expect(opencode.rejectQuestion).toHaveBeenCalledWith('que_1');
+      expect(opencode.replyQuestion).not.toHaveBeenCalled();
+    });
+
+    it('reports an answer the server refused', async () => {
+      const post = vi.fn();
+      const opencode = { replyQuestion: vi.fn().mockResolvedValue(false) };
+      const handler = new SidebarMessageHandler(
+        opencode as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        { get: vi.fn(), update: vi.fn() } as never,
+        post,
+        {} as never,
+      );
+
+      await handler.dispatch({
+        type: 'respondQuestion',
+        payload: { questionId: 'que_1', answers: [['main']] },
+      });
+
+      expect(post).toHaveBeenCalledWith({
+        type: 'error',
+        payload: { message: 'Failed to answer question (que_1)' },
+      });
     });
   });
 
@@ -294,6 +402,131 @@ describe('SidebarMessageHandler', () => {
     await handler.dispatch({ type: 'runCommand', payload: { command: 'init' } });
 
     expect(post).toHaveBeenCalledWith({ type: 'status', payload: { status: 'idle' } });
+  });
+
+  describe('server command turns', () => {
+    function createCommandHandler(chat: { processPrompt: ReturnType<typeof vi.fn> }, post = vi.fn()) {
+      return new SidebarMessageHandler(
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        chat as never,
+        { get: vi.fn(), update: vi.fn() } as never,
+        post,
+        {} as never,
+      );
+    }
+
+    /**
+     * A command turn bypasses `sendMessage`, so nothing resolved the model for
+     * it. Without one the server fell back to its default agent, which pins
+     * `opencode-go/normal-combo` — absent from the catalog — and the turn died
+     * with `ProviderModelNotFoundError` before it started. This is that failure.
+     */
+    it('carries the resolved model into the turn', async () => {
+      const chat = { processPrompt: vi.fn().mockResolvedValue(undefined) };
+      const handler = createCommandHandler(chat);
+
+      await handler.dispatch({
+        type: 'runCommand',
+        payload: {
+          command: 'brainstorm-plan',
+          args: 'add auth',
+          isCommand: true,
+          model: 'opencode/mimo-v2.6-flash-free',
+        },
+      });
+
+      expect(chat.processPrompt).toHaveBeenCalledWith(
+        '/brainstorm-plan add auth',
+        expect.any(String),
+        undefined,
+        'opencode/mimo-v2.6-flash-free',
+      );
+    });
+
+    it('runs a command that pins an agent under that agent', async () => {
+      const chat = { processPrompt: vi.fn().mockResolvedValue(undefined) };
+      const handler = createCommandHandler(chat);
+
+      await handler.dispatch({
+        type: 'runCommand',
+        payload: {
+          command: 'start-work',
+          isCommand: true,
+          agent: 'Atlas - Plan Executor',
+          mode: 'Sisyphus - ultraworker',
+          model: 'omniroute/pro-models',
+        },
+      });
+
+      expect(chat.processPrompt).toHaveBeenCalledWith(
+        '/start-work',
+        'Atlas - Plan Executor',
+        undefined,
+        'omniroute/pro-models',
+      );
+    });
+
+    it('inherits the active mode when the command pins none', async () => {
+      const chat = { processPrompt: vi.fn().mockResolvedValue(undefined) };
+      const handler = createCommandHandler(chat);
+
+      await handler.dispatch({
+        type: 'runCommand',
+        payload: {
+          command: 'brainstorming',
+          isCommand: true,
+          mode: 'Prometheus - Plan Builder',
+          model: 'opencode/mimo',
+        },
+      });
+
+      expect(chat.processPrompt).toHaveBeenCalledWith(
+        '/brainstorming',
+        'Prometheus - Plan Builder',
+        undefined,
+        'opencode/mimo',
+      );
+    });
+
+    it('carries the model into a workspace skill turn', async () => {
+      const chat = { processPrompt: vi.fn().mockResolvedValue(undefined) };
+      const skills = { load: vi.fn().mockReturnValue('# Alpha') };
+      const handler = new SidebarMessageHandler(
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        skills as never,
+        chat as never,
+        { get: vi.fn(), update: vi.fn() } as never,
+        vi.fn(),
+        {} as never,
+      );
+
+      await handler.dispatch({
+        type: 'runCommand',
+        payload: {
+          command: 'alpha',
+          args: 'go',
+          isSkill: true,
+          mode: 'Sisyphus - ultraworker',
+          model: 'opencode/mimo',
+        },
+      });
+
+      // A hard-coded 'build' mode here named an agent the server does not have,
+      // and no model at all, so a skill could never run either.
+      expect(chat.processPrompt).toHaveBeenCalledWith(
+        '# Alpha\n\ngo',
+        'Sisyphus - ultraworker',
+        undefined,
+        'opencode/mimo',
+      );
+    });
   });
 
   it('does not emit sessionDeleted when deletion fails', async () => {

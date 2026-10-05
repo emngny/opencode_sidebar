@@ -51,19 +51,44 @@ export function pickAutoSelectModel(
 }
 
 /**
- * Model to send for a turn.
+ * Model to put on a request, or `''` to send none and let opencode decide.
  *
- * Selecting an agent seeds the picker with the agent's pinned model, so a mode
- * that differs from the active one has not reached the picker yet and its pin is
- * authoritative. For the active mode the picker wins: opencode prefers the
- * request model over the agent's pin, so a manual change must survive.
+ * opencode resolves the active agent's own pin when a request carries no model,
+ * and it is the only party that can do it correctly. So the model is left off
+ * whenever that pin will actually work, which is the normal case.
+ *
+ * It is sent when the pin cannot work. `Sisyphus - ultraworker` is pinned to
+ * `opencode-go/normal-combo`, which this server does not publish — the model
+ * exists as `omniroute/normal-combo` — so a request that trusted the pin died
+ * with `Model not found` on every turn. Sending the picker then is a fallback,
+ * not an override: there is no working pin to defer to.
+ *
+ * A model the user picked outranks a resolvable pin either way, because opencode
+ * also prefers the request model over the agent's own.
  */
-export function resolvePromptModel(
-  mode: string,
-  activeMode: string,
-  pickedModel: string,
+export function resolvePromptModel(pinResolves: boolean, userChoseModel: boolean, pickedModel: string): string {
+  if (pinResolves && !userChoseModel) return '';
+  return pickedModel;
+}
+
+/**
+ * The model an agent pins but the server's catalog does not contain, else null.
+ *
+ * Worth reporting rather than working around. opencode fails such a turn itself
+ * with `Model not found`, and it fails identically in its own TUI — so the fix
+ * belongs in the agent's configuration, not here. Silently substituting a
+ * same-named model from another provider would hide a real misconfiguration
+ * behind a turn that quietly runs something else.
+ */
+export function hasUnresolvablePin(
+  agent: string,
   agentModels: Record<string, string>,
-): string {
-  if (mode === activeMode) return pickedModel;
-  return agentModels[mode] ?? pickedModel;
+  availableModels: ModelItem[],
+): string | null {
+  const pinned = agentModels[agent];
+  if (!pinned) return null;
+  // An empty catalog means the answer is not known yet, not that every pin is
+  // broken — reporting here would warn about all three agents on every open.
+  if (availableModels.length === 0) return null;
+  return availableModels.some((model) => model.id === pinned) ? null : pinned;
 }

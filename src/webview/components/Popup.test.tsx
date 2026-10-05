@@ -420,26 +420,76 @@ describe('SlashCommandPopup', () => {
   });
 
   /**
-   * On this machine `build`, `plan`, `review` … are subagents, not chat modes.
-   * Offering them would switch to a mode the server rejects and bounce back.
+   * The server command list is the only source of truth: `build`, `plan` and
+   * `review` used to be hard-coded agent names, but this machine's chat modes are
+   * `Sisyphus - ultraworker` and `Prometheus - Plan Builder`, so those builtins
+   * were all filtered out and the picker showed nothing but `/new`.
    */
-  it('omits mode-switching commands the server does not offer as a mode', () => {
+  it('offers commands the server reports, including ones outside the workspace', () => {
     render(
       <SlashCommandPopup
         filter=""
         skills={[]}
-        agents={['Sisyphus - ultraworker', 'Prometheus - Plan Builder']}
+        commands={[
+          { name: 'brainstorming', description: 'Use before creative work', source: 'command' },
+          { name: 'brainstorm-plan', description: 'Ask questions, then plan', source: 'command' },
+          { name: 'writing-plans', description: 'Write implementation plans', source: 'command' },
+        ]}
+        agents={['Sisyphus - ultraworker']}
         onSelect={() => undefined}
         onClose={() => undefined}
       />,
     );
 
     const labels = screen.getAllByRole('option').map((el) => el.textContent ?? '');
-    expect(labels.some((l) => l.startsWith('/build'))).toBe(false);
-    expect(labels.some((l) => l.startsWith('/plan'))).toBe(false);
-    // Local actions do not depend on a mode existing, so they stay.
+    expect(labels.some((l) => l.startsWith('/brainstorming'))).toBe(true);
+    expect(labels.some((l) => l.startsWith('/brainstorm-plan'))).toBe(true);
+    expect(labels.some((l) => l.startsWith('/writing-plans'))).toBe(true);
+    // The local reset stays available alongside them.
     expect(labels.some((l) => l.startsWith('/new'))).toBe(true);
-    expect(labels.some((l) => l.startsWith('/init'))).toBe(true);
+  });
+
+  it('finds a command by a substring of its name, not only a prefix', () => {
+    render(
+      <SlashCommandPopup
+        filter="plan"
+        skills={[]}
+        commands={[
+          { name: 'brainstorming', source: 'command' },
+          { name: 'brainstorm-plan', source: 'command' },
+          { name: 'writing-plans', source: 'command' },
+        ]}
+        agents={['Sisyphus - ultraworker']}
+        onSelect={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+
+    const labels = screen.getAllByRole('option').map((el) => el.textContent ?? '');
+    // `brainstorm-plan` has no `plan` prefix, so a prefix-only filter hid the
+    // exact command the user was typing.
+    expect(labels.some((l) => l.startsWith('/brainstorm-plan'))).toBe(true);
+    expect(labels.some((l) => l.startsWith('/brainstorming'))).toBe(false);
+  });
+
+  it('omits a command whose pinned agent the server does not offer as a mode', () => {
+    render(
+      <SlashCommandPopup
+        filter=""
+        skills={[]}
+        commands={[
+          { name: 'start-work', agent: 'Atlas - Plan Executor', source: 'command' },
+          { name: 'brainstorming', source: 'command' },
+        ]}
+        agents={['Sisyphus - ultraworker']}
+        onSelect={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+
+    const labels = screen.getAllByRole('option').map((el) => el.textContent ?? '');
+    expect(labels.some((l) => l.startsWith('/start-work'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('/brainstorming'))).toBe(true);
   });
 
   it('offers only local commands before the server answers', () => {
@@ -450,24 +500,45 @@ describe('SlashCommandPopup', () => {
     const labels = screen.getAllByRole('option').map((el) => el.textContent ?? '');
     expect(labels.some((l) => l.startsWith('/new'))).toBe(true);
     expect(labels.some((l) => l.startsWith('/init'))).toBe(true);
-    expect(labels.some((l) => l.startsWith('/review'))).toBe(false);
+    // Nothing was invented: the old hard-coded agent commands are gone rather
+    // than showing a mode the server has never heard of.
     expect(labels.some((l) => l.startsWith('/build'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('/plan'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('/review'))).toBe(false);
   });
 
-  it('keeps a mode-switching command the server does offer', () => {
+  it('marks a skill-sourced command with a skill badge', () => {
     render(
       <SlashCommandPopup
         filter=""
         skills={[]}
-        agents={['build', 'plan']}
+        commands={[{ name: 'brainstorming', source: 'skill', description: 'Creative work prep' }]}
+        agents={['Sisyphus - ultraworker']}
+        onSelect={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+
+    // `/new` is always present, so the skill row is found by name rather than
+    // by being the only option.
+    const skillOption = screen.getByRole('option', { name: /brainstorming/ });
+    expect(skillOption.textContent).toContain('skill');
+  });
+
+  it('does not list the same command twice when the workspace also has it', () => {
+    render(
+      <SlashCommandPopup
+        filter=""
+        skills={[{ name: 'brainstorming', description: 'from workspace' }]}
+        commands={[{ name: 'brainstorming', description: 'from server', source: 'command' }]}
+        agents={['Sisyphus - ultraworker']}
         onSelect={() => undefined}
         onClose={() => undefined}
       />,
     );
 
     const labels = screen.getAllByRole('option').map((el) => el.textContent ?? '');
-    expect(labels.some((l) => l.startsWith('/build'))).toBe(true);
-    expect(labels.some((l) => l.startsWith('/plan'))).toBe(true);
-    expect(labels.some((l) => l.startsWith('/debug'))).toBe(false);
+    expect(labels.filter((l) => l.startsWith('/brainstorming'))).toHaveLength(1);
+    expect(labels.some((l) => l.includes('from server'))).toBe(true);
   });
 });

@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- The `question` tool used to leave the turn stuck on `question running…` forever. opencode asks its questions through a tool that blocks until the server receives an answer, and the request only ever arrives as a live `question.asked` event — the extension never handled it, so the sidebar showed nothing interactive, the user had only Abort, and the server waited on an answer nobody could give. The event now becomes an answerable card: options toggle, a typed answer overrides its question, the reply goes to `POST /question/:id/reply`, and a card dismissed with no answers posts to `/reject`. A question that arrives while the view is hidden is rebuilt from `GET /question` on `webviewReady` and raises the same VS Code notification a blocked permission does, so neither prompt can park a turn in silence.
+
+## [0.2.3] - 2026-10-02
+
+### Fixed
+
+- The slash command picker was showing only `/new` and `/init`. The command list was built from two sources that could not see most of what opencode offers. `BUILTIN_COMMANDS` named the agents `plan`, `build`, `ask`, `debug`, `docs` and `code`, and the picker dropped any command whose agent was missing from the server's list — but on a machine where plugins own the agents those are _subagents_, never chat modes, so all seven were filtered out. `SkillService` was the second source, and it only scanned `<workspace>/.agents/skills`; skills installed in the global root are outside the workspace, so `/brainstorming` and `/brainstorm-plan` could not appear either. The server itself reports every command it serves on `GET /command` — 528 on a standard install — and the extension now asks for that instead of guessing. The same rule the mode reconciler already follows applies to commands: the server is the only authority on what exists
+- A command the server owns is no longer rebuilt locally. opencode expands its own commands, so a prompt starting with `/name` comes back as `<auto-slash-command>` with the arguments substituted; forwarding the literal `/name args` is what triggers it. Substituting a local template would bypass that expansion, and for the global skills there is no local template to substitute. A command that pins an agent now runs under it, while the rest inherit the mode already chosen
+- Only name, description, agent and subtask cross to the webview. The raw list is 5.7 MB because the command bodies are 5.2 MB of it; the reduced payload is 141 KB. `mapCommandSummaries` drops the templates for that reason, and a command the server reports twice is listed once
+- Typing a slash filter only matched from the start of a name, so `brainstorm-plan` stayed hidden behind `brainstorming` no matter how much of it was typed. The filter matches anywhere in the name or description, and the unfiltered list is capped at 40 rows rather than painting all 528
+- Selecting a slash command no longer sends it. Clicking a row in the picker — or pressing Enter on the highlighted one — ran the command immediately, with no way to attach a message first, and most of these commands take arguments, so there was nothing to add. Selecting now fills the field with `/command ` and leaves the cursor there; the user keeps typing and sends when ready, which also routes the turn through the normal send path. `/new` is unchanged: it is a local UI action with no arguments and nothing to type
+- A command turn no longer dies with `Model not found: opencode-go/normal-combo`. `runCommand` reaches `processPrompt` without passing through `sendMessage`, so nothing resolved a model for it and the server fell back to its default agent — which pins a model absent from the catalog — failing the turn before it started with HTTP 500. The webview resolves the model for command turns exactly as it does for prompts, and refuses them the same way when no model is picked rather than letting them fail at the server. A workspace skill had the same defect plus a hard-coded `build` mode naming an agent the server does not have; both are gone
+- A command that pins an agent runs under that agent and the rest inherit the active mode, so `/brainstorming` no longer changes the chat mode out from under the turn
+- An agent's own pinned model is now respected instead of being overridden by whatever the picker held. Every turn sent the picker model, and the picker won whenever the agent was the active one, so the pin never took effect. opencode resolves an agent's pin when a request carries no model, and it is the only party that can, so the model is now left off the request in that case. Measured on this machine: `Prometheus - Plan Builder` (pinned to `omniroute/pro-models`) ran `opencode/mimo-v2.6-flash-free` instead whenever the picker held a free-tier model
+- An agent pinned to a model the server does not publish no longer fails silently. `Sisyphus - ultraworker` is pinned to `opencode-go/normal-combo` while the catalog carries that model as `omniroute/normal-combo`, so opencode rejects every turn with `Model not found` — identically in its own TUI, since a request with no model gives the server nothing to second-guess. Trusting the pin blindly traded that error for a different one, so the pin is checked against the catalog first: when it cannot resolve, the picked model is sent as a fallback and the mismatch is reported once. The misconfiguration is still the user's to fix; it is named rather than papered over with a same-named model from another provider
+- The picker no longer lists the same command twice when a workspace skill shares a name with a server command, and `/new` appears once even when the server reports a command of that name
+
+### Changed
+
+- The server command list replaces the hard-coded builtins. `BUILTIN_COMMANDS` is now only what the extension implements itself — a fresh session and the `AGENTS.md` scaffold — and `/new` is always kept, since no server command resets the session. Workspace skills still appear, but only when the server did not already report the same name, so a locally-skilled command resolves to the server's richer template instead of the extension's thinner fallback
+
 ## [0.2.2] - 2026-10-01
 
 ### Added

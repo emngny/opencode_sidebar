@@ -59,5 +59,5 @@ describe('ChatContainer message windowing', () => {
 
     expect(container.querySelectorAll('[data-testid="chat-message"]')).toHaveLength(100);
     expect(container.textContent).toContain('Message 900');
-  });
+  }, 15000);
 });

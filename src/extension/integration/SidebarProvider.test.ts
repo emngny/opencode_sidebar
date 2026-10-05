@@ -119,6 +119,27 @@ describe('SidebarProvider Message Handling', () => {
       provider.postMessage(permissionEvent);
       expect(vscode.window.showInformationMessage).toHaveBeenCalledOnce();
     });
+
+    it('notices a question that arrives while the view is hidden', () => {
+      // Same deadlock as a permission: the question tool blocks its turn until
+      // an answer arrives, and the request only ever arrives as a live event.
+      attachView(false);
+      provider.postMessage({
+        type: 'toolEvent',
+        payload: {
+          id: 'que_1',
+          type: 'question',
+          name: 'question',
+          status: 'running',
+          content: 'Which target?',
+          meta: { questionId: 'que_1' },
+        },
+      });
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        'OpenCode has questions waiting for your answer',
+        'Show',
+      );
+    });
   });
 
   describe('Message Type Validation', () => {
@@ -237,6 +258,19 @@ describe('SidebarProvider Message Handling', () => {
         false,
       );
     });
+
+    it('should validate respondQuestion payload', () => {
+      expect(provider.validatePayload('respondQuestion', { questionId: 'que_1' })).toBe(true);
+      expect(provider.validatePayload('respondQuestion', { questionId: 'que_1', answers: [['main'], []] })).toBe(true);
+    });
+
+    it('should reject respondQuestion with a missing id or malformed answers', () => {
+      expect(provider.validatePayload('respondQuestion', {})).toBe(false);
+      expect(provider.validatePayload('respondQuestion', { questionId: 42 })).toBe(false);
+      expect(provider.validatePayload('respondQuestion', { questionId: 'que_1', answers: 'main' })).toBe(false);
+      expect(provider.validatePayload('respondQuestion', { questionId: 'que_1', answers: ['main'] })).toBe(false);
+      expect(provider.validatePayload('respondQuestion', { questionId: 'que_1', answers: [[42]] })).toBe(false);
+    });
   });
 
   describe('Message Type Mapping', () => {
@@ -249,6 +283,7 @@ describe('SidebarProvider Message Handling', () => {
         'unrevert',
         'respondPermission',
         'respondReadPermission',
+        'respondQuestion',
         'loadSkills',
         'runCommand',
         'webviewReady',
@@ -268,7 +303,7 @@ describe('SidebarProvider Message Handling', () => {
         'openExternal',
       ];
 
-      expect(handlers).toHaveLength(24);
+      expect(handlers).toHaveLength(25);
     });
   });
 });

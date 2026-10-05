@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { GitInfo, ProviderListResult } from '../../shared/types';
+import { CommandSummary, GitInfo, ProviderListResult } from '../../shared/types';
 import { getPersistedState, postMessage, setPersistedState } from '../vscode-api';
 import { buildModelItems, ModelItem, ModelSwitch, pickAutoSelectModel } from './modelUtils';
 
@@ -33,6 +33,9 @@ export function useModelManager() {
   const [hiddenModels, setHiddenModels] = useState<Record<string, boolean>>(persisted.hiddenModels || {});
   const [providersLoaded, setProvidersLoaded] = useState(false);
   const [skills, setSkills] = useState<Array<{ name: string; description?: string }>>([]);
+  // The server's full command index. Empty until the server answers, which is
+  // why the picker falls back to the local builtins rather than rendering blank.
+  const [commands, setCommands] = useState<CommandSummary[]>([]);
   const [fileSearchResults, setFileSearchResults] = useState<Array<{ name: string; path: string }>>([]);
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [revertActive, setRevertActive] = useState(false);
@@ -124,6 +127,8 @@ export function useModelManager() {
     setProvidersLoaded,
     skills,
     setSkills,
+    commands,
+    setCommands,
     fileSearchResults,
     setFileSearchResults,
     fileSearchQuery,

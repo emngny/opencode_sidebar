@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildModelItems, pickAutoSelectModel, resolvePromptModel } from './modelUtils';
+import { buildModelItems, pickAutoSelectModel, resolvePromptModel, hasUnresolvablePin } from './modelUtils';
 
 describe('buildModelItems', () => {
   it('includes only connected provider models and formats IDs', () => {
@@ -65,21 +65,57 @@ describe('pickAutoSelectModel', () => {
 });
 
 describe('resolvePromptModel', () => {
-  const agentModels = { Prometheus: 'omniroute/pro-models' };
-
-  it('uses the picker for the active mode so a manual change wins', () => {
-    expect(resolvePromptModel('Prometheus', 'Prometheus', 'opencode/mimo', agentModels)).toBe('opencode/mimo');
+  /**
+   * Sending the picker's model always overrode the agent's pin, because the
+   * picker won whenever the agent was the active one. The model is now left off
+   * the request whenever the pin can actually resolve, which is the normal case.
+   */
+  it('sends no model when the pin resolves and the user picked none', () => {
+    expect(resolvePromptModel(true, false, 'opencode/mimo-v2.6-flash-free')).toBe('');
   });
 
-  it('uses the pinned model when switching to an agent that pins one', () => {
-    expect(resolvePromptModel('Prometheus', 'build', 'opencode/mimo', agentModels)).toBe('omniroute/pro-models');
+  it('sends the picked model when the user chose one', () => {
+    expect(resolvePromptModel(true, true, 'omniroute/pro-models')).toBe('omniroute/pro-models');
   });
 
-  it('falls back to the picked model for agents without a pin', () => {
-    expect(resolvePromptModel('build', 'prometheus', 'opencode/mimo', agentModels)).toBe('opencode/mimo');
+  /**
+   * Sisyphus is pinned to `opencode-go/normal-combo`, which this server does not
+   * publish, so trusting the pin made every turn fail with `Model not found`.
+   * There is nothing to defer to, so the picker is sent instead.
+   */
+  it('falls back to the picked model when the pin cannot resolve', () => {
+    expect(resolvePromptModel(false, false, 'omniroute/pro-models')).toBe('omniroute/pro-models');
   });
 
-  it('stays empty when nothing is picked and no agent pins a model', () => {
-    expect(resolvePromptModel('build', 'build', '', {})).toBe('');
+  it('sends nothing rather than an empty pick', () => {
+    expect(resolvePromptModel(true, true, '')).toBe('');
+    expect(resolvePromptModel(false, false, '')).toBe('');
+  });
+});
+
+describe('hasUnresolvablePin', () => {
+  const models = [
+    { id: 'omniroute/pro-models', name: 'Pro', providerId: 'omniroute' },
+    { id: 'omniroute/normal-combo', name: 'Normal', providerId: 'omniroute' },
+  ];
+
+  it('passes a pin the catalog contains', () => {
+    expect(hasUnresolvablePin('Prometheus', { Prometheus: 'omniroute/pro-models' }, models)).toBeNull();
+  });
+
+  it('reports a pin the catalog does not contain', () => {
+    // Sisyphus pins `opencode-go/normal-combo` while the model is published as
+    // `omniroute/normal-combo`, so every turn fails with "Model not found".
+    expect(hasUnresolvablePin('Sisyphus', { Sisyphus: 'opencode-go/normal-combo' }, models)).toBe(
+      'opencode-go/normal-combo',
+    );
+  });
+
+  it('reports nothing for an agent that pins no model', () => {
+    expect(hasUnresolvablePin('Sisyphus', {}, models)).toBeNull();
+  });
+
+  it('says nothing before the catalog arrives', () => {
+    expect(hasUnresolvablePin('Sisyphus', { Sisyphus: 'opencode-go/normal-combo' }, [])).toBeNull();
   });
 });

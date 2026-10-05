@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { SessionService } from './SessionService';
 
 describe('SessionService.abort', () => {
-  it('keeps current session until abort request resolves', async () => {
+  it('keeps the session identity while the abort request resolves', async () => {
+    // Abort stops the turn, not the conversation: the transcript on screen
+    // still belongs to this session, so the id must survive the abort.
     let resolveAbort: (() => void) | undefined;
     const opencode = {
       abortSession: vi.fn(
@@ -19,10 +21,10 @@ describe('SessionService.abort', () => {
     expect(sessions.currentSessionId).toBe('session-1');
     resolveAbort?.();
     await aborting;
-    expect(sessions.currentSessionId).toBeNull();
+    expect(sessions.currentSessionId).toBe('session-1');
   });
 
-  it('aborts the active session on the server and releases the handle', async () => {
+  it('aborts the active session on the server and keeps tracking it', async () => {
     const abortSession = vi.fn().mockResolvedValue(undefined);
     const sessions = new SessionService({ abortSession } as never);
     sessions.currentSessionId = 'session-1';
@@ -30,7 +32,23 @@ describe('SessionService.abort', () => {
     await sessions.abort();
 
     expect(abortSession).toHaveBeenCalledWith('session-1');
-    expect(sessions.currentSessionId).toBeNull();
+    expect(sessions.currentSessionId).toBe('session-1');
+  });
+
+  it('reuses the same session for the next prompt after an abort', async () => {
+    // Regression: abort used to null the id, so the next send silently
+    // created a fresh session while the webview still showed the aborted
+    // one's transcript — stale history, lost context, no error.
+    const abortSession = vi.fn().mockResolvedValue(undefined);
+    const createSession = vi.fn().mockResolvedValue({ id: 'session-2' });
+    const sessions = new SessionService({ abortSession, createSession } as never);
+    sessions.currentSessionId = 'session-1';
+
+    await sessions.abort();
+    const id = await sessions.ensureSession('next prompt');
+
+    expect(id).toBe('session-1');
+    expect(createSession).not.toHaveBeenCalled();
   });
 
   it('is a no-op when no session is active', async () => {

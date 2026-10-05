@@ -13,6 +13,7 @@ import type { OpencodeCli } from './OpencodeCli';
 import type { PermissionService } from './PermissionService';
 import type { SessionService } from './SessionService';
 import type { SkillService } from './SkillService';
+import { questionEventFromRequest } from './EventDispatcher';
 import { ServerStartupAbortedError } from './ServerProcessManager';
 import { getGitInfo } from './GitInfo';
 import { resolveWorkspacePath } from '../utils/workspacePath';
@@ -44,6 +45,8 @@ export class SidebarMessageHandler {
         return this.unrevert();
       case 'respondPermission':
         return this.respondPermission(message.payload);
+      case 'respondQuestion':
+        return this.respondQuestion(message.payload);
       case 'respondReadPermission':
         this._permissions.grantReadPermission(
           message.payload.filePath,
@@ -77,6 +80,7 @@ export class SidebarMessageHandler {
       case 'deleteSession':
         return this.deleteSession(message.payload.sessionId);
       case 'clearChat':
+        return this.clearChat();
       case 'abort':
         return this.abortSession();
       default:
@@ -92,10 +96,21 @@ export class SidebarMessageHandler {
     }
   }
 
+  private async clearChat(): Promise<void> {
+    try {
+      await this._sessions.abort();
+      // Unlike abort, clearChat starts a new conversation: drop the identity
+      // so the next prompt opens a fresh session instead of reusing this one.
+      this._sessions.currentSessionId = null;
+    } catch (error) {
+      this._post({ type: 'error', payload: { message: `Abort failed: ${getErrorMessage(error)}` } });
+    }
+  }
+
   private async webviewReady(): Promise<void> {
     try {
       await this._opencode.start();
-      this._auth.restoreApiKeys();
+      void this._auth.restoreApiKeys();
       const [project, path, vcs] = await Promise.all([
         this._opencode.getCurrentProject(),
         this._opencode.getPath(),
@@ -107,6 +122,7 @@ export class SidebarMessageHandler {
     }
     await this.listProviders();
     this.loadSkills();
+    this.loadCommands();
     void this._opencode
       .getAgents()
       .then((agents) => {
@@ -155,6 +171,26 @@ export class SidebarMessageHandler {
       // decision the user cannot make.
       const pending = this._opencode.getPendingPermission(sessionId);
       if (pending) this._post({ type: 'toolEvent', payload: { ...pending, requestId: activeRequestId ?? undefined } });
+      // A question is the same shape of deadlock: the tool blocks the server
+      // until an answer arrives, and the request itself only ever arrives as a
+      // live event. It is rebuilt from the server's own pending list rather
+      // than held, because that also survives several questions in a row.
+      void this._opencode
+        .listQuestions()
+        .then((requests) => {
+          for (const request of requests) {
+            if (request.sessionID !== sessionId) continue;
+            const event = questionEventFromRequest(request);
+            if (!event) continue;
+            this._post({
+              type: 'toolEvent',
+              payload: { ...event, requestId: activeRequestId ?? undefined, sessionId },
+            });
+          }
+        })
+        .catch((error: unknown) => {
+          console.warn('[opencode] Failed to restore pending questions:', getErrorMessage(error));
+        });
     } catch (error) {
       this._post({ type: 'error', payload: { message: `Failed to restore session: ${getErrorMessage(error)}` } });
     }
@@ -179,7 +215,7 @@ export class SidebarMessageHandler {
     }
   }
 
-  private async getSavedModel(): Promise<void> {
+  private getSavedModel(): void {
     const model = this._workspaceState.get<string>('selectedModel');
     if (model) this._post({ type: 'savedModel', payload: model });
   }
@@ -251,10 +287,65 @@ export class SidebarMessageHandler {
     }
   }
 
+  private async respondQuestion(payload: { questionId: string; answers?: string[][] }): Promise<void> {
+    try {
+      const answered = payload.answers !== undefined;
+      const success = answered
+        ? await this._opencode.replyQuestion(payload.questionId, payload.answers ?? [])
+        : await this._opencode.rejectQuestion(payload.questionId);
+      if (!success) {
+        this._post({ type: 'error', payload: { message: `Failed to answer question (${payload.questionId})` } });
+        return;
+      }
+      // Settles the interactive card. The tool part completes on its own, so
+      // no state is held for it — a rejection is reported by the server as a
+      // failed `question` call, which arrives as its own card.
+      this._post({
+        type: 'toolEvent',
+        payload: {
+          id: payload.questionId,
+          type: 'question',
+          name: 'question',
+          status: 'completed',
+          content: answered ? 'Question answered' : 'Question dismissed',
+          meta: { questionId: payload.questionId, answers: payload.answers },
+        },
+      });
+    } catch (error) {
+      this._post({ type: 'error', payload: { message: `Question response failed: ${getErrorMessage(error)}` } });
+    }
+  }
+
   private loadSkills(): void {
     this._post({ type: 'skillList', payload: { skills: this._skills.list() } });
   }
-  private async runCommand(payload: { command: string; args?: string; isSkill?: boolean }): Promise<void> {
+
+  /**
+   * Publishes the server's slash command list to the webview.
+   *
+   * The local `loadSkills` scan only sees `<workspace>/.agents/skills`, so
+   * commands installed in the global skill roots — `brainstorming`,
+   * `brainstorm-plan`, and the rest of the server's 528 — never reached the
+   * picker. An empty list is a real answer from the server, not a failure, so
+   * it is posted too and replaces whatever was shown before.
+   */
+  private async loadCommands(): Promise<void> {
+    try {
+      const commands = await this._opencode.getCommands();
+      this._post({ type: 'commandList', payload: { commands } });
+    } catch (error) {
+      console.warn('[opencode] Load commands failed:', getErrorMessage(error));
+    }
+  }
+  private async runCommand(payload: {
+    command: string;
+    args?: string;
+    isSkill?: boolean;
+    isCommand?: boolean;
+    agent?: string;
+    model?: string;
+    mode?: string;
+  }): Promise<void> {
     if (payload.command === 'init') {
       try {
         const result = this._skills.createAgentsFile();
@@ -283,8 +374,29 @@ export class SidebarMessageHandler {
       }
     } else if (payload.isSkill) {
       const content = this._skills.load(payload.command);
-      if (content) await this._chat.processPrompt(payload.args ? `${content}\n\n${payload.args}` : content, 'build');
+      if (content)
+        await this._chat.processPrompt(
+          payload.args ? `${content}\n\n${payload.args}` : content,
+          payload.mode ?? '',
+          undefined,
+          payload.model,
+        );
       else this._post({ type: 'error', payload: { message: `Skill "${payload.command}" not found` } });
+    } else if (payload.isCommand) {
+      // The server expands its own commands: a prompt starting with `/name`
+      // comes back as `<auto-slash-command>` with the arguments filled in.
+      // Substituting a local template instead would miss the server's
+      // expansion — and there is no local template for these anyway, since
+      // they are installed outside the workspace.
+      const line = payload.args ? `/${payload.command} ${payload.args}` : `/${payload.command}`;
+      // A command that pins an agent runs under it; the rest inherit the mode
+      // the user already picked, so `/brainstorming` does not change the chat.
+      //
+      // The model travels with the payload because a command turn bypasses
+      // `sendMessage`, and without one the server falls back to its default
+      // agent — which pins `opencode-go/normal-combo`, absent from the catalog,
+      // so the turn failed with `ProviderModelNotFoundError` before it started.
+      await this._chat.processPrompt(line, payload.agent ?? payload.mode ?? '', undefined, payload.model);
     }
   }
   private async sendMessage(payload: {

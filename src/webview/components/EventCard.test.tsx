@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ChatMessage } from '../../shared/types';
 import { EventCard } from './EventCard';
 
@@ -132,6 +132,86 @@ describe('EventCard', () => {
 
       expect(screen.getByText('+6')).toBeDefined();
       expect(screen.getByText('-2')).toBeDefined();
+    });
+  });
+
+  describe('question card', () => {
+    const questionMessage = (overrides: Partial<ChatMessage> = {}): ChatMessage =>
+      createMessage({
+        eventType: 'question',
+        eventStatus: 'running',
+        content: 'Which target should the fix land on?',
+        eventMeta: {
+          questionId: 'que_1',
+          questions: [
+            {
+              question: 'Which target should the fix land on?',
+              options: [{ label: 'main' }, { label: 'develop', description: 'integration branch' }],
+            },
+            { question: 'Which branch?', options: [{ label: 'worktree' }], multiple: true, custom: false },
+          ],
+        },
+        ...overrides,
+      });
+
+    it('sends one answer list per question, in question order', () => {
+      const onRespond = vi.fn();
+      render(<EventCard message={questionMessage()} onRespondQuestion={onRespond} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'develop' }));
+      fireEvent.click(screen.getByRole('button', { name: 'worktree' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Send answer' }));
+
+      expect(onRespond).toHaveBeenCalledWith('que_1', [['develop'], ['worktree']]);
+    });
+
+    it('lets a typed answer override the selection for its question', () => {
+      const onRespond = vi.fn();
+      render(<EventCard message={questionMessage()} onRespondQuestion={onRespond} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'main' }));
+      fireEvent.change(screen.getByPlaceholderText('Type your own answer'), {
+        target: { value: 'neither' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Send answer' }));
+
+      expect(onRespond).toHaveBeenCalledWith('que_1', [['neither'], []]);
+    });
+
+    it('omits the free-form box for a question that forbids it', () => {
+      render(<EventCard message={questionMessage()} />);
+
+      expect(screen.getAllByPlaceholderText('Type your own answer')).toHaveLength(1);
+    });
+
+    it('dismisses without answers when the card is abandoned', () => {
+      const onRespond = vi.fn();
+      render(<EventCard message={questionMessage()} onRespondQuestion={onRespond} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+      expect(onRespond).toHaveBeenCalledWith('que_1');
+      expect(screen.getByText('Question dismissed')).toBeDefined();
+    });
+
+    it('shows the answers once the request is settled', () => {
+      render(
+        <EventCard
+          message={questionMessage({
+            eventStatus: 'completed',
+            content: 'Question answered',
+            eventMeta: {
+              questionId: 'que_1',
+              questions: [{ question: 'Which target should the fix land on?', options: [{ label: 'main' }] }],
+              answers: [['main']],
+            },
+          })}
+        />,
+      );
+
+      expect(screen.getByText('Question answered')).toBeDefined();
+      expect(screen.getByText('main')).toBeDefined();
+      expect(screen.queryByRole('button', { name: 'Send answer' })).toBeNull();
     });
   });
 });

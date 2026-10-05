@@ -23,6 +23,10 @@ export function useChatState() {
   const pendingChunkRef = useRef<Map<string, string>>(new Map());
   const chunkFlushTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const streamingMsgIdRef = useRef<Map<string, string>>(new Map());
+  // requestId → server messageId of the step currently streaming. Lets the
+  // handler detect a step boundary and flush the previous step's buffer into
+  // the previous bubble before any text lands in the new one.
+  const streamingStepRef = useRef<Map<string, string>>(new Map());
   const DEBOUNCE_MS = 80;
 
   const flushPendingChunk = useCallback((requestId?: string) => {
@@ -60,11 +64,15 @@ export function useChatState() {
       const timer = chunkFlushTimerRef.current.get(id);
       if (timer) clearTimeout(timer);
       chunkFlushTimerRef.current.delete(id);
-      if (requestId) pendingChunkRef.current.delete(id);
+      if (requestId) {
+        pendingChunkRef.current.delete(id);
+        streamingStepRef.current.delete(id);
+      }
     }
     if (!requestId) {
       pendingChunkRef.current.clear();
       streamingMsgIdRef.current.clear();
+      streamingStepRef.current.clear();
     }
   }, []);
 
@@ -92,6 +100,7 @@ export function useChatState() {
     pendingChunkRef,
     chunkFlushTimerRef,
     streamingMsgIdRef,
+    streamingStepRef,
     DEBOUNCE_MS,
     flushPendingChunk,
     cleanupStreaming,

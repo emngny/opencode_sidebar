@@ -148,6 +148,80 @@ describe('EventDispatcher', () => {
     });
   });
 
+  describe('question.asked', () => {
+    const questionRequest = (sessionId: string) => ({
+      id: 'que_1',
+      sessionID: sessionId,
+      questions: [
+        {
+          question: 'Which target should the fix land on?',
+          header: 'Target',
+          options: [{ label: 'main' }, { label: 'develop' }],
+          multiple: false,
+        },
+      ],
+    });
+
+    it('turns the request into an interactive card', () => {
+      // The question tool blocks its turn until the server is answered, so the
+      // card it becomes is the only thing that can unblock it.
+      const seen: any[] = [];
+      const dispatcher = createDispatcher({ onToolEvent: (event: unknown) => seen.push(event) });
+
+      dispatcher.dispatch(sseEvent('question.asked', questionRequest('session-1')), 'session-1');
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ id: 'que_1', type: 'question', name: 'question', status: 'running' });
+      expect(seen[0].meta?.['questionId']).toBe('que_1');
+      expect(seen[0].meta?.['questions']).toHaveLength(1);
+      expect(seen[0].content).toContain('Which target');
+    });
+
+    it('keeps a question asked by a session other than the caller', () => {
+      // Dropping it would leave the server blocked on an answer nobody can see.
+      const seen: any[] = [];
+      const dispatcher = createDispatcher({ onToolEvent: (event: unknown) => seen.push(event) });
+
+      dispatcher.dispatch(sseEvent('question.asked', questionRequest('sub-1')), 'session-1');
+
+      expect(seen).toHaveLength(1);
+    });
+
+    it('ignores a request with nothing to answer', () => {
+      const seen: any[] = [];
+      const dispatcher = createDispatcher({ onToolEvent: (event: unknown) => seen.push(event) });
+
+      dispatcher.dispatch(
+        sseEvent('question.asked', { id: 'que_2', sessionID: 'session-1', questions: [] }),
+        'session-1',
+      );
+
+      expect(seen).toHaveLength(0);
+    });
+
+    it('does not report a dismissed question as a failed turn', () => {
+      // The failure card already says the question was dismissed; an error
+      // bubble on top would render the same thing a second time.
+      let reported = '';
+      const dispatcher = createDispatcher({ onError: (error: string) => (reported = error) });
+
+      dispatcher.dispatch(
+        sseEvent('message.part.updated', {
+          sessionID: 'session-1',
+          part: {
+            id: 'p1',
+            type: 'tool',
+            tool: 'question',
+            state: { status: 'failed', error: 'The user dismissed this question' },
+          },
+        }),
+        'session-1',
+      );
+
+      expect(reported).toBe('');
+    });
+  });
+
   it('should recover assistant text from message.part.updated when deltas are absent', () => {
     let capturedContent = '';
     const dispatcher = createDispatcher({

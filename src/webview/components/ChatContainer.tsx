@@ -17,6 +17,7 @@ interface Props {
   contextEvents?: Array<{ id: string; name: string; status: string; content: string; meta?: any }>;
   onLoadSession?: (sessionId: string) => void;
   onRespondPermission?: (permId: string, sessionId: string, response: 'allow' | 'deny', remember?: boolean) => void;
+  onRespondQuestion?: (questionId: string, answers?: string[][]) => void;
   onOpenDiff?: (filePath: string) => void;
   availableModels?: Array<{ id: string; name: string }>;
 }
@@ -33,6 +34,7 @@ export function ChatContainer({
   contextEvents,
   onLoadSession,
   onRespondPermission,
+  onRespondQuestion,
   onOpenDiff,
   availableModels,
 }: Readonly<Props>) {
@@ -119,6 +121,7 @@ export function ChatContainer({
               message={msg}
               onLoadSession={onLoadSession}
               onRespondPermission={onRespondPermission}
+              onRespondQuestion={onRespondQuestion}
               onOpenDiff={onOpenDiff}
             />
           );

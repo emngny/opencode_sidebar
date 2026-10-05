@@ -31,9 +31,11 @@ export class ChatCoordinator {
       // each needs its own bubble in arrival order; a bubble opened up front
       // would be a permanent empty one sitting above the tool cards.
       //
-      // `fullContent` is therefore accumulated per server message rather than
-      // across the turn — a single running total would paste post-tool narration
-      // into the bubble the agent spoke into before the tool ran.
+      // Text is accumulated per server message so `streamEnd` reports the last
+      // step's total — a single running total would mix post-tool narration
+      // into the text the agent spoke before the tool ran. Deltas carry only
+      // their own chunk: the webview buffers them behind the debounce instead
+      // of re-rendering per token.
       const textByMessage = new Map<string, string>();
       let latestContent = '';
       const appendText = (chunk: string, key = ''): string => {
@@ -45,11 +47,11 @@ export class ChatCoordinator {
       await this._opencode.sendPrompt(sessionId, processed.userContent, {
         requestId,
         onContent: (chunk, messageId) => {
+          appendText(chunk, messageId);
           this._postMessage({
             type: 'receiveChunk',
             payload: {
               content: chunk,
-              fullContent: appendText(chunk, messageId),
               messageId,
               requestId,
               sessionId,

@@ -10,13 +10,14 @@ vi.mock('../vscode-api', () => ({
 }));
 
 function createState() {
-  return {
+  const state = {
     setMessages: vi.fn(),
     setBusy: vi.fn(),
     setContextEvents: vi.fn(),
     pendingChunkRef: { current: new Map<string, string>() },
     chunkFlushTimerRef: { current: new Map<string, ReturnType<typeof setTimeout>>() },
     streamingMsgIdRef: { current: new Map<string, string>() },
+    streamingStepRef: { current: new Map<string, string>() },
     DEBOUNCE_MS: 20,
     flushPendingChunk: vi.fn(),
     cleanupStreaming: vi.fn(),
@@ -39,6 +40,34 @@ function createState() {
     processProviderList: vi.fn(),
     tryAutoSelectModel: vi.fn(),
   } as any;
+
+  // Mirrors the real flushPendingChunk in useChatState so tests can assert
+  // buffered text only after an explicit flush, exactly like the debounce.
+  state.flushPendingChunk = vi.fn((requestId?: string) => {
+    const keys = requestId ? [requestId] : [...state.pendingChunkRef.current.keys()];
+    for (const key of keys) {
+      const text = state.pendingChunkRef.current.get(key);
+      if (!text) continue;
+      state.pendingChunkRef.current.delete(key);
+      const timer = state.chunkFlushTimerRef.current.get(key);
+      if (timer) {
+        clearTimeout(timer);
+        state.chunkFlushTimerRef.current.delete(key);
+      }
+      state.setMessages((prev: any[]) => {
+        const streamingId = state.streamingMsgIdRef.current.get(key);
+        const index = streamingId
+          ? prev.findIndex((m: any) => m.id === streamingId)
+          : prev.findIndex((m: any) => m.role === 'assistant' && m.requestId === key);
+        if (index < 0) return prev;
+        const updated = [...prev];
+        updated[index] = { ...updated[index], content: updated[index].content + text, isStreaming: true };
+        return updated;
+      });
+    }
+  });
+
+  return state;
 }
 
 describe('useMessageHandler file search ordering', () => {
@@ -137,7 +166,7 @@ describe('useMessageHandler transcript rehydration', () => {
 
     harness.send({
       type: 'receiveChunk',
-      payload: { content: 'tial', fullContent: 'partial', requestId: 'req-9', sessionId: 'session-1' },
+      payload: { content: 'tial', requestId: 'req-9', sessionId: 'session-1' },
     });
     harness.state.flushPendingChunk('req-9');
 
@@ -189,7 +218,7 @@ describe('useMessageHandler agent step ordering', () => {
     harness.send({ type: 'receiveMessage', payload: { role: 'user', content: 'go', requestId: 'req-1' } });
     harness.send({
       type: 'receiveChunk',
-      payload: { content: 'Looking now.', fullContent: 'Looking now.', messageId: 'msg-1', requestId: 'req-1' },
+      payload: { content: 'Looking now.', messageId: 'msg-1', requestId: 'req-1' },
     });
     harness.send({
       type: 'toolEvent',
@@ -204,13 +233,9 @@ describe('useMessageHandler agent step ordering', () => {
     });
     harness.send({
       type: 'receiveChunk',
-      payload: {
-        content: 'Found the bug.',
-        fullContent: 'Found the bug.',
-        messageId: 'msg-2',
-        requestId: 'req-1',
-      },
+      payload: { content: 'Found the bug.', messageId: 'msg-2', requestId: 'req-1' },
     });
+    harness.state.flushPendingChunk('req-1');
 
     expect(harness.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'event', 'assistant']);
     expect(harness.messages[1].content).toBe('Looking now.');
@@ -224,15 +249,32 @@ describe('useMessageHandler agent step ordering', () => {
 
     harness.send({
       type: 'receiveChunk',
-      payload: { content: 'par', fullContent: 'par', messageId: 'msg-1', requestId: 'req-1' },
+      payload: { content: 'par', messageId: 'msg-1', requestId: 'req-1' },
     });
     harness.send({
       type: 'receiveChunk',
-      payload: { content: 'tial', fullContent: 'partial', messageId: 'msg-1', requestId: 'req-1' },
+      payload: { content: 'tial', messageId: 'msg-1', requestId: 'req-1' },
     });
+    harness.state.flushPendingChunk('req-1');
 
     expect(harness.messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
     expect(harness.messages[0].content).toBe('partial');
+  });
+
+  it('buffers deltas behind the debounce instead of rendering every token', () => {
+    const harness = setup();
+
+    harness.send({ type: 'receiveChunk', payload: { content: 'a', messageId: 'msg-1', requestId: 'req-1' } });
+    harness.send({ type: 'receiveChunk', payload: { content: 'b', messageId: 'msg-1', requestId: 'req-1' } });
+    harness.send({ type: 'receiveChunk', payload: { content: 'c', messageId: 'msg-1', requestId: 'req-1' } });
+
+    // One state update opens the bubble; the deltas wait in the buffer. A
+    // render per token re-parses the whole markdown on every keypress.
+    expect(harness.state.setMessages).toHaveBeenCalledTimes(1);
+    expect(harness.messages[0].content).toBe('');
+
+    harness.state.flushPendingChunk('req-1');
+    expect(harness.messages[0].content).toBe('abc');
   });
 
   it('closes every bubble of the turn when it ends', () => {
@@ -240,16 +282,19 @@ describe('useMessageHandler agent step ordering', () => {
 
     harness.send({
       type: 'receiveChunk',
-      payload: { content: 'a', fullContent: 'a', messageId: 'msg-1', requestId: 'req-1' },
+      payload: { content: 'a', messageId: 'msg-1', requestId: 'req-1' },
     });
     harness.send({
       type: 'receiveChunk',
-      payload: { content: 'b', fullContent: 'b', messageId: 'msg-2', requestId: 'req-1' },
+      payload: { content: 'b', messageId: 'msg-2', requestId: 'req-1' },
     });
     expect(harness.messages.every((m) => m.isStreaming)).toBe(true);
 
     harness.send({ type: 'streamEnd', payload: { content: 'b', requestId: 'req-1' } });
 
+    // streamEnd must flush the buffered tail before it closes the bubbles,
+    // or the turn loses its last 80ms of text.
+    expect(harness.messages[1].content).toBe('b');
     expect(harness.messages.every((m) => m.isStreaming === false)).toBe(true);
     expect(harness.state.setBusy).toHaveBeenCalledWith(false);
   });

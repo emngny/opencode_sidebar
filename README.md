@@ -13,6 +13,7 @@
 - **Live tool transparency**: Tool calls, reasoning, and context gathering stream in as they happen, in the order the agent produced them.
 - **File change cards**: AI-edited files appear as clickable cards showing `+N −M`, repeated edits to one file collapse into a single card, and clicking opens the file. Reverts undo a whole turn via git snapshots.
 - **Permission controls**: Allow Once / Always / Deny on tool use and on reads of sensitive paths. A permission asked while the sidebar is hidden surfaces as a notification instead of deadlocking the turn.
+- **Interactive questions**: When the agent asks through opencode's `question` tool, the options render as a card with selectable answers and a free-form box; a question asked while the sidebar is hidden is rebuilt from the server's pending list rather than leaving the turn parked on a prompt nobody can see.
 - **Session management**: Browse, load, and delete past sessions. Hiding and showing the sidebar keeps the live conversation, including a turn that is still running.
 - **Long turns that survive**: Turns routinely run for many minutes. The transcript stays live for as long as the server is working, rather than cutting off on an HTTP client's patience.
 - **File attachment and search**: `@` to search workspace files, `Ctrl+V` to paste images.

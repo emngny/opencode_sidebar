@@ -21,7 +21,15 @@ export interface ChatMessage {
   serverMessageId?: string;
   isStreaming?: boolean;
   eventType?:
-    'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
+    | 'tool_call'
+    | 'tool_result'
+    | 'file_read'
+    | 'file_edit'
+    | 'thinking'
+    | 'discovery'
+    | 'compacting'
+    | 'permission'
+    | 'question';
   eventStatus?: 'running' | 'completed' | 'failed';
   /** Number of identical consecutive tool events merged into this card. */
   eventCount?: number;
@@ -47,6 +55,11 @@ export interface ChatMessage {
     patterns?: string[];
     permType?: string;
     content?: string;
+    /** Server request id (`que_...`) a `question` card answers. */
+    questionId?: string;
+    questions?: QuestionInfo[];
+    /** Selected labels per question, in question order. */
+    answers?: string[][];
   };
   agent?: string;
   modelId?: string;
@@ -81,11 +94,14 @@ export function getErrorMessage(err: unknown): string {
     return err.message;
   }
   if (typeof err === 'string') return err;
-  try {
-    return String(err);
-  } catch {
-    return 'Unknown error';
+  if (typeof err === 'object' && err !== null) {
+    try {
+      return JSON.stringify(err) ?? 'Unknown error';
+    } catch {
+      return 'Unknown error';
+    }
   }
+  return String(err);
 }
 
 /** Raw message part as returned by GET /session/:id/message */
@@ -174,6 +190,64 @@ export function filterChatModeAgents(agents: AgentSummary[]): AgentSummary[] {
   return agents.filter(
     (agent) => !INTERNAL_AGENT_IDS.has(agent.id) && (!agent.mode || agent.mode === 'primary' || agent.mode === 'all'),
   );
+}
+
+/**
+ * A slash command opencode serves, as reported by `GET /command`.
+ *
+ * The server is the only authority on this list: it aggregates commands from
+ * its own config, the global skill roots, and every plugin package, so a local
+ * guess cannot know what exists. Names like `brainstorming` or
+ * `brainstorm-plan` live in `~/.agents/skills` and are invisible to a
+ * workspace-only scan.
+ */
+export interface CommandSummary {
+  name: string;
+  description?: string;
+  /** `command` for opencode's own commands, `skill` for a skill, `mcp` for an MCP tool. */
+  source?: string;
+  /** Agent the command pins; running it overrides the chat mode. */
+  agent?: string;
+  /** Runs as a subtask instead of taking over the session. */
+  subtask?: boolean;
+}
+
+/** Raw shape of a `GET /command` entry. Only `name` is guaranteed. */
+export type CommandRaw = string | Record<string, unknown>;
+
+/**
+ * Narrows a raw `/command` entry to the fields the webview renders.
+ *
+ * `template` is deliberately dropped: the 528 commands this machine reports
+ * carry 5.2 MB of prompt templates between them, and the server expands a
+ * command itself when the prompt starts with `/name`, so nothing needs them.
+ */
+export function mapCommandSummaries(rawList: CommandRaw[]): CommandSummary[] {
+  const seen = new Set<string>();
+  const result: CommandSummary[] = [];
+  for (const raw of rawList) {
+    if (typeof raw === 'string') {
+      if (!raw || seen.has(raw)) continue;
+      seen.add(raw);
+      result.push({ name: raw });
+      continue;
+    }
+    if (!isRecord(raw)) continue;
+    const name = raw['name'];
+    if (typeof name !== 'string' || !name || seen.has(name)) continue;
+    seen.add(name);
+    const description = raw['description'];
+    const source = raw['source'];
+    const agent = raw['agent'];
+    result.push({
+      name,
+      description: typeof description === 'string' && description ? description : undefined,
+      source: typeof source === 'string' ? source : undefined,
+      agent: typeof agent === 'string' && agent ? agent : undefined,
+      subtask: raw['subtask'] === true,
+    });
+  }
+  return result;
 }
 
 export interface ProviderAuthPrompt {
@@ -417,6 +491,35 @@ interface RespondReadPermissionPayload {
   remember?: boolean;
 }
 
+/** One question inside a `question.asked` request. */
+export interface QuestionInfo {
+  question: string;
+  header?: string;
+  options?: Array<{ label: string; description?: string }>;
+  multiple?: boolean;
+  /** Server default is true: a free-form answer is offered alongside the options. */
+  custom?: boolean;
+}
+
+/** A pending `question.asked` request, as returned by `GET /question`. */
+export interface QuestionRequest {
+  id: string;
+  sessionID: string;
+  questions: QuestionInfo[];
+}
+
+/**
+ * Answer payload for the opencode `question` tool.
+ *
+ * `answers` is one array of selected labels per question, in question order;
+ * an empty array means that question was left unanswered. Omitting `answers`
+ * entirely rejects the request instead of replying to it.
+ */
+interface RespondQuestionPayload {
+  questionId: string;
+  answers?: string[][];
+}
+
 interface OpenDiffPayload {
   filePath: string;
 }
@@ -432,6 +535,25 @@ interface RunCommandPayload {
   command: string;
   args?: string;
   isSkill?: boolean;
+  /**
+   * The command came from the server's own list rather than a workspace skill.
+   * The server expands these itself when the prompt starts with `/name`, so the
+   * extension forwards the name instead of substituting a local template.
+   */
+  isCommand?: boolean;
+  /** Agent the command pins, so it runs under its own mode rather than the active one. */
+  agent?: string;
+  /**
+   * Model for the turn, resolved by the webview exactly as a normal send does.
+   *
+   * Required, not optional in practice: a command reaches `processPrompt`
+   * without going through the send path, so a missing model let the server fall
+   * back to its default agent — which pins `opencode-go/normal-combo`, a model
+   * that is not in the catalog, and the turn died with `ProviderModelNotFoundError`.
+   */
+  model?: string;
+  /** Chat mode to run under; defaults to the active one on the extension side. */
+  mode?: string;
 }
 
 /**
@@ -458,6 +580,7 @@ export type WebviewToExtensionMessage =
   | { type: 'unrevert'; payload?: UnrevertPayload }
   | { type: 'respondPermission'; payload: RespondPermissionPayload }
   | { type: 'respondReadPermission'; payload: RespondReadPermissionPayload }
+  | { type: 'respondQuestion'; payload: RespondQuestionPayload }
   | { type: 'openDiff'; payload: OpenDiffPayload }
   | { type: 'openExternal'; payload: OpenExternalPayload }
   | { type: 'runCommand'; payload: RunCommandPayload }
@@ -477,7 +600,6 @@ interface ReceiveMessagePayload {
 
 interface ReceiveChunkPayload {
   content: string;
-  fullContent?: string;
   requestId?: string;
   sessionId?: string;
   /** Owning server message, so the webview can open a bubble per agent step. */
@@ -603,6 +725,15 @@ interface SkillListPayload {
   skills: { name: string; description?: string }[];
 }
 
+/**
+ * Slash commands the running server offers. The webview renders this instead
+ * of a hard-coded list so every command the server knows about — including the
+ * skills installed outside the workspace — is reachable from the picker.
+ */
+interface CommandListPayload {
+  commands: CommandSummary[];
+}
+
 interface StatusPayload {
   status: 'idle' | 'running' | 'error';
   message?: string;
@@ -635,7 +766,8 @@ export type ExtensionToWebviewMessage =
   | { type: 'messageMeta'; payload: MessageMetaPayload }
   | { type: 'reasoningContent'; payload: string | ReasoningContentPayload }
   | { type: 'readFilePrompt'; payload: ReadFilePromptPayload }
-  | { type: 'skillList'; payload: SkillListPayload };
+  | { type: 'skillList'; payload: SkillListPayload }
+  | { type: 'commandList'; payload: CommandListPayload };
 
 /**
  * Single file changed in a session diff.
@@ -717,6 +849,7 @@ export const WEBVIEW_TO_EXTENSION_TYPES = [
   'unrevert',
   'respondPermission',
   'respondReadPermission',
+  'respondQuestion',
   'openDiff',
   'openExternal',
   'runCommand',
@@ -752,4 +885,5 @@ export const EXTENSION_TO_WEBVIEW_TYPES = [
   'reasoningContent',
   'readFilePrompt',
   'skillList',
+  'commandList',
 ] as const;

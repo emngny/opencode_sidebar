@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ContextPart } from '../../shared/types';
+import { CommandSummary, ContextPart } from '../../shared/types';
 import { CommandItem } from '../slashCommands';
 import { SlashCommandPopup, SLASH_LISTBOX_ID } from './SlashCommandPopup';
 import { COLORS, RADIUS, SHADOW } from '../styles';
@@ -18,6 +18,7 @@ interface Props {
   fileSearchQuery: string;
   onSlashCommand?: (cmd: CommandItem) => void;
   skills?: Array<{ name: string; description?: string }>;
+  commands?: CommandSummary[];
   /** Chat modes the server offers; filters the agent-bearing slash commands. */
   agents?: string[];
 }
@@ -30,6 +31,7 @@ export function BottomInput({
   fileSearchQuery,
   onSlashCommand,
   skills,
+  commands,
   agents,
 }: Readonly<Props>) {
   const [text, setText] = useState('');
@@ -101,12 +103,19 @@ export function BottomInput({
     setShowSlashPopup(false);
   };
 
+  /**
+   * Selecting a command fills the field; it does not send.
+   *
+   * A command is a prefix for a message, not a request in itself — most take
+   * arguments, so the user has to be able to keep typing after picking one. The
+   * trailing space starts that argument, and the popup stays closed because the
+   * slash trigger only fires while the text has no space in it. Sending happens
+   * when the user presses send, which routes through `onSend` and resolves the
+   * model the way any other prompt does.
+   */
   const handleSlashSelect = (cmd: CommandItem) => {
-    if (cmd.type === 'skill') {
-      setText(`/${cmd.command} `);
-    } else {
-      setText('');
-    }
+    setText(`/${cmd.command} `);
+    setSlashFilter('');
     setShowSlashPopup(false);
     onSlashCommand?.(cmd);
     setTimeout(() => textareaRef.current?.focus(), 0);
@@ -156,7 +165,7 @@ export function BottomInput({
     }
   };
 
-  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
 
@@ -228,6 +237,7 @@ export function BottomInput({
           <SlashCommandPopup
             filter={slashFilter}
             skills={skills || []}
+            commands={commands || []}
             agents={agents || []}
             onSelect={handleSlashSelect}
             onClose={() => setShowSlashPopup(false)}

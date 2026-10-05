@@ -12,7 +12,7 @@ import { postMessage } from './vscode-api';
 import { CommandItem } from './slashCommands';
 import { useChatState, genId } from './hooks/useChatState';
 import { useModelManager } from './hooks/useModelManager';
-import { resolvePromptModel } from './hooks/modelUtils';
+import { resolvePromptModel, hasUnresolvablePin } from './hooks/modelUtils';
 import { useMessageHandler } from './hooks/useMessageHandler';
 import { COLORS, RADIUS, btnIcon, card, flexRow, overlay, textHeader, textSmall } from './styles';
 import { hoverable } from './hover';
@@ -79,6 +79,7 @@ function AppContent() {
     pendingChunkRef,
     chunkFlushTimerRef,
     streamingMsgIdRef,
+    streamingStepRef,
     DEBOUNCE_MS,
     flushPendingChunk,
     cleanupStreaming,
@@ -102,6 +103,8 @@ function AppContent() {
     setProvidersLoaded,
     skills,
     setSkills,
+    commands,
+    setCommands,
     fileSearchResults,
     setFileSearchResults,
     fileSearchQuery,
@@ -135,6 +138,26 @@ function AppContent() {
    */
   const [agents, setAgents] = useState<string[]>([]);
   const agentsLoadedRef = useRef(false);
+  /**
+   * Set when the user picks a model from the picker, and never cleared.
+   *
+   * The model is persisted separately from the mode, so a restored session can
+   * arrive holding an agent and a model that never belonged together — the mode
+   * says `Prometheus - Plan Builder` while the model is whatever the previously
+   * active agent used. The agent's pin is then only advisory, and the mismatch
+   * is invisible until a turn runs a model the user never chose. One flag
+   * separates "the model was seeded for this agent" from "the user asked for
+   * this model", so re-seeding happens on restore but never over a real choice.
+   */
+  const modelChosenByUserRef = useRef(false);
+
+  const selectModelFromPicker = useCallback(
+    (next: string) => {
+      modelChosenByUserRef.current = true;
+      setModel(next);
+    },
+    [setModel],
+  );
 
   useMessageHandler({
     setMessages,
@@ -143,6 +166,7 @@ function AppContent() {
     pendingChunkRef,
     chunkFlushTimerRef,
     streamingMsgIdRef,
+    streamingStepRef,
     DEBOUNCE_MS,
     flushPendingChunk,
     cleanupStreaming,
@@ -154,6 +178,7 @@ function AppContent() {
     setHiddenModels,
     setProvidersLoaded,
     setSkills,
+    setCommands,
     setFileSearchResults,
     setFileSearchQuery,
     fileSearchRequestIdRef,
@@ -181,6 +206,37 @@ function AppContent() {
     },
     [agentModels, setMode, setModel],
   );
+
+  /**
+   * Reports an agent whose pinned model the server does not have.
+   *
+   * opencode fails such a turn itself with `Model not found`, and fails it the
+   * same way in its own TUI, so this is a configuration problem the extension
+   * can only point at. Saying so up front beats letting the turn fail with a
+   * model id the user has never seen in the picker. Not worked around: rewriting
+   * the pin to a same-named model from another provider would quietly run
+   * something the user never chose.
+   */
+  const reportedPinRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!mode || availableModels.length === 0) return;
+    const pinned = hasUnresolvablePin(mode, agentModels, availableModels);
+    if (!pinned) {
+      reportedPinRef.current = null;
+      return;
+    }
+    if (reportedPinRef.current === `${mode}:${pinned}`) return;
+    reportedPinRef.current = `${mode}:${pinned}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'system',
+        content: `Agent "${mode}" is pinned to "${pinned}", which this server does not have — opencode will refuse every turn with "Model not found". Pick a model below to override it, or fix the pin in your opencode config.`,
+        timestamp: Date.now(),
+        id: genId(),
+      },
+    ]);
+  }, [mode, agentModels, availableModels, setMessages]);
 
   useEffect(() => {
     /**
@@ -234,28 +290,38 @@ function AppContent() {
   const handleSend = useCallback(
     (prompt: string, context?: ContextPart[]) => {
       /**
-       * Sends for a given agent. A mode other than the active one has not been
-       * through the picker yet, so it contributes its own pin. A send with no
-       * model at all would let the server fall back to the agent's default, so
-       * it is refused instead of quietly running on something else.
+       * Sends for a given agent.
+       *
+       * The model is left off the request whenever the agent's own pin will
+       * work, so opencode resolves it — see `resolvePromptModel`. It is sent
+       * only when the pin cannot resolve, or when the user chose a model
+       * themselves. The "no model selected" guard this replaced was protecting
+       * against the default agent's broken pin, which cannot happen now: the
+       * request always names the agent it means to run.
        */
       const send = (promptText: string, modeName: string) => {
-        const target = resolvePromptModel(modeName, mode, model, agentModels);
-        if (!target) {
-          setBusy(false);
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'system',
-              content: 'No model selected yet. Pick a model before sending.',
-              timestamp: Date.now(),
-              id: genId(),
-            },
-          ]);
-          return;
-        }
+        const pinResolves = !hasUnresolvablePin(modeName, agentModels, availableModels);
+        const target = resolvePromptModel(pinResolves, modelChosenByUserRef.current, model);
         postMessage({ type: 'sendMessage', payload: { prompt: promptText, model: target, mode: modeName, context } });
       };
+
+      /** A command turn resolves its model the same way a prompt does. */
+      const sendCommand = (payload: {
+        command: string;
+        args?: string;
+        isSkill?: boolean;
+        isCommand?: boolean;
+        agent?: string;
+      }) => {
+        const modeName = payload.agent ?? mode;
+        const pinResolves = !hasUnresolvablePin(modeName, agentModels, availableModels);
+        const target = resolvePromptModel(pinResolves, modelChosenByUserRef.current, model);
+        postMessage({
+          type: 'runCommand',
+          payload: { ...payload, model: target, mode: modeName },
+        });
+      };
+
       nearBottomRef.current = true;
       setBusy(true);
       setContextEvents([]);
@@ -265,20 +331,25 @@ function AppContent() {
         const rest = prompt.slice(firstWord.length).trim();
         const skill = skills.some((s) => s.name === cmdName);
         if (skill) {
-          postMessage({ type: 'runCommand', payload: { command: cmdName, args: rest, isSkill: true } });
+          sendCommand({ command: cmdName, args: rest, isSkill: true });
           return;
         }
         if (cmdName === 'init') {
           postMessage({ type: 'runCommand', payload: { command: cmdName, args: rest } });
           return;
         }
-        if (cmdName === 'review') {
-          if (rest) {
-            selectMode('review');
-            send(rest, 'review');
-            return;
-          }
-          postMessage({ type: 'runCommand', payload: { command: cmdName, args: '' } });
+        // Anything the server lists is its own to expand, so the name is
+        // forwarded verbatim. Without this a command like `/brainstorm-plan`
+        // would fall through to a plain prompt and the server would answer a
+        // question it was never asked — the slash text sent as literal prose.
+        const serverCommand = commands.find((c) => c.name === cmdName);
+        if (serverCommand) {
+          sendCommand({
+            command: cmdName,
+            args: rest,
+            isCommand: true,
+            ...(serverCommand.agent ? { agent: serverCommand.agent } : {}),
+          });
           return;
         }
         if (agents.includes(cmdName)) {
@@ -293,7 +364,19 @@ function AppContent() {
       }
       send(prompt, mode);
     },
-    [agentModels, model, mode, skills, agents, setBusy, setContextEvents, selectMode, setMessages],
+    [
+      agentModels,
+      model,
+      mode,
+      skills,
+      commands,
+      agents,
+      availableModels,
+      setBusy,
+      setContextEvents,
+      selectMode,
+      setMessages,
+    ],
   );
 
   const handleOpenDiff = useCallback((filePath: string) => {
@@ -312,9 +395,10 @@ function AppContent() {
    * Starts a fresh session while keeping the previous one in session history.
    *
    * The extension side already does the right thing: `clearChat` dispatches to
-   * `SessionService.abort()`, which stops the server stream and nulls
-   * `_currentSessionId`, so the next prompt creates a brand new session. This
-   * callback only has to clear the webview's own copy of the conversation.
+   * `SidebarMessageHandler.clearChat()`, which stops the server stream and
+   * then drops `currentSessionId`, so the next prompt creates a brand new
+   * session. This callback only has to clear the webview's own copy of the
+   * conversation. Plain `abort` leaves the identity in place.
    */
   const handleNewChat = useCallback(() => {
     resetConversation();
@@ -344,17 +428,25 @@ function AppContent() {
     postMessage({ type: 'unrevert' });
   }, []);
 
+  /**
+   * Handles a pick from the slash command popup.
+   *
+   /**
+   * Handles a pick from the slash command popup.
+   *
+   * Selecting a command is not a request. `/new` is the one exception — it is a
+   * local UI action with no arguments and nothing to type. Every other command
+   * only needs `BottomInput` to fill the field, which it does itself; the user
+   * then writes the arguments and sends when ready, so the turn goes through
+   * `handleSend` and gets the model resolved like any other prompt.
+   */
   const handleSlashCommand = useCallback(
     (cmd: CommandItem) => {
       if (cmd.command === 'new') {
         handleNewChat();
-      } else if (cmd.command === 'init' || cmd.command === 'review') {
-        postMessage({ type: 'runCommand', payload: { command: cmd.command, args: '' } });
-      } else if (cmd.agent && agents.includes(cmd.agent)) {
-        selectMode(cmd.agent);
       }
     },
-    [agents, selectMode, handleNewChat],
+    [handleNewChat],
   );
 
   const handleRespondPermission = useCallback(
@@ -363,6 +455,15 @@ function AppContent() {
     },
     [],
   );
+
+  /**
+   * Answers a pending `question` request, or dismisses it when no answers are
+   * given. The server blocks the whole turn on this, so the reply has to go
+   * through as soon as the card submits it.
+   */
+  const handleRespondQuestion = useCallback((questionId: string, answers?: string[][]) => {
+    postMessage({ type: 'respondQuestion', payload: { questionId, answers } });
+  }, []);
 
   const handleRespondReadPermission = useCallback(
     (response: 'allow' | 'deny', remember?: boolean) => {
@@ -421,6 +522,7 @@ function AppContent() {
               contextEvents={contextEvents}
               onLoadSession={handleLoadSession}
               onRespondPermission={handleRespondPermission}
+              onRespondQuestion={handleRespondQuestion}
               onOpenDiff={handleOpenDiff}
               availableModels={availableModels}
             />
@@ -482,6 +584,7 @@ function AppContent() {
           fileSearchQuery={fileSearchQuery}
           onSlashCommand={handleSlashCommand}
           skills={skills}
+          commands={commands}
           agents={agents}
         />
         <div
@@ -541,7 +644,7 @@ function AppContent() {
             {providersLoaded ? (
               <ModelSelector
                 model={model}
-                onChange={setModel}
+                onChange={selectModelFromPicker}
                 availableModels={availableModels.filter((m) => !hiddenModels[m.id])}
               />
             ) : (
@@ -585,7 +688,9 @@ function AppContent() {
             postMessage({ type: 'listProviders' });
           }}
           onModelSelect={(providerId, modelId) => {
-            setModel(`${providerId}/${modelId}`);
+            // Choosing from the provider panel is as much a deliberate choice as
+            // the picker, so it must survive the agent-pin seeding.
+            selectModelFromPicker(`${providerId}/${modelId}`);
             setShowProviders(false);
           }}
           availableModels={availableModels}

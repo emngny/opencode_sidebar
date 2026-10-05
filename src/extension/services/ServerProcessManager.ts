@@ -199,14 +199,18 @@ export class ServerProcessManager {
       );
     }
 
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      try {
-        await access(candidate);
-        existing.push(candidate);
-      } catch {
-        /* unavailable */
-      }
+    const reachable = await Promise.all(
+      candidates.map((candidate) =>
+        candidate
+          ? access(candidate).then(
+              () => candidate,
+              () => null,
+            )
+          : Promise.resolve(null),
+      ),
+    );
+    for (const candidate of reachable) {
+      if (candidate) existing.push(candidate);
     }
     existing.push('opencode');
     return [...new Set(existing)];

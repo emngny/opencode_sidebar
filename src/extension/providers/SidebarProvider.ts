@@ -21,8 +21,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'opencode.sidebar';
   private _view?: vscode.WebviewView;
   private _visible = false;
-  private _permissionNotice?: {
-    permId: string | undefined;
+  private _blockedNotice?: {
+    /** Request the notice covers, so repeats of it do not stack notifications. */
+    key: string | undefined;
     dispose: vscode.Disposable;
   };
   private readonly _opencode: OpencodeCli;
@@ -79,35 +80,43 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   /** Sends an extension event to the webview when a view is attached. */
   postMessage(message: ExtensionToWebviewMessage): void {
     void this._view?.webview.postMessage(message);
-    if (!this._visible && message.type === 'toolEvent' && message.payload.type === 'permission') {
-      this.notifyPermissionNeeded(message.payload.meta?.['permId'] as string | undefined);
+    if (!this._visible && message.type === 'toolEvent') {
+      if (message.payload.type === 'permission') {
+        this.notifyBlocked(
+          `permission:${message.payload.meta?.['permId'] as string | undefined}`,
+          'OpenCode needs your permission to continue',
+        );
+      } else if (message.payload.type === 'question') {
+        this.notifyBlocked(
+          `question:${message.payload.meta?.['questionId'] as string | undefined}`,
+          'OpenCode has questions waiting for your answer',
+        );
+      }
     }
   }
 
   /**
-   * Surfaces a blocked permission request while the view is hidden.
+   * Surfaces a request the server is blocked on while the view is hidden.
    *
    * VS Code deallocates the webview document when the view is hidden, so a
-   * permission posted then is dropped and the server waits forever on a
-   * decision nobody can make. One notice is kept per permission id so a tool
-   * that re-asks does not stack notifications, and a request that is answered
-   * or superseded is disposed.
+   * permission or question posted then is dropped and the server waits forever
+   * on an answer nobody can make. One notice is kept per request so a tool that
+   * re-asks does not stack notifications, and a request that is answered or
+   * superseded is disposed.
    */
-  private notifyPermissionNeeded(permId: string | undefined): void {
-    if (this._permissionNotice && this._permissionNotice.permId === permId) return;
-    this._permissionNotice?.dispose.dispose();
+  private notifyBlocked(key: string | undefined, text: string): void {
+    if (this._blockedNotice && this._blockedNotice.key === key) return;
+    this._blockedNotice?.dispose.dispose();
     const clear = (): void => {
-      if (this._permissionNotice?.permId === permId) this._permissionNotice = undefined;
+      if (this._blockedNotice?.key === key) this._blockedNotice = undefined;
     };
-    this._permissionNotice = { permId, dispose: { dispose: clear } as vscode.Disposable };
-    void vscode.window
-      .showInformationMessage('OpenCode needs your permission to continue', 'Show')
-      .then((selection) => {
-        if (selection === 'Show') {
-          void vscode.commands.executeCommand('workbench.view.extension.opencode.focus');
-        }
-        clear();
-      });
+    this._blockedNotice = { key, dispose: { dispose: clear } as vscode.Disposable };
+    void vscode.window.showInformationMessage(text, 'Show').then((selection) => {
+      if (selection === 'Show') {
+        void vscode.commands.executeCommand('workbench.view.extension.opencode.focus');
+      }
+      clear();
+    });
   }
 
   /** Narrows untrusted webview data to a supported message envelope. */
@@ -142,6 +151,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (type === 'saveModel') return hasStrings('model');
     if (type === 'respondPermission')
       return hasStrings('permId', 'permSessionId') && (value['response'] === 'allow' || value['response'] === 'deny');
+    if (type === 'respondQuestion') {
+      if (!hasStrings('questionId')) return false;
+      const answers = value['answers'];
+      if (answers === undefined) return true;
+      return (
+        Array.isArray(answers) &&
+        answers.every((entry) => Array.isArray(entry) && entry.every((label) => typeof label === 'string'))
+      );
+    }
     if (type === 'respondReadPermission') return hasStrings('filePath', 'response');
     if (type === 'setApiKey') return hasStrings('providerId', 'key');
     if (type === 'removeApiKey' || type === 'loadSession' || type === 'deleteSession')
@@ -176,8 +194,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   /** Aborts active work, stops the local server, and releases the view. */
   dispose(): void {
-    this._permissionNotice?.dispose.dispose();
-    this._permissionNotice = undefined;
+    this._blockedNotice?.dispose.dispose();
+    this._blockedNotice = undefined;
     void this._sessions.abort().catch(() => undefined);
     this._opencode.stop();
     this._view = undefined;

@@ -10,7 +10,7 @@ exports[`shared/types.ts contract lock > locks the shape of every exported decla
     sessionId?: string;
     serverMessageId?: string;
     isStreaming?: boolean;
-    eventType?: 'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission';
+    eventType?: 'tool_call' | 'tool_result' | 'file_read' | 'file_edit' | 'thinking' | 'discovery' | 'compacting' | 'permission' | 'question';
     eventStatus?: 'running' | 'completed' | 'failed';
     eventCount?: number;
     fileEditCount?: number;
@@ -30,6 +30,9 @@ exports[`shared/types.ts contract lock > locks the shape of every exported decla
         patterns?: string[];
         permType?: string;
         content?: string;
+        questionId?: string;
+        questions?: QuestionInfo[];
+        answers?: string[][];
     };
     agent?: string;
     modelId?: string;
@@ -55,12 +58,15 @@ export function getErrorMessage(err: unknown): string {
     }
     if (typeof err === 'string')
         return err;
-    try {
-        return String(err);
+    if (typeof err === 'object' && err !== null) {
+        try {
+            return JSON.stringify(err) ?? 'Unknown error';
+        }
+        catch {
+            return 'Unknown error';
+        }
     }
-    catch {
-        return 'Unknown error';
-    }
+    return String(err);
 }
 
 export interface SessionMessagePart {
@@ -136,6 +142,47 @@ export function mapAgentSummaries(rawList: AgentRaw[]): AgentSummary[] {
 
 export function filterChatModeAgents(agents: AgentSummary[]): AgentSummary[] {
     return agents.filter((agent) => !INTERNAL_AGENT_IDS.has(agent.id) && (!agent.mode || agent.mode === 'primary' || agent.mode === 'all'));
+}
+
+export interface CommandSummary {
+    name: string;
+    description?: string;
+    source?: string;
+    agent?: string;
+    subtask?: boolean;
+}
+
+export type CommandRaw = string | Record<string, unknown>;
+
+export function mapCommandSummaries(rawList: CommandRaw[]): CommandSummary[] {
+    const seen = new Set<string>();
+    const result: CommandSummary[] = [];
+    for (const raw of rawList) {
+        if (typeof raw === 'string') {
+            if (!raw || seen.has(raw))
+                continue;
+            seen.add(raw);
+            result.push({ name: raw });
+            continue;
+        }
+        if (!isRecord(raw))
+            continue;
+        const name = raw['name'];
+        if (typeof name !== 'string' || !name || seen.has(name))
+            continue;
+        seen.add(name);
+        const description = raw['description'];
+        const source = raw['source'];
+        const agent = raw['agent'];
+        result.push({
+            name,
+            description: typeof description === 'string' && description ? description : undefined,
+            source: typeof source === 'string' ? source : undefined,
+            agent: typeof agent === 'string' && agent ? agent : undefined,
+            subtask: raw['subtask'] === true,
+        });
+    }
+    return result;
 }
 
 export interface ProviderAuthPrompt {
@@ -313,6 +360,23 @@ export interface ImageAttachment {
 
 export type ContextPart = FileAttachment | ImageAttachment;
 
+export interface QuestionInfo {
+    question: string;
+    header?: string;
+    options?: Array<{
+        label: string;
+        description?: string;
+    }>;
+    multiple?: boolean;
+    custom?: boolean;
+}
+
+export interface QuestionRequest {
+    id: string;
+    sessionID: string;
+    questions: QuestionInfo[];
+}
+
 export type WebviewToExtensionMessage = {
     type: 'sendMessage';
     payload: SendMessagePayload;
@@ -370,6 +434,9 @@ export type WebviewToExtensionMessage = {
 } | {
     type: 'respondReadPermission';
     payload: RespondReadPermissionPayload;
+} | {
+    type: 'respondQuestion';
+    payload: RespondQuestionPayload;
 } | {
     type: 'openDiff';
     payload: OpenDiffPayload;
@@ -467,6 +534,9 @@ export type ExtensionToWebviewMessage = {
 } | {
     type: 'skillList';
     payload: SkillListPayload;
+} | {
+    type: 'commandList';
+    payload: CommandListPayload;
 };
 
 export interface SessionDiffFile {
@@ -527,6 +597,7 @@ export const WEBVIEW_TO_EXTENSION_TYPES = [
     'unrevert',
     'respondPermission',
     'respondReadPermission',
+    'respondQuestion',
     'openDiff',
     'openExternal',
     'runCommand',
@@ -558,5 +629,6 @@ export const EXTENSION_TO_WEBVIEW_TYPES = [
     'reasoningContent',
     'readFilePrompt',
     'skillList',
+    'commandList',
 ] as const;"
 `;

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CommandItem, BUILTIN_COMMANDS, getCommandColor, needsAgent } from '../slashCommands';
-import { COLORS, FONT_SIZE, RADIUS, popupPanel } from '../styles';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { CommandItem, buildCommandItems, getCommandColor, needsAgent } from '../slashCommands';
+import { COLORS, FONT_SIZE, popupPanel } from '../styles';
 import { useEscapeToClose } from '../hooks/useFocusTrap';
+import type { CommandSummary } from '../../shared/types';
 
 /** Id of the listbox, referenced by the input's `aria-controls`. */
 export const SLASH_LISTBOX_ID = 'slash-command-listbox';
@@ -14,6 +15,12 @@ export function slashOptionId(index: number): string {
 interface Props {
   filter: string;
   skills: Array<{ name: string; description?: string }>;
+  /**
+   * Every command the server offers. A workspace-only scan misses the skills
+   * installed in the global roots, so this list — not a local guess — is what
+   * the picker shows.
+   */
+  commands?: CommandSummary[];
   /**
    * Chat modes the server actually offers. Agent-bearing builtins the server
    * does not list are dropped rather than shown: selecting one would switch to a
@@ -29,26 +36,53 @@ interface Props {
   comboboxRef?: React.RefObject<HTMLTextAreaElement>;
 }
 
-export function SlashCommandPopup({ filter, skills, agents, onSelect, onClose, comboboxRef }: Readonly<Props>) {
+/** How many rows the picker renders before the user starts typing a filter. */
+const MAX_VISIBLE_COMMANDS = 40;
+
+/**
+ * Whether a row matches the typed filter.
+ *
+ * A prefix match is what typing `/brain` means, but a 528-entry list is
+ * unusable on prefix alone — `brainstorm-plan` only appears once the user has
+ * typed past the divergence. Substring matching on the name and description
+ * keeps every candidate reachable.
+ */
+function matchesFilter(cmd: CommandItem, filter: string): boolean {
+  if (!filter) return true;
+  const needle = filter.toLowerCase();
+  const name = cmd.command.toLowerCase();
+  if (name.startsWith(needle)) return true;
+  return name.includes(needle) || cmd.description.toLowerCase().includes(needle);
+}
+
+export function SlashCommandPopup({
+  filter,
+  skills,
+  commands,
+  agents,
+  onSelect,
+  onClose,
+  comboboxRef,
+}: Readonly<Props>) {
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [hoveredIndex, setHoveredIndex] = useState(-1);
   const popupRef = useRef<HTMLDivElement>(null);
   const agentsLoaded = agents.length > 0;
+  const serverCommands = commands || [];
 
-  const items: CommandItem[] = [
-    // Before the server answers, a mode-switching command cannot be routed, so
-    // only the local ones are offered instead of a list that would do nothing.
-    ...BUILTIN_COMMANDS.filter((c) => !needsAgent(c) || (agentsLoaded && agents.includes(c.agent!))),
-    ...skills.map((s) => ({
-      type: 'skill' as const,
-      command: s.name,
-      label: s.name,
-      description: s.description || 'Skill instructions',
-      skillName: s.name,
-    })),
-  ];
+  const items: CommandItem[] = useMemo(
+    () =>
+      buildCommandItems(serverCommands, skills).filter(
+        (cmd) => !needsAgent(cmd) || (agentsLoaded && agents.includes(cmd.agent!)),
+      ),
+    // `agentsLoaded` is derived from `agents`, so listing it keeps the memo from
+    // caching an empty result from the render before the server answered.
+    [serverCommands, skills, agents, agentsLoaded],
+  );
 
-  const filtered = filter ? items.filter((c) => c.command.toLowerCase().startsWith(filter.toLowerCase())) : items;
+  const matched = useMemo(() => items.filter((c) => matchesFilter(c, filter)), [items, filter]);
+  // Cap only the unfiltered view: once the user types, whatever matches is what
+  // they are looking for and hiding the tail would hide the command they typed.
+  const filtered = useMemo(() => (filter ? matched : matched.slice(0, MAX_VISIBLE_COMMANDS)), [filter, matched]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -132,12 +166,16 @@ export function SlashCommandPopup({ filter, skills, agents, onSelect, onClose, c
             id={slashOptionId(i)}
             data-index={i}
             role="option"
+            tabIndex={-1}
             aria-selected={isSelected}
             onClick={() => onSelect(cmd)}
-            onMouseEnter={() => {
-              setSelectedIndex(i);
-              setHoveredIndex(i);
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(cmd);
+              }
             }}
+            onMouseEnter={() => setSelectedIndex(i)}
             style={{
               padding: '8px 12px',
               cursor: 'pointer',
